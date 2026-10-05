@@ -17,9 +17,9 @@ export function downloadBlob(data, filename, type) {
 }
 
 export async function loadModel() {
-  const { apps, settings } = await getConfig();
+  const { apps, settings, pages } = await getConfig();
   const measures = await getMeasures();
-  return { model: buildModel(measures, apps, settings), settings, measures };
+  return { model: buildModel(measures, apps, settings, pages), settings, measures, apps, pages };
 }
 
 export async function exportXlsx(stat) {

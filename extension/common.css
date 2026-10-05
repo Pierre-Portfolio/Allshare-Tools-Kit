@@ -11,9 +11,11 @@
   --ok: #15803d;
   --missing-bg: #ef4444;
   --missing-text: #ffffff;
-  --timeout-bg: #f59e0b;
+  --timeout-bg: #c4c9d1;
   --timeout-text: #111827;
   --header-bg: #eef2f8;
+  --sep: #c3cad5;
+  --row-hover: rgba(37, 99, 235, 0.07);
   --radius: 8px;
   --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
@@ -29,7 +31,11 @@
     --accent-soft: #1e293b;
     --ok: #4ade80;
     --missing-bg: #dc2626;
+    --timeout-bg: #5b6270;
+    --timeout-text: #f3f4f6;
     --header-bg: #1f2430;
+    --sep: #3d4452;
+    --row-hover: rgba(96, 165, 250, 0.1);
   }
 }
 

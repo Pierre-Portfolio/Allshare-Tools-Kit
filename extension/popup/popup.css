@@ -117,3 +117,88 @@ section h2 .muted {
   letter-spacing: 0;
   font-weight: 400;
 }
+
+.tab-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.tab-head .page {
+  color: var(--muted);
+  text-align: right;
+}
+
+.progress {
+  display: grid;
+  grid-template-columns: 62px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.progress.current {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.progress .track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.progress .track i {
+  display: block;
+  height: 100%;
+  background: var(--muted);
+}
+
+.progress.current .track i {
+  background: var(--accent);
+}
+
+.progress.full .track i {
+  background: var(--ok);
+}
+
+.progress .count {
+  font-variant-numeric: tabular-nums;
+}
+
+.todo-title {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.todo-title.done {
+  color: var(--ok);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.chip {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip.more {
+  background: var(--border);
+}

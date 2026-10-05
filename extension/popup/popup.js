@@ -1,9 +1,11 @@
 import { getConfig, getMeasures, saveSettings, isMeasureKey } from '../lib/storage.js';
 import { matchApp, pageKey } from '../lib/urls.js';
-import { NETWORK_LABELS, fmtMs, fmtDate } from '../lib/format.js';
-import { exportXlsx } from '../lib/export.js';
+import { NETWORKS, NETWORK_LABELS, fmtMs, fmtDate } from '../lib/format.js';
+import { exportXlsx, loadModel } from '../lib/export.js';
+import { coverage, missingPages } from '../lib/report.js';
 
 const $ = (id) => document.getElementById(id);
+const nf = new Intl.NumberFormat('fr-FR');
 const netButtons = [...document.querySelectorAll('[data-network]')];
 
 function el(tag, props = {}, ...children) {
@@ -42,6 +44,17 @@ function renderNetwork(settings) {
   }
 }
 
+function progressRow(label, done, total, current) {
+  const ratio = total ? done / total : 0;
+  return el(
+    'div',
+    { className: `progress${current ? ' current' : ''}${total && done === total ? ' full' : ''}` },
+    el('span', { className: 'net', textContent: label }),
+    el('span', { className: 'track' }, el('i', { style: `width:${Math.round(ratio * 100)}%` })),
+    el('span', { className: 'count', textContent: `${done}/${total}` }),
+  );
+}
+
 async function renderTab(apps, settings) {
   const box = $('tabInfo');
   const url = await activeTabUrl();
@@ -52,14 +65,49 @@ async function renderTab(apps, settings) {
       'Aucune application configurée. ',
       el('button', { className: 'link', textContent: 'Ajouter', onclick: openOptions }),
     );
-  } else if (!match) {
+    return;
+  }
+  if (!match) {
     box.append(
       el('span', { className: 'muted', textContent: 'Cet onglet ne fait partie d’aucune application suivie.' }),
     );
+    return;
+  }
+  const { model } = await loadModel();
+  const appId = match.app.id;
+  box.append(
+    el(
+      'div',
+      { className: 'tab-head' },
+      el('strong', { textContent: match.app.name }),
+      el('span', { className: 'page', textContent: pageKey(url, match.basePath, settings) }),
+    ),
+  );
+  if (!model.pages.length) return;
+  for (const n of NETWORKS) {
+    const c = coverage(model, appId, [n.id]);
+    box.append(progressRow(n.label, c.done, c.total, n.id === settings.network));
+  }
+  const missing = missingPages(model, appId, settings.network);
+  if (missing.length) {
+    const shown = missing.slice(0, 12);
+    box.append(
+      el('div', { className: 'todo-title', textContent: `Reste à mesurer en ${NETWORK_LABELS[settings.network]} :` }),
+      el(
+        'div',
+        { className: 'chips' },
+        ...shown.map((p) => el('span', { className: 'chip', title: p.key, textContent: p.label })),
+        ...(missing.length > shown.length
+          ? [el('span', { className: 'chip more', textContent: `+${missing.length - shown.length}` })]
+          : []),
+      ),
+    );
   } else {
     box.append(
-      el('div', {}, el('strong', { textContent: match.app.name })),
-      el('div', { className: 'page', textContent: pageKey(url, match.basePath, settings) }),
+      el('div', {
+        className: 'todo-title done',
+        textContent: `✓ Toutes les pages sont mesurées en ${NETWORK_LABELS[settings.network]}.`,
+      }),
     );
   }
 }
@@ -68,12 +116,10 @@ async function renderMeasures(apps) {
   const measures = await getMeasures();
   const names = new Map(apps.map((a) => [a.id, a.name]));
   const wifi = measures.filter((m) => m.network === 'wifi').length;
-  $('count').textContent = measures.length
-    ? `· ${measures.length} (WiFi ${wifi} · Ethernet ${measures.length - wifi})`
-    : '';
+  $('count').textContent = measures.length ? `· ${nf.format(measures.length)} au total (WiFi ${nf.format(wifi)})` : '';
   const list = $('last');
   list.replaceChildren();
-  const last = measures.slice(-5).reverse();
+  const last = measures.slice(-3).reverse();
   if (!last.length) {
     list.append(el('li', {}, el('span', { className: 'muted', textContent: 'Aucune mesure pour le moment.' })));
     return;
@@ -112,7 +158,7 @@ $('options').addEventListener('click', openOptions);
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
-  if (changes.settings || changes.apps || Object.keys(changes).some(isMeasureKey)) render();
+  if (changes.settings || changes.apps || changes.pages || Object.keys(changes).some(isMeasureKey)) render();
 });
 
 render();

@@ -7,24 +7,33 @@ Optimiser les requêtes SQL en analysant le temps de réponse des pages.
 application, par page et par réseau (**WiFi** ou **Ethernet**), puis produit d'un clic un fichier
 Excel comparatif où **les cases rouges** signalent les pages sans mesure.
 
-![Rapport](docs/rapport.png)
+Pensé pour un parc de **100 à 200 applications** quasi identiques d'une vingtaine de pages :
+**une ligne par application, une colonne par page**.
+
+![Rapport : 150 applications × 20 pages](docs/rapport.png)
 
 ## Fonctionnalités
 
 - Mesure automatique du temps **clic → affichage complet**, page par page :
   - pages classiques (chaque clic charge une nouvelle page HTML : PHP, ASP.NET, JSP…) ;
   - applications monopages / SPA (Angular, React, Vue…) dont l'URL change sans recharger la page.
-- **Plusieurs applications** identiques ou presque, saisies à la main (nom + URL de base) : les
-  pages sont alignées par leur chemin relatif pour être comparées ligne à ligne.
+- **Des centaines d'applications** identiques ou presque, saisies à la main ou **collées en masse
+  depuis Excel** (nom + URL de base) : les pages sont alignées par leur chemin relatif pour être
+  comparées colonne par colonne.
 - **WiFi / Ethernet** : chaque mesure porte le réseau sélectionné dans le popup (rappelé sur
   l'icône : `WiFi` / `ETH`).
-- **Bouton « Extraire (Excel) »** : un fichier `.xlsx` avec le comparatif de toutes les applis,
-  une feuille par appli et toutes les mesures brutes.
+- **Bouton « Extraire (Excel) »** : un fichier `.xlsx` « une ligne par appli, une colonne par
+  page », avec volets figés, filtres et couleurs.
   - **Case rouge** : aucune mesure pour cette page (page inexistante dans l'appli ou pas encore
     mesurée sur ce réseau).
-  - **Case orange** : uniquement des mesures en timeout.
-- Rapport consultable dans le navigateur, choix de la statistique (moyenne, médiane, min, max,
-  dernière mesure), export CSV.
+  - **Case grise** : uniquement des mesures en timeout.
+  - **Dégradé blanc → orange** page par page : les applis les plus lentes sur une page ressortent.
+- Rapport dans le navigateur : vues WiFi + Ethernet / WiFi / Ethernet / Écart, tri en cliquant
+  sur une colonne, filtre par nom ou URL, « incomplètes seulement », détail d'une appli en un clic,
+  choix de la statistique (moyenne, médiane, min, max, dernière mesure), export CSV.
+- **Colonnes de pages réglables** : ordre, libellé lisible (« Fiche client » au lieu de
+  `/clients/:id`), pages masquées, pages « attendues ».
+- Popup : avancement de l'appli ouverte (pages mesurées / restantes sur le réseau courant).
 - Petit indicateur sur la page après chaque mesure : ![indicateur](docs/indicateur.png)
 - Sauvegarde / import JSON pour **fusionner les mesures de deux postes** (ex. un portable en WiFi,
   un fixe en Ethernet).
@@ -44,13 +53,41 @@ Compatible Chrome 111+ et navigateurs Chromium (Edge, Brave…).
 
 La page **Applications & réglages** s'ouvre à l'installation (ou via le popup).
 
-Pour chaque application : un **nom** et une ou plusieurs **URL de base** (une par ligne).
+Pour chaque application : un **nom** et une ou plusieurs **URL de base**.
 
 | Application | URL de base                         |
 | ----------- | ----------------------------------- |
 | Recette     | `https://recette.mondomaine.fr/`    |
 | Production  | `https://appli.mondomaine.fr/`      |
 | Client A    | `https://serveur.local/clientA/`    |
+
+### Import en masse (100 – 200 applications)
+
+Bouton **Import en masse** : collez directement deux colonnes copiées depuis Excel (nom, URL),
+ou chargez un fichier CSV. Une application par ligne :
+
+```
+Client A;https://clienta.mondomaine.fr/
+Client B;https://serveur/clientB/ | https://serveur-secours/clientB/
+https://serveur/clientC/
+```
+
+- séparateur `;`, tabulation (copier-coller Excel) ou `,` ;
+- plusieurs URL pour une même appli : séparez-les par `|` ;
+- une ligne avec seulement une URL crée une appli nommée d'après l'URL ;
+- une appli existante (même nom) reçoit simplement les nouvelles URL ;
+- l'aperçu indique les applis reconnues et les lignes en erreur avant l'import.
+
+**Exporter la liste** produit le même format (réimportable). La liste se filtre par nom ou URL et
+signale les URL déclarées par deux applis.
+
+![Applications](docs/options.png)
+
+### Pages (colonnes du rapport)
+
+Les pages sont détectées automatiquement. Dans la section **Pages** des réglages : ordre des
+colonnes (↑ ↓), libellé affiché en en-tête, pages masquées, et pages **attendues** (ajoutées à la
+main : elles apparaissent en rouge dans toutes les applis où elles n'ont pas encore été mesurées).
 
 La page est identifiée par son chemin **relatif** à l'URL de base : `https://serveur.local/clientA/Factures/42`
 et `https://appli.mondomaine.fr/factures/1337` deviennent toutes les deux `/factures/:id` et sont
@@ -70,20 +107,38 @@ appliqué aussi aux mesures existantes).
    refaites le parcours.
 5. Cliquez sur **Extraire (Excel)** dans le popup (ou dans le rapport).
 
+Le popup montre l'avancement de l'application ouverte : pages déjà mesurées en WiFi et en Ethernet,
+et la liste des pages qu'il reste à mesurer sur le réseau courant.
+
 ![Popup](docs/popup.png)
+
+### Le rapport
+
+- **Vues** : WiFi + Ethernet côte à côte, WiFi seul, Ethernet seul (une colonne par page, plus
+  compact), ou **Écart** WiFi − Ethernet (bleu : WiFi plus rapide, orange : WiFi plus lent).
+- **Couverture** : nombre de cases mesurées par appli, et globalement en haut de page.
+- **Tri** : cliquez sur un en-tête (une page, WiFi/Eth., Couverture, Application).
+- **Filtre** par nom ou URL, case « Incomplètes seulement » pour voir ce qu'il reste à mesurer.
+- **Détail** : cliquez sur une application pour ses pages, écarts et mesures (suppression possible).
+- Le nom de l'appli et les en-têtes restent visibles pendant le défilement.
+
+![Détail d'une application](docs/detail.png)
 
 ### Le fichier Excel
 
-| Feuille            | Contenu                                                                                     |
-| ------------------ | ------------------------------------------------------------------------------------------- |
-| **Comparatif**     | une ligne par page, deux colonnes (WiFi / Ethernet) par application                         |
-| **une par appli**  | WiFi, Ethernet, écart WiFi − Ethernet (ms et %), nombre de mesures                          |
-| **Mesures**        | toutes les mesures brutes (date, appli, page, réseau, durée, type, déclencheur, URL), filtrables |
+| Feuille                 | Contenu                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------ |
+| **Comparatif**          | une ligne par appli ; pour chaque page, deux colonnes WiFi / Ethernet ; couverture   |
+| **WiFi**, **Ethernet**  | une ligne par appli, une colonne par page (plus lisible)                             |
+| **Écart WiFi-Ethernet** | WiFi − Ethernet en ms (bleu / blanc / orange)                                         |
+| **Pages**               | libellé ↔ chemin, nombre d'applis mesurées et médiane par page                       |
+| **Mesures**             | toutes les mesures brutes (date, appli, page, réseau, durée, type, déclencheur, URL) |
 
-Les pages listées sont l'**union des pages de toutes les applications** : une page mesurée dans
-l'appli A mais absente de l'appli B apparaît en rouge pour B. Les valeurs sont en millisecondes, selon
-la statistique choisie dans le rapport (moyenne par défaut). Les mesures en timeout sont exclues des
-statistiques.
+Chaque tableau a ses en-têtes et la colonne « Application » figés, des filtres (tri par n'importe
+quelle page) et un dégradé de couleur par page. Les colonnes sont l'**union des pages de toutes
+les applications** : une page mesurée dans l'appli A mais absente de l'appli B apparaît en rouge
+pour B. Valeurs en millisecondes selon la statistique choisie dans le rapport ; les mesures en
+timeout sont exclues des statistiques.
 
 ## Comment le temps est mesuré
 
@@ -163,12 +218,13 @@ extension/
   lib/
     urls.js              rattachement URL → application, clé de page
     storage.js           stockage, sauvegarde / import
-    report.js            agrégation, feuilles Excel, CSV
+    apps.js              import en masse, export et contrôle de la liste d'applications
+    report.js            agrégation (applis × pages), feuilles Excel, CSV
     xlsx.js              générateur .xlsx sans dépendance (cases colorées)
     export.js, format.js
-  popup/                 popup (réseau, dernières mesures, Extraire)
-  options/               applications et réglages
-  report/                rapport détaillé
+  popup/                 popup (réseau, avancement de l'appli, Extraire)
+  options/               applications (import en masse), pages, réglages, données
+  report/                rapport applis × pages
 tests/
   unit/                  tests Node (node --test)
   e2e/e2e.mjs            test de bout en bout avec Chromium + Playwright
@@ -184,8 +240,9 @@ npm run zip            # crée insigth-extension.zip (dossier extension/)
 ```
 
 Le test de bout en bout lance deux applications de démonstration aux délais connus (serveur 300 ms /
-600 ms, appel de données 500 ms, SPA 400 ms) et vérifie que les temps mesurés correspondent ; les
-captures et l'Excel produit sont écrits dans `tests/e2e/out/`.
+600 ms, appel de données 500 ms, SPA 400 ms) et vérifie que les temps mesurés correspondent, puis
+l'import en masse, les libellés de pages et un jeu de démonstration de 150 applications × 20 pages
+(~9 000 mesures) ; les captures et les Excel produits sont écrits dans `tests/e2e/out/`.
 
 Après une modification du code de l'extension : `chrome://extensions` → bouton ↻ d'Insigth, puis
 rechargez les onglets des applications.

@@ -5,7 +5,9 @@
 // lisent sans problème.
 //
 // Feuille : { name, rows: [[cell]], cols: [largeurs], merges: ['A1:B1'],
-//             freeze: { rows, cols }, autoFilter: 'A1:F20' }
+//             freeze: { rows, cols }, autoFilter: 'A1:F20',
+//             heights: { numéroDeLigne: hauteur },
+//             scales: [{ ref: 'C6:D20', stops: [{ type: 'min' }, …], colors: ['FFFFFFFF', …] }] }
 // Cellule : null | string | number | { v, s } où s est un nom de STYLES.
 
 const enc = new TextEncoder();
@@ -15,12 +17,13 @@ export const STYLES = {
   header: 1, // en-tête gras, fond bleu-gris, centré
   num: 2, // nombre entier « 1 234 »
   missing: 3, // case ROUGE : aucune mesure
-  timeout: 4, // case orange : uniquement des mesures en timeout
+  timeout: 4, // case grise : uniquement des mesures en timeout
   text: 5, // texte avec bordure
   title: 6, // titre
   muted: 7, // note en italique gris
   headerLeft: 8, // en-tête aligné à gauche
   pct: 9, // pourcentage « 12% »
+  textBold: 10, // texte gras avec bordure (nom d'application)
 };
 
 const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -37,14 +40,14 @@ const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <fill><patternFill patternType="gray125"/></fill>
 <fill><patternFill patternType="solid"><fgColor rgb="FFD9E1F2"/><bgColor indexed="64"/></patternFill></fill>
 <fill><patternFill patternType="solid"><fgColor rgb="FFFF0000"/><bgColor indexed="64"/></patternFill></fill>
-<fill><patternFill patternType="solid"><fgColor rgb="FFFFC000"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFBFBFBF"/><bgColor indexed="64"/></patternFill></fill>
 </fills>
 <borders count="2">
 <border><left/><right/><top/><bottom/><diagonal/></border>
 <border><left style="thin"><color rgb="FFBFBFBF"/></left><right style="thin"><color rgb="FFBFBFBF"/></right><top style="thin"><color rgb="FFBFBFBF"/></top><bottom style="thin"><color rgb="FFBFBFBF"/></bottom><diagonal/></border>
 </borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="10">
+<cellXfs count="11">
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
 <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
 <xf numFmtId="3" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>
@@ -55,6 +58,7 @@ const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1"/>
 <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
 <xf numFmtId="9" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>
+<xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"/>
 </cellXfs>
 <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
@@ -65,7 +69,7 @@ const NS_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationsh
 
 function esc(value) {
   return String(value)
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g, '')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -96,7 +100,7 @@ function cellXml(ref, cell) {
 }
 
 function sheetXml(sheet) {
-  const { rows = [], cols = [], merges = [], freeze, autoFilter } = sheet;
+  const { rows = [], cols = [], merges = [], freeze, autoFilter, heights = {}, scales = [] } = sheet;
 
   let view = '<sheetView workbookViewId="0"/>';
   const ys = (freeze && freeze.rows) || 0;
@@ -118,7 +122,8 @@ function sheetXml(sheet) {
   const rowsXml = rows
     .map((row, r) => {
       const cells = (row || []).map((cell, c) => cellXml(colName(c) + (r + 1), cell)).join('');
-      return `<row r="${r + 1}">${cells}</row>`;
+      const ht = heights[r + 1] ? ` ht="${heights[r + 1]}" customHeight="1"` : '';
+      return `<row r="${r + 1}"${ht}>${cells}</row>`;
     })
     .join('');
 
@@ -133,8 +138,21 @@ function sheetXml(sheet) {
     (merges.length
       ? `<mergeCells count="${merges.length}">${merges.map((m) => `<mergeCell ref="${m}"/>`).join('')}</mergeCells>`
       : '') +
+    scales.map(scaleXml).join('') +
     '<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>' +
     '</worksheet>'
+  );
+}
+
+/** Échelle de couleurs (mise en forme conditionnelle) : ne s'applique qu'aux nombres. */
+function scaleXml(scale, i) {
+  const stops = scale.stops
+    .map((st) => `<cfvo type="${st.type}"${st.val !== undefined ? ` val="${st.val}"` : ''}/>`)
+    .join('');
+  const colors = scale.colors.map((c) => `<color rgb="${c}"/>`).join('');
+  return (
+    `<conditionalFormatting sqref="${scale.ref}"><cfRule type="colorScale" priority="${i + 1}">` +
+    `<colorScale>${stops}${colors}</colorScale></cfRule></conditionalFormatting>`
   );
 }
 

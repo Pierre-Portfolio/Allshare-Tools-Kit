@@ -225,14 +225,20 @@ try {
   await page.goto(`${base}/appli1/clients`);
   list = await waitMeasures(8);
 
-  // 5. Rapport : cases rouges + export Excel
+  // 5. Rapport : une ligne par application, cases rouges, tri, détail, export Excel
   const report = await context.newPage();
+  await report.setViewportSize({ width: 1440, height: 900 });
   await report.goto(`chrome-extension://${extId}/report/report.html`);
-  await report.waitForSelector('#compare table');
-  const missing = await report.locator('#compare td.missing').count();
-  console.log(`  Rapport : ${missing} case(s) rouge(s) dans le comparatif`);
+  await report.waitForSelector('#matrix table');
+  assert.equal(await report.locator('#matrix tbody tr').count(), 2, 'une ligne par application');
+  const missing = await report.locator('#matrix td.missing').count();
+  console.log(`  Rapport : ${missing} case(s) rouge(s) dans la matrice`);
   assert.ok(missing > 0);
-  await report.screenshot({ path: join(out, 'rapport.png'), fullPage: true });
+  await report.click('#matrix thead tr.h2 th >> nth=0');
+  assert.equal(await report.getAttribute('#matrix thead tr.h2 th >> nth=0', 'aria-sort'), 'ascending');
+  await report.click('#matrix .app-link >> nth=0');
+  await report.waitForSelector('#detail[open] .dlg-body table');
+  await report.click('#detail [data-close]');
 
   const [download] = await Promise.all([report.waitForEvent('download'), report.click('#xlsx')]);
   const xlsxPath = join(out, 'export.xlsx');
@@ -240,16 +246,10 @@ try {
   assert.ok(existsSync(xlsxPath));
   console.log('  Export Excel :', xlsxPath);
 
-  const popup = await context.newPage();
-  await popup.setViewportSize({ width: 390, height: 640 });
-  await popup.goto(`chrome-extension://${extId}/popup/popup.html`);
-  await popup.waitForSelector('#last li .value');
-  await popup.screenshot({ path: join(out, 'popup.png') });
-
   const options = await context.newPage();
+  await options.setViewportSize({ width: 1280, height: 900 });
   await options.goto(`chrome-extension://${extId}/options/options.html`);
-  await options.waitForSelector('.app .name');
-  await options.screenshot({ path: join(out, 'options.png'), fullPage: true });
+  await options.waitForSelector('#appRows tr');
 
   // 6. Sauvegarde JSON puis réimport (fusion sans doublon, appli reconnue par son nom)
   const restored = await options.evaluate(async () => {
@@ -270,6 +270,146 @@ try {
   assert.deepEqual(restored.again, { added: 0, skipped: 8 });
   assert.equal(restored.apps, 2);
   assert.deepEqual(restored.appIds, ['app1', 'app2']);
+
+  // 7. Import en masse depuis l'interface (copier-coller de deux colonnes Excel)
+  await options.reload();
+  await options.click('#bulkBtn');
+  await options.fill(
+    '#bulkText',
+    `Nom\tURL\nAppli 1\t${base}/appli1bis/\nAppli 3\thttps://appli3.exemple.fr/\nhttps://appli4.exemple.fr/\nAppli 5\tpas-une-url`,
+  );
+  const preview = await options.textContent('#bulkPreview');
+  console.log('  Import en masse :', preview);
+  assert.match(preview, /3 application\(s\) reconnue\(s\) : 2 nouvelle\(s\), 1 existante\(s\)/);
+  assert.match(preview, /1 ligne\(s\) en erreur/);
+  await options.click('#bulkGo');
+  await options.waitForFunction(() => document.querySelectorAll('#appRows tr').length === 4);
+  const appsAfter = await storage(async () => (await chrome.storage.local.get('apps')).apps);
+  assert.equal(appsAfter.length, 4);
+  assert.deepEqual(appsAfter.find((a) => a.name === 'Appli 1').baseUrls, [`${base}/appli1/`, `${base}/appli1bis/`]);
+  await options.fill('#appSearch', 'appli4');
+  assert.equal(await options.locator('#appRows tr').count(), 1, 'la recherche filtre les applications');
+  await options.fill('#appSearch', '');
+
+  // 8. Libellé de page (en-tête de colonne) depuis l'interface
+  const labelInput = options.locator('#pageRows input.label-input[placeholder="/clients"]');
+  await labelInput.fill('Clients');
+  await labelInput.press('Tab');
+  await options.waitForFunction(async () => {
+    const { pages = [] } = await chrome.storage.local.get('pages');
+    return pages.some((p) => p.key === '/clients' && p.label === 'Clients');
+  });
+  console.log('  Libellé de page enregistré');
+
+  // 9. Démo à l'échelle : 150 applications × 20 pages (captures pour le README)
+  const demo = await storage(async () => {
+    const PAGES = [
+      ['/', 'Accueil'],
+      ['/clients', 'Clients'],
+      ['/clients/:id', 'Fiche client'],
+      ['/factures', 'Factures'],
+      ['/factures/:id', 'Facture'],
+      ['/commandes', 'Commandes'],
+      ['/commandes/:id', 'Commande'],
+      ['/produits', 'Produits'],
+      ['/stocks', 'Stocks'],
+      ['/fournisseurs', 'Fournisseurs'],
+      ['/reporting', 'Reporting'],
+      ['/reporting/ventes', 'Ventes'],
+      ['/tableau-de-bord', 'Tableau de bord'],
+      ['/utilisateurs', 'Utilisateurs'],
+      ['/parametres', 'Paramètres'],
+      ['/recherche', 'Recherche'],
+      ['/exports', 'Exports'],
+      ['/planning', 'Planning'],
+      ['/contrats', 'Contrats'],
+      ['/devis', 'Devis'],
+    ];
+    let seed = 42;
+    const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    await chrome.storage.local.clear();
+    const apps = [];
+    const items = {};
+    let id = 0;
+    for (let i = 1; i <= 150; i++) {
+      const n = String(i).padStart(3, '0');
+      const app = { id: `demo${n}`, name: `Client ${n}`, baseUrls: [`https://client${n}.exemple.fr/`] };
+      apps.push(app);
+      const appFactor = 0.7 + rnd() * 1.1;
+      PAGES.forEach(([key], p) => {
+        const base = 250 + ((p * 7919) % 20) * 180;
+        for (const network of ['wifi', 'ethernet']) {
+          if (rnd() > (network === 'wifi' ? 0.9 : 0.62)) continue;
+          const count = 1 + Math.floor(rnd() * 3);
+          for (let k = 0; k < count; k++) {
+            const timeout = rnd() < 0.006;
+            const duration = Math.round(
+              base * appFactor * (network === 'wifi' ? 1.15 + rnd() * 0.35 : 1) * (0.9 + rnd() * 0.2),
+            );
+            const m = {
+              id: `d${++id}`,
+              ts: Date.now() - Math.floor(rnd() * 7 * 864e5),
+              appId: app.id,
+              url: `https://client${n}.exemple.fr${key.replace(':id', String(100 + k))}`,
+              page: key,
+              network,
+              duration: timeout ? 120000 : duration,
+              kind: 'load',
+              trigger: 'click',
+              timeout,
+            };
+            items['m_' + m.id] = m;
+          }
+        }
+      });
+    }
+    await chrome.storage.local.set({
+      apps,
+      pages: PAGES.map(([key, label]) => ({ key, label, hidden: false })),
+      settings: { network: 'wifi', recording: true, stat: 'median', reportView: 'both' },
+      ...items,
+    });
+    return { apps: apps.length, measures: id };
+  });
+  console.log(`  Démo : ${demo.apps} applications, ${demo.measures} mesures`);
+
+  const t0 = Date.now();
+  await report.reload();
+  await report.waitForSelector('#matrix tbody tr >> nth=149');
+  console.log(`  Rapport 150 × 20 affiché en ${Date.now() - t0} ms`);
+  assert.equal(await report.locator('#matrix tbody tr').count(), 150);
+  await report.screenshot({ path: join(out, 'rapport.png') });
+  await report.click('[data-view="wifi"]');
+  await report.waitForFunction(() => !document.querySelector('#matrix thead tr.h2'));
+  await report.screenshot({ path: join(out, 'rapport-wifi.png') });
+  await report.click('[data-view="both"]');
+  await report.fill('#search', 'Client 04');
+  await report.waitForFunction(() => document.querySelectorAll('#matrix tbody tr').length === 10);
+  await report.click('#matrix .app-link >> nth=2');
+  await report.waitForSelector('#detail[open] .dlg-body table');
+  await report.screenshot({ path: join(out, 'detail.png') });
+  await report.click('#detail [data-close]');
+
+  const [bigDownload] = await Promise.all([report.waitForEvent('download'), report.click('#xlsx')]);
+  await bigDownload.saveAs(join(out, 'export-demo.xlsx'));
+  console.log('  Export Excel démo :', join(out, 'export-demo.xlsx'));
+
+  // Popup ouvert sur une page d'une application (l'onglet actif est simulé pour la capture)
+  const popup = await context.newPage();
+  await popup.setViewportSize({ width: 390, height: 600 });
+  await popup.addInitScript(() => {
+    chrome.tabs.query = async () => [{ url: 'https://client042.exemple.fr/factures/7' }];
+  });
+  await popup.goto(`chrome-extension://${extId}/popup/popup.html`);
+  await popup.waitForSelector('#tabInfo .progress');
+  assert.equal(await popup.locator('#tabInfo .progress').count(), 2);
+  await popup.screenshot({ path: join(out, 'popup.png') });
+
+  await options.reload();
+  await options.waitForSelector('#appRows tr >> nth=149');
+  await options.screenshot({ path: join(out, 'options.png') });
+  await options.locator('#pages').scrollIntoViewIfNeeded();
+  await options.screenshot({ path: join(out, 'options-pages.png') });
 
   console.log('\nOK : test de bout en bout réussi');
 } catch (e) {

@@ -9,41 +9,43 @@
   </head>
   <body>
     <header class="bar">
-      <img src="../icons/icon48.png" alt="" width="28" height="28" />
-      <h1>Rapport des temps de réponse</h1>
-      <label class="stat">
-        Statistique
-        <select id="stat"></select>
-      </label>
-      <button id="xlsx" class="primary">Extraire (Excel)</button>
-      <button id="csv">CSV</button>
-      <a id="settings" href="../options/options.html">Réglages</a>
+      <img src="../icons/icon48.png" alt="" width="26" height="26" />
+      <h1>Temps de réponse par application</h1>
+      <div class="bar-actions">
+        <button id="xlsx" class="primary">Extraire (Excel)</button>
+        <button id="csv">CSV</button>
+        <a href="../options/options.html">Réglages</a>
+      </div>
     </header>
 
     <main>
-      <p id="summary" class="summary muted"></p>
-      <p class="legends">
-        <span class="legend"
-          ><span class="swatch missing"></span> Aucune mesure (page inexistante ou non mesurée sur ce réseau)</span
-        >
-        <span class="legend"><span class="swatch timeout"></span> Uniquement des mesures en timeout</span>
-        <span class="muted">Valeurs en millisecondes, du clic à l'affichage complet.</span>
+      <section id="kpis" class="kpis" aria-label="Synthèse"></section>
+
+      <div class="toolbar">
+        <div class="segmented" role="radiogroup" aria-label="Vue" id="views">
+          <button type="button" role="radio" data-view="both">WiFi + Ethernet</button>
+          <button type="button" role="radio" data-view="wifi">WiFi</button>
+          <button type="button" role="radio" data-view="ethernet">Ethernet</button>
+          <button type="button" role="radio" data-view="diff">Écart</button>
+        </div>
+        <input id="search" type="search" placeholder="Filtrer les applications (nom ou URL)…" aria-label="Filtrer" />
+        <label class="check"><input id="incomplete" type="checkbox" /> Incomplètes seulement</label>
+        <label class="stat"
+          >Statistique
+          <select id="stat"></select
+        ></label>
+      </div>
+
+      <div id="legend" class="legend-row"></div>
+      <div id="matrix" class="matrix-wrap" tabindex="0"></div>
+      <p class="hint muted">
+        Cliquez sur un en-tête pour trier, sur une application pour son détail.
+        <a href="../options/options.html#pages">Ordre, libellés et pages masquées</a>
       </p>
 
-      <section>
-        <h2>Comparatif par page</h2>
-        <div id="compare"></div>
-      </section>
-
-      <section>
-        <h2>Détail par application</h2>
-        <div id="perApp" class="per-app"></div>
-      </section>
-
-      <section>
+      <section class="raw">
         <div class="section-head">
-          <h2>Mesures enregistrées</h2>
-          <select id="filterApp" aria-label="Filtrer par application"></select>
+          <h2>Dernières mesures</h2>
           <select id="filterNet" aria-label="Filtrer par réseau">
             <option value="">Tous les réseaux</option>
             <option value="wifi">WiFi</option>
@@ -52,8 +54,11 @@
           <span id="rawCount" class="muted"></span>
         </div>
         <div id="raw"></div>
+        <button id="more" type="button" hidden>Afficher plus</button>
       </section>
     </main>
+
+    <dialog id="detail" aria-labelledby="detailTitle"></dialog>
     <div id="toast" class="toast" role="status"></div>
     <script type="module" src="report.js"></script>
   </body>

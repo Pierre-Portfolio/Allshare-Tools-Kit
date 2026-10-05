@@ -2,6 +2,7 @@
 //
 //  - "apps"      : [{ id, name, baseUrls: [string] }]
 //  - "settings"  : réglages (voir DEFAULT_SETTINGS)
+//  - "pages"     : colonnes du rapport [{ key, label, hidden }] dans l'ordre voulu
 //  - "m_<id>"    : une mesure par clé (évite les conflits d'écriture entre onglets)
 
 export const DEFAULT_SETTINGS = {
@@ -15,6 +16,7 @@ export const DEFAULT_SETTINGS = {
   showOverlay: true, // petit indicateur de mesure en bas à droite de la page
   ignoreSelectors: '', // sélecteurs CSS dont les modifications sont ignorées (horloge, carrousel…)
   stat: 'avg', // statistique affichée dans le rapport / l'export
+  reportView: 'both', // vue du rapport : 'both' | 'wifi' | 'ethernet' | 'diff'
 };
 
 const MEASURE_PREFIX = 'm_';
@@ -24,8 +26,8 @@ export function newId() {
 }
 
 export async function getConfig() {
-  const { apps = [], settings = {} } = await chrome.storage.local.get(['apps', 'settings']);
-  return { apps, settings: { ...DEFAULT_SETTINGS, ...settings } };
+  const { apps = [], settings = {}, pages = [] } = await chrome.storage.local.get(['apps', 'settings', 'pages']);
+  return { apps, pages, settings: { ...DEFAULT_SETTINGS, ...settings } };
 }
 
 export async function saveSettings(patch) {
@@ -37,6 +39,10 @@ export async function saveSettings(patch) {
 
 export function saveApps(apps) {
   return chrome.storage.local.set({ apps });
+}
+
+export function savePages(pages) {
+  return chrome.storage.local.set({ pages });
 }
 
 export async function getMeasures() {
@@ -63,12 +69,13 @@ export function isMeasureKey(key) {
 // mesures Ethernet sur un PC fixe).
 
 export async function exportBackup() {
-  const { apps } = await getConfig();
+  const { apps, pages } = await getConfig();
   return {
     format: 'insigth-backup',
     version: 1,
     exportedAt: new Date().toISOString(),
     apps,
+    pages,
     measures: await getMeasures(),
   };
 }
@@ -77,7 +84,11 @@ export async function importBackup(data) {
   if (!data || data.format !== 'insigth-backup' || !Array.isArray(data.measures)) {
     throw new Error("Ce fichier n'est pas une sauvegarde Insigth.");
   }
-  const { apps } = await getConfig();
+  const { apps, pages } = await getConfig();
+  const nextPages = [...pages];
+  for (const p of Array.isArray(data.pages) ? data.pages : []) {
+    if (p && p.key && !nextPages.some((x) => x.key === p.key)) nextPages.push(p);
+  }
   const nextApps = apps.map((a) => ({ ...a, baseUrls: [...(a.baseUrls || [])] }));
   const idMap = new Map();
   for (const a of Array.isArray(data.apps) ? data.apps : []) {
@@ -101,6 +112,6 @@ export async function importBackup(data) {
     existing.add(m.id);
     added++;
   }
-  await chrome.storage.local.set({ apps: nextApps, ...toSet });
+  await chrome.storage.local.set({ apps: nextApps, pages: nextPages, ...toSet });
   return { added, skipped: data.measures.length - added };
 }

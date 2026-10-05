@@ -8,36 +8,89 @@
     <link rel="stylesheet" href="options.css" />
   </head>
   <body>
-    <main>
-      <header class="page-head">
-        <img src="../icons/icon48.png" alt="" width="32" height="32" />
-        <div>
-          <h1>Insigth · Applications &amp; réglages</h1>
-          <p class="muted">Temps de réponse entre le clic et l'affichage complet de chaque page.</p>
-        </div>
-        <a class="report-link" href="../report/report.html">Voir le rapport →</a>
-      </header>
+    <header class="page-head">
+      <img src="../icons/icon48.png" alt="" width="30" height="30" />
+      <div>
+        <h1>Insigth · Applications &amp; réglages</h1>
+        <p class="muted">Temps de réponse entre le clic et l'affichage complet de chaque page.</p>
+      </div>
+      <a class="report-link" href="../report/report.html">Voir le rapport →</a>
+    </header>
+    <nav class="tabs" aria-label="Sections">
+      <a href="#apps">Applications <span id="navApps" class="pill"></span></a>
+      <a href="#pages">Pages <span id="navPages" class="pill"></span></a>
+      <a href="#mesure">Mesure</a>
+      <a href="#donnees">Données</a>
+    </nav>
 
-      <section class="card">
-        <h2>Applications suivies</h2>
-        <p class="muted">
-          Une application = un nom + une ou plusieurs URL de base. Les pages sont identifiées par leur chemin
-          <em>relatif</em> à l'URL de base : avec <code>https://srv/appli1/</code> et <code>https://srv/appli2/</code>,
-          les pages <code>/appli1/clients</code> et <code>/appli2/clients</code> sont comparées sur la même ligne
-          <code>/clients</code>.
-        </p>
-        <div id="apps"></div>
-        <div class="row-actions">
-          <button id="addApp" type="button">+ Ajouter une application</button>
-          <button id="saveApps" type="button" class="primary">Enregistrer les applications</button>
-          <span id="appsStatus" class="status" role="status"></span>
+    <main>
+      <section id="apps" class="card">
+        <div class="section-head">
+          <h2>Applications</h2>
+          <input
+            id="appSearch"
+            type="search"
+            placeholder="Rechercher (nom ou URL)…"
+            aria-label="Rechercher une application"
+          />
+          <button id="addApp" type="button">+ Ajouter</button>
+          <button id="bulkBtn" type="button" class="primary">Import en masse</button>
+          <button id="exportApps" type="button">Exporter la liste</button>
         </div>
         <p class="muted small">
-          Après un ajout ou une modification, rechargez les onglets déjà ouverts sur ces applications.
+          Une application = un nom + une ou plusieurs URL de base. Les pages sont identifiées par leur chemin
+          <em>relatif</em> à l'URL de base : <code>https://srv/client1/factures</code> et
+          <code>https://srv/client2/factures</code> tombent dans la même colonne <code>/factures</code>. Après un ajout,
+          rechargez les onglets déjà ouverts sur ces applications.
+        </p>
+        <div class="table-wrap apps-wrap">
+          <table class="grid apps-table">
+            <thead>
+              <tr>
+                <th class="left">Nom</th>
+                <th class="left">URL(s) de base</th>
+                <th>Mesures</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="appRows"></tbody>
+          </table>
+        </div>
+        <p id="appEmpty" class="muted small" hidden></p>
+      </section>
+
+      <section id="pages" class="card">
+        <div class="section-head">
+          <h2>Pages · colonnes du rapport</h2>
+          <button id="addPage" type="button">+ Page attendue</button>
+          <button id="resetPages" type="button">Réinitialiser</button>
+        </div>
+        <p class="muted small">
+          Les pages sont détectées automatiquement à partir des mesures. Réglez ici l'ordre des colonnes, un libellé
+          lisible (ex. « Fiche client » pour <code>/clients/:id</code>) et masquez les pages sans intérêt. Une page «
+          attendue » apparaît en rouge dans toutes les applications où elle n'a pas encore été mesurée.
+        </p>
+        <div class="table-wrap">
+          <table class="grid pages-table">
+            <thead>
+              <tr>
+                <th>Ordre</th>
+                <th class="left">Libellé (en-tête de colonne)</th>
+                <th class="left">Chemin</th>
+                <th>Mesures</th>
+                <th>Affichée</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="pageRows"></tbody>
+          </table>
+        </div>
+        <p id="pageEmpty" class="muted small" hidden>
+          Aucune page pour le moment : elles apparaîtront après les premières mesures.
         </p>
       </section>
 
-      <section class="card">
+      <section id="mesure" class="card">
         <h2>Mesure</h2>
         <div class="form-grid">
           <label for="quietMs">Calme requis pour « affichage complet »</label>
@@ -49,7 +102,7 @@
 
           <label for="maxWaitS">Durée maximale d'une mesure</label>
           <div><input id="maxWaitS" type="number" min="10" max="900" step="10" /> s</div>
-          <p class="muted small help">Au-delà, la mesure est enregistrée comme « timeout » (case orange).</p>
+          <p class="muted small help">Au-delà, la mesure est enregistrée comme « timeout » (case grise).</p>
 
           <label for="ignoreSelectors">Zones à ignorer (sélecteurs CSS)</label>
           <div><input id="ignoreSelectors" type="text" placeholder="#horloge, .carousel" /></div>
@@ -57,22 +110,22 @@
 
           <label for="showOverlay">Indicateur sur la page</label>
           <div>
-            <input id="showOverlay" type="checkbox" /> afficher « ✓ 1 234 ms » en bas à droite après chaque mesure
+            <label
+              ><input id="showOverlay" type="checkbox" /> afficher « ✓ 1 234 ms » en bas à droite après chaque
+              mesure</label
+            >
           </div>
         </div>
-      </section>
-
-      <section class="card">
-        <h2>Identification des pages</h2>
+        <h3>Identification des pages</h3>
         <div class="checks">
           <label
             ><input id="ignoreQuery" type="checkbox" /> Ignorer les paramètres d'URL
             (<code>?id=3&amp;tri=nom</code>)</label
           >
-          <label
-            ><input id="replaceIds" type="checkbox" /> Regrouper les identifiants (<code>/clients/42</code> →
-            <code>/clients/:id</code>)</label
-          >
+          <label>
+            <input id="replaceIds" type="checkbox" /> Regrouper les identifiants (<code>/clients/42</code> →
+            <code>/clients/:id</code>)
+          </label>
           <label
             ><input id="caseInsensitive" type="checkbox" /> Ignorer la casse (<code>/Clients</code> =
             <code>/clients</code>)</label
@@ -81,7 +134,7 @@
         <p class="muted small">Ces réglages s'appliquent aussi aux mesures déjà enregistrées.</p>
       </section>
 
-      <section class="card">
+      <section id="donnees" class="card">
         <h2>Données</h2>
         <p id="dataSummary" class="muted"></p>
         <div class="row-actions">
@@ -94,29 +147,41 @@
         </div>
         <p class="muted small">
           Astuce : mesurez en WiFi sur un poste et en Ethernet sur un autre, puis importez la sauvegarde de l'un dans
-          l'autre pour obtenir un rapport complet.
+          l'autre pour obtenir un rapport complet (applications reconnues par leur nom, doublons ignorés).
         </p>
       </section>
     </main>
-    <div id="toast" class="toast" role="status"></div>
 
-    <template id="appTpl">
-      <div class="app">
-        <div class="app-head">
-          <input
-            class="name"
-            type="text"
-            placeholder="Nom de l'application (ex. Recette, Production…)"
-            aria-label="Nom"
-          />
-          <button type="button" class="danger remove">Supprimer</button>
+    <dialog id="bulk" aria-labelledby="bulkTitle">
+      <form method="dialog" class="bulk-form">
+        <h2 id="bulkTitle">Import en masse</h2>
+        <p class="muted small">
+          Une application par ligne : <code>Nom;URL</code>. Copiez-collez directement deux colonnes depuis Excel (nom,
+          URL). Plusieurs URL pour une même appli : séparez-les par <code>|</code>. Une ligne avec seulement une URL
+          crée une appli nommée d'après l'URL. Une appli existante (même nom) reçoit les nouvelles URL.
+        </p>
+        <textarea
+          id="bulkText"
+          rows="12"
+          spellcheck="false"
+          placeholder="Client A;https://clienta.mondomaine.fr/&#10;Client B;https://serveur/clientB/&#10;https://serveur/clientC/"
+        ></textarea>
+        <div class="row-actions">
+          <label class="button-like">
+            Charger un fichier CSV
+            <input id="bulkFile" type="file" accept=".csv,.txt,text/csv,text/plain" hidden />
+          </label>
+          <span id="bulkPreview" class="small muted" role="status"></span>
         </div>
-        <label class="small muted">URL(s) de base — une par ligne</label>
-        <textarea class="urls" rows="2" placeholder="https://appli1.mondomaine.fr/"></textarea>
-        <p class="error small"></p>
-      </div>
-    </template>
+        <ul id="bulkErrors" class="bulk-errors small"></ul>
+        <div class="dialog-actions">
+          <button value="cancel" type="submit">Annuler</button>
+          <button id="bulkGo" class="primary" type="button" disabled>Importer</button>
+        </div>
+      </form>
+    </dialog>
 
+    <div id="toast" class="toast" role="status"></div>
     <script type="module" src="options.js"></script>
   </body>
 </html>
