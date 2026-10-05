@@ -1,0 +1,4 @@
+node_modules/
+*.zip
+tests/e2e/out/
+.DS_Store

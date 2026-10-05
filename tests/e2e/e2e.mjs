@@ -1,0 +1,283 @@
+// Test de bout en bout : charge l'extension dans Chromium (Playwright), sert deux
+// applications de démonstration avec des délais connus, navigue, puis vérifie
+// les mesures, le rapport (cases rouges) et l'export Excel.
+//
+//   npm install && npm run test:e2e
+//
+// Les captures et le fichier Excel produit sont écrits dans tests/e2e/out/.
+
+import { createRequire } from 'node:module';
+import http from 'node:http';
+import { mkdirSync, rmSync, mkdtempSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import assert from 'node:assert/strict';
+
+const require = createRequire(import.meta.url);
+const { chromium } = require('playwright');
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const extensionPath = join(root, 'extension');
+const out = join(root, 'tests', 'e2e', 'out');
+mkdirSync(out, { recursive: true });
+
+// ---------- Applications de démonstration
+const SERVER_DELAY = { appli1: 300, appli2: 600 }; // temps de réponse du serveur (SQL simulé)
+const API_DELAY = 500; // appel de données après chargement
+const SPA_API_DELAY = 400;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function mpaPage(app, path) {
+  const nav = ['', 'clients', 'clients/42', 'factures']
+    .map((p) => `<a id="nav-${p.replace('/', '-') || 'home'}" href="/${app}/${p}">${p || 'accueil'}</a>`)
+    .join(' | ');
+  // appli1 charge ses données avec fetch(), appli2 avec XMLHttpRequest.
+  const load =
+    app === 'appli1'
+      ? `fetch('/api/data?delay=${API_DELAY}').then(r => r.json()).then(show);`
+      : `const x = new XMLHttpRequest(); x.open('GET', '/api/data?delay=${API_DELAY}'); x.onload = () => show(JSON.parse(x.responseText)); x.send();`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${app} ${path}</title></head><body>
+<nav>${nav}</nav><main id="main">Chargement…</main>
+<script>
+function show(d) { const t = document.createElement('table'); for (let i = 0; i < d.rows; i++) t.insertRow().insertCell().textContent = 'ligne ' + i; main.replaceChildren(t); }
+${load}
+</script></body></html>`;
+}
+
+function spaPage() {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>SPA</title></head><body>
+<nav><a id="spa-factures" data-spa href="/appli1/spa/factures">Factures</a> | <a id="spa-clients" data-spa href="/appli1/spa/clients">Clients</a></nav>
+<button id="noop">Bouton sans navigation</button><main id="main"></main>
+<script>
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('a[data-spa]');
+  if (!a) return;
+  e.preventDefault();
+  history.pushState({}, '', a.href);
+  render();
+});
+noop.onclick = () => main.classList.toggle('x');
+function render() {
+  main.textContent = 'Chargement…';
+  fetch('/api/data?delay=${SPA_API_DELAY}').then(r => r.json()).then(d => { main.textContent = location.pathname + ' : ' + d.rows + ' lignes'; });
+}
+render();
+</script></body></html>`;
+}
+
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, 'http://localhost');
+  if (url.pathname === '/sso') {
+    // page hors application (autre origine), qui renvoie vers l'appli après 1,5 s
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    return res.end(
+      `<!doctype html><p>Connexion…</p><script>setTimeout(() => location.href = ${JSON.stringify(url.searchParams.get('next'))}, 1500)</script>`,
+    );
+  }
+  if (url.pathname === '/api/data') {
+    await sleep(Number(url.searchParams.get('delay')) || 0);
+    res.writeHead(200, { 'content-type': 'application/json' });
+    return res.end(JSON.stringify({ rows: 50 }));
+  }
+  const [, app, ...rest] = url.pathname.split('/');
+  if (!SERVER_DELAY[app]) {
+    res.writeHead(404);
+    return res.end('introuvable');
+  }
+  await sleep(SERVER_DELAY[app]);
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+  res.end(rest[0] === 'spa' ? spaPage() : mpaPage(app, rest.join('/')));
+});
+await new Promise((r) => server.listen(0, '127.0.0.1', r));
+const base = `http://127.0.0.1:${server.address().port}`;
+
+// ---------- Navigateur avec l'extension
+const userDataDir = mkdtempSync(join(tmpdir(), 'insigth-e2e-'));
+const context = await chromium.launchPersistentContext(userDataDir, {
+  channel: 'chromium',
+  headless: process.env.HEADED ? false : true,
+  ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}),
+  args: [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`],
+  viewport: { width: 1360, height: 900 },
+});
+
+let failed = false;
+try {
+  let [sw] = context.serviceWorkers();
+  if (!sw) sw = await context.waitForEvent('serviceworker');
+  const extId = new URL(sw.url()).host;
+  console.log('Extension chargée :', extId);
+  // Les API chrome.* sont attachées au service worker juste après son démarrage.
+  for (let i = 0; i < 50 && !(await sw.evaluate(() => !!(globalThis.chrome && chrome.storage))); i++) await sleep(100);
+
+  const storage = (fn, arg) => sw.evaluate(fn, arg);
+  const measures = () =>
+    storage(async () => {
+      const all = await chrome.storage.local.get(null);
+      return Object.keys(all)
+        .filter((k) => k.startsWith('m_'))
+        .map((k) => all[k])
+        .sort((a, b) => a.ts - b.ts);
+    });
+  async function waitMeasures(count, timeout = 15000) {
+    const end = Date.now() + timeout;
+    for (;;) {
+      const list = await measures();
+      if (list.length >= count) return list;
+      if (Date.now() > end) throw new Error(`attendu ${count} mesure(s), obtenu ${list.length}`);
+      await sleep(200);
+    }
+  }
+
+  // Configuration : deux applications quasi identiques
+  await storage(async (b) => {
+    await chrome.storage.local.set({
+      apps: [
+        { id: 'app1', name: 'Appli 1', baseUrls: [`${b}/appli1/`] },
+        { id: 'app2', name: 'Appli 2', baseUrls: [`${b}/appli2/`] },
+      ],
+    });
+  }, base);
+  for (let i = 0; i < 50; i++) {
+    const n = await storage(() => chrome.scripting.getRegisteredContentScripts().then((s) => s.length));
+    if (n === 2) break;
+    await sleep(100);
+  }
+  for (const p of context.pages()) if (p.url().startsWith('chrome-extension://')) await p.close();
+
+  const page = await context.newPage();
+  const expectRange = (m, min, max, label) => {
+    console.log(
+      `  ${label.padEnd(42)} ${String(m.duration).padStart(5)} ms  [${m.network}/${m.kind}/${m.trigger}] ${m.page}`,
+    );
+    assert.ok(m.duration >= min && m.duration <= max, `${label} : ${m.duration} ms hors de [${min}, ${max}]`);
+  };
+
+  // 1. Chargement initial (URL saisie) : départ = début de navigation
+  await page.goto(`${base}/appli1/`);
+  let list = await waitMeasures(1);
+  expectRange(list[0], SERVER_DELAY.appli1 + API_DELAY, 3000, 'WiFi · appli1 / (URL saisie)');
+  assert.equal(list[0].trigger, 'navigate');
+  assert.equal(list[0].page, '/');
+
+  // 2. Clic sur un lien -> nouvelle page HTML : départ = clic sur la page précédente
+  await page.click('#nav-clients');
+  list = await waitMeasures(2);
+  expectRange(list[1], SERVER_DELAY.appli1 + API_DELAY, 3000, 'WiFi · appli1 /clients (clic)');
+  assert.equal(list[1].trigger, 'click');
+  assert.equal(list[1].kind, 'load');
+  assert.equal(list[1].page, '/clients');
+  assert.equal(await page.locator('insigth-indicator').count(), 1, "l'indicateur est affiché");
+  await page.screenshot({ path: join(out, 'indicateur.png'), clip: { x: 760, y: 780, width: 600, height: 120 } });
+
+  await page.click('#nav-clients-42');
+  list = await waitMeasures(3);
+  expectRange(list[2], SERVER_DELAY.appli1 + API_DELAY, 3000, 'WiFi · appli1 /clients/42 (clic)');
+  assert.equal(list[2].page, '/clients/:id');
+
+  // 2 bis. Clic vers une page hors application (SSO) qui revient sur l'appli :
+  // le clic ne doit pas servir de départ (sinon le temps passé sur le SSO serait compté).
+  const ssoHost = base.replace('127.0.0.1', 'localhost');
+  await page.evaluate(
+    (href) => {
+      const a = document.createElement('a');
+      a.id = 'sso';
+      a.href = href;
+      a.textContent = 'SSO';
+      document.body.append(a);
+    },
+    `${ssoHost}/sso?next=${encodeURIComponent(`${base}/appli1/clients`)}`,
+  );
+  await sleep(1200);
+  await page.click('#sso');
+  list = await waitMeasures(4);
+  expectRange(list[3], SERVER_DELAY.appli1 + API_DELAY, 1450, 'WiFi · appli1 /clients (retour du SSO)');
+  assert.equal(list[3].trigger, 'navigate');
+  await storage(async (id) => chrome.storage.local.remove('m_' + id), list[3].id);
+  list = await waitMeasures(3);
+
+  // 3. SPA : pushState + fetch
+  await page.goto(`${base}/appli1/spa/`);
+  list = await waitMeasures(4);
+  await page.click('#noop'); // clic sans navigation : ne doit rien enregistrer
+  await sleep(1800);
+  assert.equal((await measures()).length, 4, 'un clic sans changement de page ne crée pas de mesure');
+  await page.click('#spa-factures');
+  list = await waitMeasures(5);
+  expectRange(list[4], SPA_API_DELAY, 2000, 'WiFi · appli1 /spa/factures (SPA)');
+  assert.equal(list[4].kind, 'spa');
+  assert.equal(list[4].page, '/spa/factures');
+
+  // 4. Ethernet, appli2 (XHR) — la page /factures n'est pas visitée -> case rouge
+  await storage(async () => {
+    const { settings = {} } = await chrome.storage.local.get('settings');
+    await chrome.storage.local.set({ settings: { ...settings, network: 'ethernet' } });
+  });
+  await page.goto(`${base}/appli2/`);
+  list = await waitMeasures(6);
+  await page.click('#nav-clients');
+  list = await waitMeasures(7);
+  expectRange(list[6], SERVER_DELAY.appli2 + API_DELAY, 3500, 'Ethernet · appli2 /clients (clic, XHR)');
+  assert.equal(list[6].network, 'ethernet');
+  assert.equal(list[6].appId, 'app2');
+  await page.goto(`${base}/appli1/clients`);
+  list = await waitMeasures(8);
+
+  // 5. Rapport : cases rouges + export Excel
+  const report = await context.newPage();
+  await report.goto(`chrome-extension://${extId}/report/report.html`);
+  await report.waitForSelector('#compare table');
+  const missing = await report.locator('#compare td.missing').count();
+  console.log(`  Rapport : ${missing} case(s) rouge(s) dans le comparatif`);
+  assert.ok(missing > 0);
+  await report.screenshot({ path: join(out, 'rapport.png'), fullPage: true });
+
+  const [download] = await Promise.all([report.waitForEvent('download'), report.click('#xlsx')]);
+  const xlsxPath = join(out, 'export.xlsx');
+  await download.saveAs(xlsxPath);
+  assert.ok(existsSync(xlsxPath));
+  console.log('  Export Excel :', xlsxPath);
+
+  const popup = await context.newPage();
+  await popup.setViewportSize({ width: 390, height: 640 });
+  await popup.goto(`chrome-extension://${extId}/popup/popup.html`);
+  await popup.waitForSelector('#last li .value');
+  await popup.screenshot({ path: join(out, 'popup.png') });
+
+  const options = await context.newPage();
+  await options.goto(`chrome-extension://${extId}/options/options.html`);
+  await options.waitForSelector('.app .name');
+  await options.screenshot({ path: join(out, 'options.png'), fullPage: true });
+
+  // 6. Sauvegarde JSON puis réimport (fusion sans doublon, appli reconnue par son nom)
+  const restored = await options.evaluate(async () => {
+    const s = await import('../lib/storage.js');
+    const backup = await s.exportBackup();
+    const ids = backup.measures.map((m) => m.id);
+    await s.deleteMeasures(ids);
+    backup.apps = backup.apps.map((a) => ({ ...a, id: 'autre-poste-' + a.id }));
+    backup.measures = backup.measures.map((m) => ({ ...m, appId: 'autre-poste-' + m.appId }));
+    const first = await s.importBackup(backup);
+    const again = await s.importBackup(backup);
+    const { apps } = await s.getConfig();
+    const measures = await s.getMeasures();
+    return { first, again, apps: apps.length, appIds: [...new Set(measures.map((m) => m.appId))].sort() };
+  });
+  console.log('  Sauvegarde / import :', JSON.stringify(restored));
+  assert.deepEqual(restored.first, { added: 8, skipped: 0 });
+  assert.deepEqual(restored.again, { added: 0, skipped: 8 });
+  assert.equal(restored.apps, 2);
+  assert.deepEqual(restored.appIds, ['app1', 'app2']);
+
+  console.log('\nOK : test de bout en bout réussi');
+} catch (e) {
+  failed = true;
+  console.error('\nÉCHEC :', e);
+} finally {
+  await context.close();
+  server.close();
+  rmSync(userDataDir, { recursive: true, force: true });
+}
+process.exit(failed ? 1 : 0);

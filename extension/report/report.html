@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Insigth · Rapport</title>
+    <link rel="stylesheet" href="../common.css" />
+    <link rel="stylesheet" href="report.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <img src="../icons/icon48.png" alt="" width="28" height="28" />
+      <h1>Rapport des temps de réponse</h1>
+      <label class="stat">
+        Statistique
+        <select id="stat"></select>
+      </label>
+      <button id="xlsx" class="primary">Extraire (Excel)</button>
+      <button id="csv">CSV</button>
+      <a id="settings" href="../options/options.html">Réglages</a>
+    </header>
+
+    <main>
+      <p id="summary" class="summary muted"></p>
+      <p class="legends">
+        <span class="legend"
+          ><span class="swatch missing"></span> Aucune mesure (page inexistante ou non mesurée sur ce réseau)</span
+        >
+        <span class="legend"><span class="swatch timeout"></span> Uniquement des mesures en timeout</span>
+        <span class="muted">Valeurs en millisecondes, du clic à l'affichage complet.</span>
+      </p>
+
+      <section>
+        <h2>Comparatif par page</h2>
+        <div id="compare"></div>
+      </section>
+
+      <section>
+        <h2>Détail par application</h2>
+        <div id="perApp" class="per-app"></div>
+      </section>
+
+      <section>
+        <div class="section-head">
+          <h2>Mesures enregistrées</h2>
+          <select id="filterApp" aria-label="Filtrer par application"></select>
+          <select id="filterNet" aria-label="Filtrer par réseau">
+            <option value="">Tous les réseaux</option>
+            <option value="wifi">WiFi</option>
+            <option value="ethernet">Ethernet</option>
+          </select>
+          <span id="rawCount" class="muted"></span>
+        </div>
+        <div id="raw"></div>
+      </section>
+    </main>
+    <div id="toast" class="toast" role="status"></div>
+    <script type="module" src="report.js"></script>
+  </body>
+</html>

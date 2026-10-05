@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Insigth · Applications & réglages</title>
+    <link rel="stylesheet" href="../common.css" />
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main>
+      <header class="page-head">
+        <img src="../icons/icon48.png" alt="" width="32" height="32" />
+        <div>
+          <h1>Insigth · Applications &amp; réglages</h1>
+          <p class="muted">Temps de réponse entre le clic et l'affichage complet de chaque page.</p>
+        </div>
+        <a class="report-link" href="../report/report.html">Voir le rapport →</a>
+      </header>
+
+      <section class="card">
+        <h2>Applications suivies</h2>
+        <p class="muted">
+          Une application = un nom + une ou plusieurs URL de base. Les pages sont identifiées par leur chemin
+          <em>relatif</em> à l'URL de base : avec <code>https://srv/appli1/</code> et <code>https://srv/appli2/</code>,
+          les pages <code>/appli1/clients</code> et <code>/appli2/clients</code> sont comparées sur la même ligne
+          <code>/clients</code>.
+        </p>
+        <div id="apps"></div>
+        <div class="row-actions">
+          <button id="addApp" type="button">+ Ajouter une application</button>
+          <button id="saveApps" type="button" class="primary">Enregistrer les applications</button>
+          <span id="appsStatus" class="status" role="status"></span>
+        </div>
+        <p class="muted small">
+          Après un ajout ou une modification, rechargez les onglets déjà ouverts sur ces applications.
+        </p>
+      </section>
+
+      <section class="card">
+        <h2>Mesure</h2>
+        <div class="form-grid">
+          <label for="quietMs">Calme requis pour « affichage complet »</label>
+          <div><input id="quietMs" type="number" min="200" max="10000" step="100" /> ms</div>
+          <p class="muted small help">
+            Plus d'activité réseau (fetch/XHR) ni de modification de la page pendant ce délai. Ce délai n'est pas ajouté
+            au temps mesuré : la fin retenue est l'instant de la dernière activité.
+          </p>
+
+          <label for="maxWaitS">Durée maximale d'une mesure</label>
+          <div><input id="maxWaitS" type="number" min="10" max="900" step="10" /> s</div>
+          <p class="muted small help">Au-delà, la mesure est enregistrée comme « timeout » (case orange).</p>
+
+          <label for="ignoreSelectors">Zones à ignorer (sélecteurs CSS)</label>
+          <div><input id="ignoreSelectors" type="text" placeholder="#horloge, .carousel" /></div>
+          <p class="muted small help">Éléments qui bougent en permanence (horloge, carrousel, compteur…).</p>
+
+          <label for="showOverlay">Indicateur sur la page</label>
+          <div>
+            <input id="showOverlay" type="checkbox" /> afficher « ✓ 1 234 ms » en bas à droite après chaque mesure
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Identification des pages</h2>
+        <div class="checks">
+          <label
+            ><input id="ignoreQuery" type="checkbox" /> Ignorer les paramètres d'URL
+            (<code>?id=3&amp;tri=nom</code>)</label
+          >
+          <label
+            ><input id="replaceIds" type="checkbox" /> Regrouper les identifiants (<code>/clients/42</code> →
+            <code>/clients/:id</code>)</label
+          >
+          <label
+            ><input id="caseInsensitive" type="checkbox" /> Ignorer la casse (<code>/Clients</code> =
+            <code>/clients</code>)</label
+          >
+        </div>
+        <p class="muted small">Ces réglages s'appliquent aussi aux mesures déjà enregistrées.</p>
+      </section>
+
+      <section class="card">
+        <h2>Données</h2>
+        <p id="dataSummary" class="muted"></p>
+        <div class="row-actions">
+          <button id="exportJson" type="button">Sauvegarder (JSON)</button>
+          <label class="button-like">
+            Importer / fusionner (JSON)
+            <input id="importJson" type="file" accept="application/json,.json" hidden />
+          </label>
+          <button id="clearAll" type="button" class="danger">Supprimer toutes les mesures</button>
+        </div>
+        <p class="muted small">
+          Astuce : mesurez en WiFi sur un poste et en Ethernet sur un autre, puis importez la sauvegarde de l'un dans
+          l'autre pour obtenir un rapport complet.
+        </p>
+      </section>
+    </main>
+    <div id="toast" class="toast" role="status"></div>
+
+    <template id="appTpl">
+      <div class="app">
+        <div class="app-head">
+          <input
+            class="name"
+            type="text"
+            placeholder="Nom de l'application (ex. Recette, Production…)"
+            aria-label="Nom"
+          />
+          <button type="button" class="danger remove">Supprimer</button>
+        </div>
+        <label class="small muted">URL(s) de base — une par ligne</label>
+        <textarea class="urls" rows="2" placeholder="https://appli1.mondomaine.fr/"></textarea>
+        <p class="error small"></p>
+      </div>
+    </template>
+
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

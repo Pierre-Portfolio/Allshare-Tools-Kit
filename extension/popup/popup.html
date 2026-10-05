@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <title>Insigth</title>
+    <link rel="stylesheet" href="../common.css" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="top">
+      <img src="../icons/icon32.png" alt="" width="20" height="20" />
+      <h1>Insigth</h1>
+      <label class="toggle" title="Activer ou mettre en pause l'enregistrement des mesures">
+        <input type="checkbox" id="recording" />
+        <span id="recordingLabel">Enregistrement</span>
+      </label>
+    </header>
+
+    <section>
+      <h2>Réseau des prochaines mesures</h2>
+      <div class="segmented" role="radiogroup" aria-label="Réseau">
+        <button type="button" role="radio" data-network="wifi">WiFi</button>
+        <button type="button" role="radio" data-network="ethernet">Ethernet</button>
+      </div>
+      <p class="hint" id="netHint"></p>
+    </section>
+
+    <section>
+      <h2>Onglet actif</h2>
+      <div id="tabInfo" class="card small"></div>
+    </section>
+
+    <section>
+      <h2>Dernières mesures <span id="count" class="muted"></span></h2>
+      <ul id="last" class="last"></ul>
+    </section>
+
+    <footer>
+      <button id="extract" class="primary">Extraire (Excel)</button>
+      <button id="report">Voir le rapport</button>
+      <button id="options" class="link">Applications &amp; réglages</button>
+    </footer>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
