@@ -1,7 +1,7 @@
-// Téléchargement des exports depuis les pages de l'extension (popup, rapport, réglages).
+// Téléchargement des exports depuis les pages de l'extension.
 
 import { getConfig, getMeasures } from './storage.js';
-import { buildModel, buildSheets, buildCsv } from './report.js';
+import { buildModel, buildGlobalSheets, buildPageSheets, buildAppSheets } from './report.js';
 import { buildXlsx } from './xlsx.js';
 import { fileStamp } from './format.js';
 
@@ -17,27 +17,45 @@ export function downloadBlob(data, filename, type) {
 }
 
 export async function loadModel() {
-  const { apps, settings, pages } = await getConfig();
+  const { apps, pages, settings, draft } = await getConfig();
   const measures = await getMeasures();
-  return { model: buildModel(measures, apps, settings, pages), settings, measures, apps, pages };
+  return { model: buildModel(measures, apps, pages), settings, measures, apps, pages, draft };
 }
 
-export async function exportXlsx(stat) {
-  const { model, settings } = await loadModel();
-  const now = new Date();
-  const bytes = buildXlsx(buildSheets(model, stat || settings.stat, now), now);
+const slug = (s) =>
+  String(s)
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase()
+    .slice(0, 40) || 'export';
+
+function save(sheets, name, date) {
   downloadBlob(
-    bytes,
-    `insigth-temps-reponse-${fileStamp(now)}.xlsx`,
+    buildXlsx(sheets, date),
+    `insigth-${name}-${fileStamp(date)}.xlsx`,
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   );
 }
 
-export async function exportCsv(stat) {
+/** Export n°1 : toutes les applications × toutes les pages. */
+export async function exportAll(stat) {
   const { model, settings } = await loadModel();
-  downloadBlob(
-    buildCsv(model, stat || settings.stat),
-    `insigth-comparatif-${fileStamp()}.csv`,
-    'text/csv;charset=utf-8',
-  );
+  const now = new Date();
+  save(buildGlobalSheets(model, stat || settings.stat, settings, now), 'tout', now);
+}
+
+/** Export n°2 : une page, tous les clients. */
+export async function exportPage(page, stat) {
+  const { model, settings } = await loadModel();
+  const now = new Date();
+  save(buildPageSheets(model, page, stat || settings.stat, settings, now), `page-${slug(page)}`, now);
+}
+
+/** Export n°3 : un client, toutes les pages. */
+export async function exportApp(app, stat) {
+  const { model, settings } = await loadModel();
+  const now = new Date();
+  save(buildAppSheets(model, app, stat || settings.stat, settings, now), `client-${slug(app)}`, now);
 }

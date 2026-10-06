@@ -1,116 +1,92 @@
-// Agrégation des mesures et construction du rapport (Excel, CSV).
+// Agrégation des mesures, détection des anomalies et construction des exports.
 // Fonctions pures : aucune dépendance aux API Chrome (testables avec Node).
 //
-// Présentation : UNE LIGNE PAR APPLICATION, UNE COLONNE PAR PAGE (adapté à
-// 100–200 applications quasi identiques d'une vingtaine de pages chacune).
+// Une mesure est identifiée par les noms saisis dans le formulaire
+// (application, page) et le réseau. Présentation : une ligne par application,
+// une colonne par page.
 
-import { matchApp, pageKey, comparePages } from './urls.js';
 import { NETWORKS, NETWORK_LABELS, STATS, KIND_LABELS, TRIGGER_LABELS, fmtDate } from './format.js';
 import { colName } from './xlsx.js';
-
-const cellKey = (appId, page, network) => `${appId}\u0000${page}\u0000${network}`;
+import { normName, nameKey, compareNames } from './names.js';
 
 export const MISSING_TEXT = 'N/A';
 export const TIMEOUT_TEXT = 'TIMEOUT';
+/** En dessous de ce nombre de clients mesurés, la comparaison à la médiane n'a pas de sens. */
+export const MIN_APPS_FOR_RATIO = 3;
 
-/** Tri « naturel » des noms (Client 2 avant Client 10). */
-export const compareNames = (a, b) => String(a).localeCompare(String(b), 'fr', { numeric: true, sensitivity: 'base' });
+const cellKey = (app, page, network) => `${nameKey(app)}\u0000${nameKey(page)}\u0000${network}`;
 
-/** Clé de page d'une mesure, recalculée avec les réglages et URL de base actuels. */
-export function measurePage(measure, app, settings) {
-  const match = matchApp(measure.url, [app], settings);
-  if (match) {
-    try {
-      return pageKey(measure.url, match.basePath, settings);
-    } catch {
-      /* URL invalide : on garde la clé enregistrée */
-    }
-  }
-  return measure.page || '/';
-}
-
-/**
- * Liste ordonnée des pages (colonnes) : d'abord celles réglées par l'utilisateur
- * (ordre, libellé, masquée), puis les pages découvertes dans les mesures.
- */
-export function resolvePages(discovered, pagesConfig = []) {
-  const list = [];
-  const seen = new Set();
-  for (const p of pagesConfig || []) {
-    if (!p || !p.key || seen.has(p.key)) continue;
-    seen.add(p.key);
-    list.push({ key: p.key, label: String(p.label || '').trim() || p.key, hidden: !!p.hidden, configured: true });
-  }
-  for (const key of [...discovered].sort(comparePages)) {
-    if (seen.has(key)) continue;
-    seen.add(key);
-    list.push({ key, label: key, hidden: false, configured: false });
-  }
-  return list;
+function median(sorted) {
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
 /**
  * Regroupe les mesures par application / page / réseau.
- * model.apps   : applications triées par nom (lignes)
- * model.pages  : pages visibles [{ key, label }] (colonnes)
- * Une page mesurée dans au moins une application apparaît pour toutes : là où
- * elle manque, la case est rouge.
+ *  apps  : référentiel ∪ applications mesurées, triées par nom (lignes)
+ *  pages : pages visibles dans l'ordre du référentiel, puis pages mesurées hors référentiel (colonnes)
  */
-export function buildModel(measures, apps, settings, pagesConfig = []) {
-  const appById = new Map(apps.map((a) => [a.id, a]));
-  const discovered = new Set();
-  const pageCounts = new Map();
+export function buildModel(measures, catalogApps = [], catalogPages = []) {
+  const apps = new Map();
+  const pages = new Map();
+  const addApp = (name, baseUrls = []) => {
+    const k = nameKey(name);
+    if (k && !apps.has(k)) apps.set(k, { name: normName(name), baseUrls });
+  };
+  const addPage = (name, hidden = false, order = Infinity) => {
+    const k = nameKey(name);
+    if (k && !pages.has(k)) pages.set(k, { name: normName(name), hidden, order });
+  };
+  for (const a of catalogApps) if (a && a.name) addApp(a.name, a.baseUrls || []);
+  catalogPages.forEach((p, i) => p && p.name && addPage(p.name, !!p.hidden, i));
+
   const cells = new Map();
   const rows = [];
+  const pageCounts = new Map();
+  const appCounts = new Map();
   for (const m of measures) {
-    const app = appById.get(m.appId);
-    if (!app) continue;
-    const page = measurePage(m, app, settings);
-    discovered.add(page);
-    pageCounts.set(page, (pageCounts.get(page) || 0) + 1);
-    rows.push({ ...m, page, appName: app.name });
-    const key = cellKey(app.id, page, m.network);
+    if (!m || !m.app || !m.page) continue;
+    addApp(m.app);
+    addPage(m.page);
+    const app = apps.get(nameKey(m.app)).name;
+    const page = pages.get(nameKey(m.page)).name;
+    rows.push({ ...m, app, page });
+    pageCounts.set(nameKey(page), (pageCounts.get(nameKey(page)) || 0) + 1);
+    appCounts.set(nameKey(app), (appCounts.get(nameKey(app)) || 0) + 1);
+    const key = cellKey(app, page, m.network);
     let c = cells.get(key);
-    if (!c) cells.set(key, (c = { durations: [], timeouts: 0, last: null }));
+    if (!c) cells.set(key, (c = { durations: [], timeouts: 0, last: null, lastTs: 0 }));
     if (m.timeout) {
       c.timeouts++;
     } else {
       c.durations.push(m.duration);
-      if (!c.last || m.ts >= c.last.ts) c.last = m;
+      if (m.ts >= c.lastTs) {
+        c.last = m.duration;
+        c.lastTs = m.ts;
+      }
     }
   }
-  const allPages = resolvePages(discovered, pagesConfig);
+  const allPages = [...pages.values()].sort((a, b) => a.order - b.order || compareNames(a.name, b.name));
   return {
-    apps: [...apps].sort((a, b) => compareNames(a.name, b.name)),
+    apps: [...apps.values()].sort((a, b) => compareNames(a.name, b.name)),
     pages: allPages.filter((p) => !p.hidden),
     allPages,
-    pageCounts,
     cells,
     rows,
+    pageCounts,
+    appCounts,
+    refs: new Map(),
   };
 }
 
 function compute(c, stat) {
   const d = [...c.durations].sort((a, b) => a - b);
   let v;
-  switch (stat) {
-    case 'median': {
-      const mid = Math.floor(d.length / 2);
-      v = d.length % 2 ? d[mid] : (d[mid - 1] + d[mid]) / 2;
-      break;
-    }
-    case 'min':
-      v = d[0];
-      break;
-    case 'max':
-      v = d[d.length - 1];
-      break;
-    case 'last':
-      v = c.last.duration;
-      break;
-    default:
-      v = d.reduce((s, x) => s + x, 0) / d.length;
-  }
+  if (stat === 'median') v = median(d);
+  else if (stat === 'min') v = d[0];
+  else if (stat === 'max') v = d[d.length - 1];
+  else if (stat === 'last') v = c.last;
+  else v = d.reduce((s, x) => s + x, 0) / d.length;
   return Math.round(v);
 }
 
@@ -118,272 +94,404 @@ function compute(c, stat) {
  * Valeur d'une case.
  * status : 'ok' | 'missing' (aucune mesure -> rouge) | 'timeout' (que des timeouts -> gris)
  */
-export function cellStat(model, appId, page, network, stat) {
-  const c = model.cells.get(cellKey(appId, page, network));
+export function cellStat(model, app, page, network, stat) {
+  const c = model.cells.get(cellKey(app, page, network));
   if (!c) return { status: 'missing', value: null, count: 0, timeouts: 0 };
-  if (!c.durations.length) return { status: 'timeout', value: null, count: 0, timeouts: c.timeouts };
-  let min = Infinity;
-  let max = -Infinity;
-  for (const d of c.durations) {
-    if (d < min) min = d;
-    if (d > max) max = d;
-  }
-  return { status: 'ok', value: compute(c, stat), count: c.durations.length, timeouts: c.timeouts, min, max };
+  if (!c.durations.length) return { status: 'timeout', value: null, count: 0, timeouts: c.timeouts, lastTs: c.lastTs };
+  return {
+    status: 'ok',
+    value: compute(c, stat),
+    count: c.durations.length,
+    timeouts: c.timeouts,
+    min: Math.min(...c.durations),
+    max: Math.max(...c.durations),
+    lastTs: c.lastTs,
+  };
 }
 
-/** Écart WiFi − Ethernet d'une page (positif : le WiFi est plus lent). */
-export function diffStat(model, appId, page, stat) {
-  const w = cellStat(model, appId, page, 'wifi', stat);
-  const e = cellStat(model, appId, page, 'ethernet', stat);
+/** Écart WiFi / Ethernet d'une page (positif : le WiFi est plus lent). */
+export function diffStat(model, app, page, stat) {
+  const w = cellStat(model, app, page, 'wifi', stat);
+  const e = cellStat(model, app, page, 'ethernet', stat);
   if (w.status === 'ok' && e.status === 'ok') {
     return { status: 'ok', value: w.value - e.value, pct: e.value > 0 ? (w.value - e.value) / e.value : null, w, e };
   }
   return { status: w.status === 'missing' || e.status === 'missing' ? 'missing' : 'timeout', value: null, w, e };
 }
 
+/** Référence d'une page sur un réseau : médiane des valeurs de tous les clients mesurés. */
+export function pageRef(model, page, network, stat) {
+  const key = `${stat}\u0000${nameKey(page)}\u0000${network}`;
+  if (!model.refs.has(key)) {
+    const values = model.apps
+      .map((a) => cellStat(model, a.name, page, network, stat))
+      .filter((c) => c.status === 'ok')
+      .map((c) => c.value)
+      .sort((a, b) => a - b);
+    model.refs.set(
+      key,
+      values.length
+        ? { median: Math.round(median(values)), count: values.length, min: values[0], max: values[values.length - 1] }
+        : null,
+    );
+  }
+  return model.refs.get(key);
+}
+
+/**
+ * Niveau d'anomalie d'une valeur : 'crit' (orange), 'warn' (jaune) ou null.
+ * Relatif : rapport à la médiane des clients (si au moins MIN_APPS_FOR_RATIO clients mesurés).
+ * Absolu : seuils en ms facultatifs.
+ */
+export function anomaly(value, ref, settings) {
+  const ratio = ref && ref.count >= MIN_APPS_FOR_RATIO && ref.median > 0 ? value / ref.median : null;
+  const over = (r, ms) => (ratio !== null && r > 0 && ratio >= r) || (ms > 0 && value >= ms);
+  if (over(settings.critRatio, settings.critMs)) return 'crit';
+  if (over(settings.warnRatio, settings.warnMs)) return 'warn';
+  return null;
+}
+
+/** Valeur + anomalie d'une case. */
+export function rate(model, app, page, network, stat, settings) {
+  const cs = cellStat(model, app, page, network, stat);
+  const ref = pageRef(model, page, network, stat);
+  const level = cs.status === 'ok' ? anomaly(cs.value, ref, settings) : null;
+  const ratio =
+    cs.status === 'ok' && ref && ref.count >= MIN_APPS_FOR_RATIO && ref.median > 0 ? cs.value / ref.median : null;
+  return { ...cs, ref, level, ratio };
+}
+
 /** Cases mesurées (au moins une mesure, même en timeout) sur le total attendu. */
-export function coverage(model, appId, networks = NETWORKS.map((n) => n.id)) {
+export function coverage(model, app, networks = NETWORKS.map((n) => n.id)) {
   let done = 0;
-  for (const p of model.pages) for (const n of networks) if (model.cells.has(cellKey(appId, p.key, n))) done++;
+  for (const p of model.pages) for (const n of networks) if (model.cells.has(cellKey(app, p.name, n))) done++;
   return { done, total: model.pages.length * networks.length };
 }
 
 /** Pages visibles pas encore mesurées pour une application et un réseau. */
-export function missingPages(model, appId, network) {
-  return model.pages.filter((p) => !model.cells.has(cellKey(appId, p.key, network)));
+export function missingPages(model, app, network) {
+  return model.pages.filter((p) => !model.cells.has(cellKey(app, p.name, network)));
 }
 
 // ---------------------------------------------------------------- Excel
 
-function xlsxCell(cs) {
-  if (cs.status === 'ok') return { v: cs.value, s: 'num' };
-  if (cs.status === 'timeout') return { v: TIMEOUT_TEXT, s: 'timeout' };
+const fr = (n) => String(n).replace('.', ',');
+
+export function legendText(settings) {
+  const abs = (ms) => (ms > 0 ? ` ou ≥ ${fr(ms / 1000)} s` : '');
+  return (
+    `Jaune = lent (≥ ${fr(settings.warnRatio)} × la médiane des clients pour cette page${abs(settings.warnMs)}) · ` +
+    `Orange = très lent (≥ ${fr(settings.critRatio)} ×${abs(settings.critMs)}) · ` +
+    'Rouge = pas de mesure · Gris = uniquement des timeouts'
+  );
+}
+
+function valueCell(r) {
+  if (r.status === 'ok') return { v: r.value, s: r.level || 'num' };
+  if (r.status === 'timeout') return { v: TIMEOUT_TEXT, s: 'timeout' };
   return { v: MISSING_TEXT, s: 'missing' };
 }
 
-const LEGEND =
-  'Rouge = aucune mesure (page inexistante ou non mesurée) · Gris = uniquement des timeouts · ' +
-  'Couleur des valeurs : du plus rapide (blanc) au plus lent (orange), page par page';
-
-// Échelle « rapide → lent » : blanc, crème (médiane), orange.
-const HEAT = {
-  stops: [{ type: 'min' }, { type: 'percentile', val: 50 }, { type: 'max' }],
-  colors: ['FFFFFFFF', 'FFFFF3D6', 'FFF4B183'],
-};
-// Échelle divergente pour les écarts : bleu (WiFi plus rapide), blanc (0), orange (WiFi plus lent).
-const DIVERGING = {
-  stops: [{ type: 'min' }, { type: 'num', val: 0 }, { type: 'max' }],
-  colors: ['FF9BC2E6', 'FFFFFFFF', 'FFF4B183'],
-};
-
-const pageWidth = (label, min = 10) => Math.max(min, Math.min(26, label.length + 2));
-const nameWidth = (apps) => Math.max(18, Math.min(40, ...apps.map((a) => a.name.length + 2)));
-
-function coverageCell(model, appId, networks) {
-  const { done, total } = coverage(model, appId, networks);
-  return { v: total ? done / total : 0, s: 'pct' };
+function gapCell(d, settings) {
+  if (d.status !== 'ok' || d.pct === null) return d.status === 'ok' ? { v: '', s: 'text' } : valueCell(d);
+  return { v: d.pct, s: Math.abs(d.pct) * 100 >= settings.gapPct ? 'pctWarn' : 'pct' };
 }
 
-/** Feuille « un réseau » : une ligne par appli, une colonne par page. */
-function networkSheet(model, stat, network, subtitle) {
-  const { apps, pages } = model;
-  const first = 5; // première ligne de données
-  const last = Math.max(first, first + apps.length - 1);
-  const rows = [
-    [{ v: `Temps de réponse — ${NETWORK_LABELS[network]} (ms)`, s: 'title' }],
-    [{ v: subtitle, s: 'muted' }],
-    [{ v: LEGEND, s: 'muted' }],
-    [
-      { v: 'Application', s: 'headerLeft' },
-      { v: 'Couverture', s: 'header' },
-      ...pages.map((p) => ({ v: p.label, s: 'header' })),
-    ],
-    ...apps.map((app) => [
-      { v: app.name, s: 'textBold' },
-      coverageCell(model, app.id, [network]),
-      ...pages.map((p) => xlsxCell(cellStat(model, app.id, p.key, network, stat))),
+/** « vs médiane » : +80 % = 1,8 × la médiane des clients. */
+function vsMedianCell(r, settings) {
+  if (r.ratio === null) return { v: '', s: 'text' };
+  return { v: r.ratio - 1, s: r.ratio >= settings.warnRatio ? 'pctWarn' : 'pct' };
+}
+
+const nameWidth = (names) => Math.max(18, Math.min(40, ...names.map((n) => n.length + 2)));
+const headWidth = (label, min = 10) => Math.max(min, Math.min(26, label.length + 2));
+
+function header(texts, firstLeft = true) {
+  return texts.map((v, i) => ({ v, s: i === 0 && firstLeft ? 'headerLeft' : 'header' }));
+}
+
+function subtitle(model, stat, date) {
+  return (
+    `Statistique : ${STATS[stat] || STATS.avg} · millisecondes entre le clic et l'affichage complet · ` +
+    `${model.apps.length} application(s), ${model.pages.length} page(s) · généré le ${fmtDate(date)}`
+  );
+}
+
+/** Feuille des mesures brutes (filtrable). */
+export function rawSheet(rows, name = 'Mesures') {
+  const data = [
+    header([
+      'Date',
+      'Application',
+      'Page',
+      'Réseau',
+      'Durée (ms)',
+      'Timeout',
+      'Type',
+      'Déclencheur',
+      'Page de départ',
+      'URL mesurée',
+    ]).map((c) => ({ ...c, s: 'headerLeft' })),
+    ...rows.map((m) => [
+      { v: fmtDate(m.ts), s: 'text' },
+      { v: m.app, s: 'text' },
+      { v: m.page, s: 'text' },
+      { v: NETWORK_LABELS[m.network] || m.network, s: 'text' },
+      { v: m.duration, s: 'num' },
+      { v: m.timeout ? 'Oui' : 'Non', s: 'text' },
+      { v: KIND_LABELS[m.kind] || m.kind || '', s: 'text' },
+      { v: TRIGGER_LABELS[m.trigger] || m.trigger || '', s: 'text' },
+      { v: m.startUrl || '', s: 'text' },
+      { v: m.url || '', s: 'text' },
     ]),
   ];
   return {
-    name: NETWORK_LABELS[network],
-    rows,
-    cols: [nameWidth(apps), 11, ...pages.map((p) => pageWidth(p.label))],
-    heights: { 4: 32 },
-    freeze: { rows: 4, cols: 2 },
-    autoFilter: `A4:${colName(pages.length + 1)}${last}`,
-    scales: pages.map((_, i) => ({ ref: `${colName(i + 2)}${first}:${colName(i + 2)}${last}`, ...HEAT })),
+    name,
+    rows: data,
+    cols: [20, 24, 24, 10, 11, 9, 24, 22, 45, 45],
+    freeze: { rows: 1 },
+    autoFilter: `A1:J${data.length}`,
   };
 }
 
-/** Feuilles Excel : Comparatif, WiFi, Ethernet, Écart, Pages, Mesures. */
-export function buildSheets(model, stat, generatedAt = new Date()) {
-  const statLabel = STATS[stat] || STATS.avg;
-  const subtitle =
-    `Statistique : ${statLabel} · millisecondes entre le clic et l'affichage complet · ` +
-    `${model.apps.length} application(s), ${model.pages.length} page(s) · généré le ${fmtDate(generatedAt)}`;
+function networkSheet(model, stat, settings, network, sub) {
   const { apps, pages } = model;
-  const sheets = [];
+  const last = Math.max(5, 4 + apps.length);
+  return {
+    name: NETWORK_LABELS[network],
+    rows: [
+      [{ v: `Temps de réponse — ${NETWORK_LABELS[network]} (ms)`, s: 'title' }],
+      [{ v: sub, s: 'muted' }],
+      [{ v: legendText(settings), s: 'muted' }],
+      header(['Application', 'Couverture', ...pages.map((p) => p.name)]),
+      ...apps.map((app) => {
+        const cov = coverage(model, app.name, [network]);
+        return [
+          { v: app.name, s: 'textBold' },
+          { v: cov.total ? cov.done / cov.total : 0, s: 'pct' },
+          ...pages.map((p) => valueCell(rate(model, app.name, p.name, network, stat, settings))),
+        ];
+      }),
+    ],
+    cols: [nameWidth(apps.map((a) => a.name)), 11, ...pages.map((p) => headWidth(p.name))],
+    heights: { 4: 32 },
+    freeze: { rows: 4, cols: 2 },
+    autoFilter: `A4:${colName(pages.length + 1)}${last}`,
+  };
+}
 
-  // -- Comparatif : une ligne par appli, deux colonnes (WiFi | Ethernet) par page
+/** Export n°1 : toutes les applications × toutes les pages. */
+export function buildGlobalSheets(model, stat, settings, date = new Date()) {
+  const { apps, pages } = model;
+  const sub = subtitle(model, stat, date);
   const first = 6;
   const last = Math.max(first, first + apps.length - 1);
+
   const pageHead = [
     { v: '', s: 'headerLeft' },
     { v: '', s: 'header' },
   ];
-  const netHead = [
-    { v: 'Application', s: 'headerLeft' },
-    { v: 'Couverture', s: 'header' },
-  ];
+  const netHead = header(['Application', 'Couverture']);
   const merges = [];
-  const scales = [];
   pages.forEach((p, i) => {
     const c = 2 + i * 2;
-    pageHead.push({ v: p.label, s: 'header' }, { v: '', s: 'header' });
+    pageHead.push({ v: p.name, s: 'header' }, { v: '', s: 'header' });
     netHead.push(...NETWORKS.map((n) => ({ v: n.label, s: 'header' })));
     merges.push(`${colName(c)}4:${colName(c + 1)}4`);
-    // une échelle par page (WiFi et Ethernet ensemble : couleurs comparables)
-    scales.push({ ref: `${colName(c)}${first}:${colName(c + 1)}${last}`, ...HEAT });
-  });
-  sheets.push({
-    name: 'Comparatif',
-    rows: [
-      [{ v: 'Insigth — Temps de réponse par application et par page (ms)', s: 'title' }],
-      [{ v: subtitle, s: 'muted' }],
-      [{ v: LEGEND, s: 'muted' }],
-      pageHead,
-      netHead,
-      ...apps.map((app) => [
-        { v: app.name, s: 'textBold' },
-        coverageCell(model, app.id),
-        ...pages.flatMap((p) => NETWORKS.map((n) => xlsxCell(cellStat(model, app.id, p.key, n.id, stat)))),
-      ]),
-    ],
-    cols: [
-      nameWidth(apps),
-      11,
-      ...pages.flatMap((p) => [pageWidth(p.label, 9) / 2 + 4, pageWidth(p.label, 9) / 2 + 4]),
-    ],
-    heights: { 4: 32 },
-    merges,
-    freeze: { rows: 5, cols: 2 },
-    autoFilter: `A5:${colName(1 + pages.length * 2)}${last}`,
-    scales,
   });
 
-  // -- Un tableau par réseau (une colonne par page : plus lisible)
-  for (const n of NETWORKS) sheets.push(networkSheet(model, stat, n.id, subtitle));
+  const sheets = [
+    {
+      name: 'WiFi + Ethernet',
+      rows: [
+        [{ v: 'Insigth — Temps de réponse par application et par page (ms)', s: 'title' }],
+        [{ v: sub, s: 'muted' }],
+        [{ v: legendText(settings), s: 'muted' }],
+        pageHead,
+        netHead,
+        ...apps.map((app) => {
+          const cov = coverage(model, app.name);
+          return [
+            { v: app.name, s: 'textBold' },
+            { v: cov.total ? cov.done / cov.total : 0, s: 'pct' },
+            ...pages.flatMap((p) =>
+              NETWORKS.map((n) => valueCell(rate(model, app.name, p.name, n.id, stat, settings))),
+            ),
+          ];
+        }),
+      ],
+      cols: [
+        nameWidth(apps.map((a) => a.name)),
+        11,
+        ...pages.flatMap((p) => {
+          const w = Math.max(9, headWidth(p.name, 9) / 2 + 3);
+          return [w, w];
+        }),
+      ],
+      heights: { 4: 32 },
+      merges,
+      freeze: { rows: 5, cols: 2 },
+      autoFilter: `A5:${colName(1 + pages.length * 2)}${last}`,
+    },
+    ...NETWORKS.map((n) => networkSheet(model, stat, settings, n.id, sub)),
+  ];
 
-  // -- Écart WiFi − Ethernet
+  // Écart WiFi / Ethernet en %
   sheets.push({
     name: 'Écart WiFi-Ethernet',
     rows: [
-      [{ v: 'Écart WiFi − Ethernet (ms) : positif = le WiFi est plus lent', s: 'title' }],
-      [{ v: subtitle, s: 'muted' }],
-      [
-        {
-          v: 'Rouge = mesure WiFi ou Ethernet manquante · Bleu = WiFi plus rapide · Orange = WiFi plus lent',
-          s: 'muted',
-        },
-      ],
-      [{ v: 'Application', s: 'headerLeft' }, ...pages.map((p) => ({ v: p.label, s: 'header' }))],
+      [{ v: 'Écart WiFi / Ethernet : + 30 % = le WiFi est 30 % plus lent', s: 'title' }],
+      [{ v: sub, s: 'muted' }],
+      [{ v: `Jaune = écart d'au moins ${settings.gapPct} % · Rouge = mesure WiFi ou Ethernet manquante`, s: 'muted' }],
+      header(['Application', ...pages.map((p) => p.name)]),
       ...apps.map((app) => [
         { v: app.name, s: 'textBold' },
-        ...pages.map((p) => {
-          const d = diffStat(model, app.id, p.key, stat);
-          return d.status === 'ok' ? { v: d.value, s: 'num' } : xlsxCell(d);
-        }),
+        ...pages.map((p) => gapCell(diffStat(model, app.name, p.name, stat), settings)),
       ]),
     ],
-    cols: [nameWidth(apps), ...pages.map((p) => pageWidth(p.label))],
+    cols: [nameWidth(apps.map((a) => a.name)), ...pages.map((p) => headWidth(p.name))],
     heights: { 4: 32 },
     freeze: { rows: 4, cols: 1 },
     autoFilter: `A4:${colName(pages.length)}${Math.max(5, 4 + apps.length)}`,
-    scales: pages.length ? [{ ref: `B5:${colName(pages.length)}${Math.max(5, 4 + apps.length)}`, ...DIVERGING }] : [],
   });
 
-  // -- Pages : correspondance libellé / chemin et vue d'ensemble
-  const median = (values) => {
-    if (!values.length) return '';
-    const d = [...values].sort((a, b) => a - b);
-    const mid = Math.floor(d.length / 2);
-    return Math.round(d.length % 2 ? d[mid] : (d[mid - 1] + d[mid]) / 2);
-  };
+  // Référence utilisée pour les couleurs
   sheets.push({
-    name: 'Pages',
+    name: 'Référence par page',
     rows: [
-      [
-        'Ordre',
-        'Libellé',
-        'Chemin (relatif à l’URL de base)',
-        'Applis mesurées WiFi',
-        'Applis mesurées Ethernet',
+      header([
+        'Page',
+        'Clients mesurés WiFi',
         'Médiane WiFi (ms)',
+        'Clients mesurés Ethernet',
         'Médiane Ethernet (ms)',
-      ].map((v) => ({ v, s: 'headerLeft' })),
-      ...pages.map((p, i) => {
-        const per = NETWORKS.map((n) =>
-          apps.map((a) => cellStat(model, a.id, p.key, n.id, stat)).filter((c) => c.status === 'ok'),
-        );
+      ]),
+      ...pages.map((p) => {
+        const w = pageRef(model, p.name, 'wifi', stat);
+        const e = pageRef(model, p.name, 'ethernet', stat);
         return [
-          { v: i + 1, s: 'num' },
-          { v: p.label, s: 'textBold' },
-          { v: p.key, s: 'text' },
-          ...per.map((list) => ({ v: list.length, s: 'num' })),
-          ...per.map((list) => ({ v: median(list.map((c) => c.value)), s: 'num' })),
+          { v: p.name, s: 'textBold' },
+          { v: w ? w.count : 0, s: 'num' },
+          { v: w ? w.median : '', s: 'num' },
+          { v: e ? e.count : 0, s: 'num' },
+          { v: e ? e.median : '', s: 'num' },
         ];
       }),
     ],
-    cols: [7, 28, 34, 12, 12, 13, 13],
+    cols: [30, 14, 14, 14, 14],
     heights: { 1: 32 },
     freeze: { rows: 1 },
   });
 
-  // -- Mesures brutes
-  const raw = [
-    ['Date', 'Application', 'Page', 'Réseau', 'Durée (ms)', 'Type', 'Déclencheur', 'Timeout', 'URL'].map((v) => ({
-      v,
-      s: 'headerLeft',
-    })),
-    ...model.rows.map((m) => [
-      { v: fmtDate(m.ts), s: 'text' },
-      { v: m.appName, s: 'text' },
-      { v: m.page, s: 'text' },
-      { v: NETWORK_LABELS[m.network] || m.network, s: 'text' },
-      { v: m.duration, s: 'num' },
-      { v: KIND_LABELS[m.kind] || m.kind, s: 'text' },
-      { v: TRIGGER_LABELS[m.trigger] || m.trigger, s: 'text' },
-      { v: m.timeout ? 'Oui' : 'Non', s: 'text' },
-      { v: m.url, s: 'text' },
-    ]),
-  ];
-  sheets.push({
-    name: 'Mesures',
-    rows: raw,
-    cols: [20, 24, 26, 10, 11, 24, 24, 9, 60],
-    freeze: { rows: 1 },
-    autoFilter: `A1:I${raw.length}`,
-  });
-
+  sheets.push(rawSheet(model.rows));
   return sheets;
 }
 
-/** CSV du comparatif (séparateur « ; » pour Excel en français) : une ligne par application. */
-export function buildCsv(model, stat) {
-  const q = (v) => {
-    const s = String(v);
-    return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const header = ['Application', ...model.pages.flatMap((p) => NETWORKS.map((n) => `${p.label} - ${n.label} (ms)`))];
-  const lines = [header.map(q).join(';')];
-  for (const app of model.apps) {
-    const values = model.pages.flatMap((p) =>
-      NETWORKS.map((n) => {
-        const cs = cellStat(model, app.id, p.key, n.id, stat);
-        return cs.status === 'ok' ? cs.value : cs.status === 'timeout' ? TIMEOUT_TEXT : MISSING_TEXT;
-      }),
-    );
-    lines.push([app.name, ...values].map(q).join(';'));
+/** Export n°2 : une page, tous les clients. */
+export function buildPageSheets(model, pageName, stat, settings, date = new Date()) {
+  const page = (model.allPages.find((p) => nameKey(p.name) === nameKey(pageName)) || { name: normName(pageName) }).name;
+  const apps = model.apps;
+  const rows = [
+    [{ v: `Page « ${page} » — tous les clients`, s: 'title' }],
+    [{ v: subtitle(model, stat, date), s: 'muted' }],
+    [{ v: legendText(settings), s: 'muted' }],
+    header([
+      'Application',
+      'WiFi (ms)',
+      'Ethernet (ms)',
+      'Écart WiFi / Eth.',
+      'WiFi vs médiane',
+      'Ethernet vs médiane',
+      'Nb mesures WiFi',
+      'Nb mesures Ethernet',
+      'Dernière mesure',
+    ]),
+  ];
+  for (const app of apps) {
+    const w = rate(model, app.name, page, 'wifi', stat, settings);
+    const e = rate(model, app.name, page, 'ethernet', stat, settings);
+    const lastTs = Math.max(w.lastTs || 0, e.lastTs || 0);
+    rows.push([
+      { v: app.name, s: 'textBold' },
+      valueCell(w),
+      valueCell(e),
+      gapCell(diffStat(model, app.name, page, stat), settings),
+      vsMedianCell(w, settings),
+      vsMedianCell(e, settings),
+      { v: w.count, s: 'num' },
+      { v: e.count, s: 'num' },
+      { v: lastTs ? fmtDate(lastTs) : '', s: 'text' },
+    ]);
   }
-  return '﻿' + lines.join('\r\n') + '\r\n';
+  const lastRow = rows.length;
+  const refs = NETWORKS.map((n) => pageRef(model, page, n.id, stat));
+  rows.push(
+    [],
+    ...[
+      ['Médiane (tous clients)', 'median'],
+      ['Minimum', 'min'],
+      ['Maximum', 'max'],
+    ].map(([label, k]) => [{ v: label, s: 'headerLeft' }, ...refs.map((r) => ({ v: r ? r[k] : '', s: 'num' }))]),
+    [{ v: 'Clients mesurés', s: 'headerLeft' }, ...refs.map((r) => ({ v: r ? r.count : 0, s: 'num' }))],
+  );
+  return [
+    {
+      name: page,
+      rows,
+      cols: [nameWidth(apps.map((a) => a.name)), 12, 13, 14, 14, 16, 13, 15, 19],
+      heights: { 4: 32 },
+      freeze: { rows: 4, cols: 1 },
+      autoFilter: `A4:I${Math.max(5, lastRow)}`,
+    },
+    rawSheet(model.rows.filter((m) => nameKey(m.page) === nameKey(page))),
+  ];
+}
+
+/** Export n°3 : un client, toutes ses pages. */
+export function buildAppSheets(model, appName, stat, settings, date = new Date()) {
+  const app = (model.apps.find((a) => nameKey(a.name) === nameKey(appName)) || { name: normName(appName) }).name;
+  const rows = [
+    [{ v: `${app} — toutes les pages`, s: 'title' }],
+    [{ v: subtitle(model, stat, date), s: 'muted' }],
+    [{ v: legendText(settings), s: 'muted' }],
+    header([
+      'Page',
+      'WiFi (ms)',
+      'Ethernet (ms)',
+      'Écart WiFi / Eth.',
+      'Médiane clients WiFi (ms)',
+      'WiFi vs médiane',
+      'Médiane clients Ethernet (ms)',
+      'Ethernet vs médiane',
+      'Nb mesures WiFi',
+      'Nb mesures Ethernet',
+    ]),
+  ];
+  for (const p of model.pages) {
+    const w = rate(model, app, p.name, 'wifi', stat, settings);
+    const e = rate(model, app, p.name, 'ethernet', stat, settings);
+    rows.push([
+      { v: p.name, s: 'textBold' },
+      valueCell(w),
+      valueCell(e),
+      gapCell(diffStat(model, app, p.name, stat), settings),
+      { v: w.ref ? w.ref.median : '', s: 'num' },
+      vsMedianCell(w, settings),
+      { v: e.ref ? e.ref.median : '', s: 'num' },
+      vsMedianCell(e, settings),
+      { v: w.count, s: 'num' },
+      { v: e.count, s: 'num' },
+    ]);
+  }
+  return [
+    {
+      name: app,
+      rows,
+      cols: [nameWidth(model.pages.map((p) => p.name)), 12, 13, 14, 16, 14, 18, 16, 13, 15],
+      heights: { 4: 32 },
+      freeze: { rows: 4, cols: 1 },
+      autoFilter: `A4:J${Math.max(5, rows.length)}`,
+    },
+    rawSheet(model.rows.filter((m) => nameKey(m.app) === nameKey(app))),
+  ];
 }

@@ -1,0 +1,436 @@
+// Panneau de mesure : formulaire -> attente du clic -> chrono -> résultat.
+import {
+  getConfig,
+  getMeasures,
+  getSession,
+  saveSettings,
+  saveDraft,
+  deleteMeasures,
+  isMeasureKey,
+} from '../lib/storage.js';
+import { buildModel, cellStat, rate, coverage, missingPages } from '../lib/report.js';
+import { nameKey, normName, suggestApp, nextPage } from '../lib/names.js';
+import { NETWORKS, NETWORK_LABELS, STATS, fmtMs, fmtDate } from '../lib/format.js';
+
+const $ = (id) => document.getElementById(id);
+const nf = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
+const params = new URLSearchParams(location.search);
+const fixedTabId = params.has('tabId') ? Number(params.get('tabId')) : null; // ouverture dans un onglet (tests)
+
+const state = {
+  config: null,
+  measures: [],
+  model: null,
+  session: null,
+  formFilled: false,
+  liveTimer: 0,
+  suggestion: null,
+};
+
+function el(tag, { dataset, ...props } = {}, ...children) {
+  const node = Object.assign(document.createElement(tag), props);
+  if (dataset) Object.assign(node.dataset, dataset);
+  node.append(...children.filter((c) => c !== null && c !== undefined && c !== false));
+  return node;
+}
+
+function toast(text) {
+  const t = $('toast');
+  t.textContent = text;
+  t.classList.add('show');
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+const other = (network) => (network === 'wifi' ? 'ethernet' : 'wifi');
+const send = (msg) => chrome.runtime.sendMessage(msg).catch((e) => ({ ok: false, error: e.message }));
+
+async function targetTab() {
+  try {
+    if (fixedTabId) return await chrome.tabs.get(fixedTabId);
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    return tab || null;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------- Données
+
+async function load() {
+  const [config, measures, session] = await Promise.all([getConfig(), getMeasures(), getSession()]);
+  state.config = config;
+  state.measures = measures;
+  state.session = session;
+  state.model = buildModel(measures, config.apps, config.pages);
+  render();
+}
+
+let pendingLoad = 0;
+function scheduleLoad() {
+  clearTimeout(pendingLoad);
+  pendingLoad = setTimeout(load, 80);
+}
+
+// ---------------------------------------------------------------- Rendu
+
+function renderNetwork(network) {
+  for (const b of document.querySelectorAll('[data-network]')) {
+    b.setAttribute('aria-checked', String(b.dataset.network === network));
+  }
+}
+
+function render() {
+  const { settings } = state.config;
+  renderNetwork(settings.network);
+  renderNetHint(settings);
+
+  const s = state.session;
+  const view = !s ? 'form' : s.state === 'done' ? 'result' : 'live';
+  $('viewForm').hidden = view !== 'form';
+  $('viewLive').hidden = view !== 'live';
+  $('viewResult').hidden = view !== 'result';
+  if (view === 'form') renderForm();
+  if (view === 'live') renderLive(s);
+  if (view === 'result') renderResult(s);
+  renderProgress(s ? s.app : $('app').value, s ? s.network : settings.network);
+  renderLast();
+}
+
+function renderNetHint(settings) {
+  const type = navigator.connection && navigator.connection.type;
+  const hint = $('netHint');
+  hint.className = 'hint';
+  if (type === 'wifi' || type === 'ethernet') {
+    hint.className = type === settings.network ? 'hint' : 'hint warn';
+    hint.textContent =
+      type === settings.network
+        ? `Réseau détecté : ${NETWORK_LABELS[type]}.`
+        : `Réseau détecté : ${NETWORK_LABELS[type]}. Pensez à basculer.`;
+  } else {
+    hint.textContent = 'Chrome ne détecte pas WiFi/Ethernet sur ce poste : choisissez le réseau utilisé.';
+  }
+}
+
+function renderForm() {
+  const { model, config } = state;
+  $('appList').replaceChildren(...model.apps.map((a) => el('option', { value: a.name })));
+  $('pageList').replaceChildren(...model.allPages.map((p) => el('option', { value: p.name })));
+  if (!state.formFilled) {
+    state.formFilled = true;
+    $('app').value = config.draft.app || '';
+    $('page').value = config.draft.page || '';
+  }
+  updateSuggestion();
+}
+
+async function updateSuggestion() {
+  const box = $('appSuggest');
+  const tab = await targetTab();
+  const suggestion = tab && tab.url ? suggestApp(tab.url, state.config.apps, state.measures) : null;
+  state.suggestion = suggestion;
+  const typed = $('app').value;
+  if (suggestion && !normName(typed)) {
+    $('app').value = suggestion;
+    saveDraft({ app: suggestion });
+    renderProgress(suggestion, state.config.settings.network);
+  }
+  box.hidden = !suggestion || nameKey(suggestion) === nameKey($('app').value);
+  $('appSuggestName').textContent = suggestion ? `« ${suggestion} »` : '';
+}
+
+function renderLive(s) {
+  const live = document.querySelector('.live');
+  const measuring = s.state === 'measuring' && s.startEpoch;
+  live.classList.toggle('measuring', !!measuring);
+  $('liveState').textContent =
+    s.state === 'rearming'
+      ? 'Retour à la page de départ…'
+      : measuring
+        ? 'Mesure en cours…'
+        : 'Prêt : en attente de votre clic';
+  $('liveLabel').textContent = `${s.app} › ${s.page} · ${NETWORK_LABELS[s.network]}`;
+  $('liveHint').textContent = measuring
+    ? "Le chrono s'arrête tout seul quand la page est complètement affichée."
+    : 'Cliquez dans la page sur le lien (ou le menu) qui ouvre cette page.';
+  clearInterval(state.liveTimer);
+  const tick = () => {
+    const ms = measuring ? Math.max(0, Date.now() - s.startEpoch) : 0;
+    $('liveTimer').textContent =
+      `${(ms / 1000).toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} s`;
+  };
+  tick();
+  if (measuring) state.liveTimer = setInterval(tick, 100);
+}
+
+function renderResult(s) {
+  clearInterval(state.liveTimer);
+  const { model, config } = state;
+  const { settings } = config;
+  const r = s.result || {};
+  const deleted = !state.measures.some((m) => m.id === r.measureId);
+  $('resLabel').textContent = `${s.app} › ${s.page} · ${NETWORK_LABELS[s.network]}`;
+
+  const facts = [];
+  const value = $('resValue');
+  value.className = 'value';
+  if (deleted) {
+    value.textContent = 'Mesure supprimée';
+  } else if (r.timeout) {
+    value.textContent = `≥ ${fmtMs(r.duration)}`;
+    value.classList.add('crit');
+    facts.push(el('li', { className: 'crit', textContent: 'Timeout : la page bougeait encore à la durée maximale.' }));
+  } else {
+    value.textContent = fmtMs(r.duration);
+    const stat = settings.stat;
+    const mine = rate(model, s.app, s.page, s.network, stat, settings);
+    if (mine.ref && mine.ref.count >= 3) {
+      const ratio = r.duration / mine.ref.median;
+      const level = ratio >= settings.critRatio ? 'crit' : ratio >= settings.warnRatio ? 'warn' : '';
+      if (level) value.classList.add(level);
+      facts.push(
+        el('li', {
+          className: level,
+          textContent: `Médiane des ${mine.ref.count} clients : ${fmtMs(mine.ref.median)} (× ${ratio.toLocaleString('fr-FR', { maximumFractionDigits: 1 })})`,
+        }),
+      );
+    }
+    if (mine.count > 1)
+      facts.push(
+        el('li', {
+          textContent: `${mine.count} mesures sur ce réseau · ${STATS[stat].toLowerCase()} ${fmtMs(mine.value)}`,
+        }),
+      );
+    const o = cellStat(model, s.app, s.page, other(s.network), stat);
+    if (o.status === 'ok') {
+      const pct = Math.round(((r.duration - o.value) / o.value) * 100);
+      facts.push(
+        el('li', {
+          className: Math.abs(pct) >= settings.gapPct ? 'warn' : '',
+          textContent: `${NETWORK_LABELS[other(s.network)]} : ${fmtMs(o.value)} (${pct > 0 ? '+' : ''}${pct} % en ${NETWORK_LABELS[s.network]})`,
+        }),
+      );
+    } else {
+      facts.push(el('li', { textContent: `Pas encore de mesure en ${NETWORK_LABELS[other(s.network)]}.` }));
+    }
+  }
+  $('resFacts').replaceChildren(...facts);
+  $('relaunchOther').textContent = `↻ Relancer en ${NETWORK_LABELS[other(s.network)]}`;
+  $('relaunchHint').textContent =
+    other(s.network) === 'ethernet'
+      ? 'Branchez le câble Ethernet et coupez le WiFi, puis recliquez sur le même lien.'
+      : 'Débranchez le câble Ethernet et activez le WiFi, puis recliquez sur le même lien.';
+  $('relaunchSame').textContent = `↻ Refaire en ${NETWORK_LABELS[s.network]}`;
+  $('deleteResult').hidden = deleted;
+}
+
+function progressRow(label, done, total, current) {
+  const ratio = total ? done / total : 0;
+  return el(
+    'div',
+    { className: `progress${current ? ' current' : ''}${total && done === total ? ' full' : ''}` },
+    el('span', { className: 'net', textContent: label }),
+    el('span', { className: 'track' }, el('i', { style: `width:${Math.round(ratio * 100)}%` })),
+    el('span', { className: 'count', textContent: `${done}/${total}` }),
+  );
+}
+
+function renderProgress(appName, network) {
+  const box = $('progress');
+  const { model } = state;
+  const app = model.apps.find((a) => nameKey(a.name) === nameKey(appName));
+  if (!app || !model.pages.length) {
+    box.hidden = true;
+    return;
+  }
+  box.hidden = false;
+  const rows = NETWORKS.map((n) => {
+    const c = coverage(model, app.name, [n.id]);
+    return progressRow(n.label, c.done, c.total, n.id === network);
+  });
+  const missing = missingPages(model, app.name, network);
+  const formView = !state.session;
+  const shown = missing.slice(0, 15);
+  box.replaceChildren(
+    el(
+      'div',
+      { className: 'prog-head' },
+      el('strong', { textContent: app.name }),
+      el('span', { className: 'muted', textContent: 'pages mesurées' }),
+    ),
+    ...rows,
+    missing.length
+      ? el('div', { className: 'todo-title', textContent: `Reste à mesurer en ${NETWORK_LABELS[network]} :` })
+      : el('div', {
+          className: 'todo-title done',
+          textContent: `✓ Toutes les pages sont mesurées en ${NETWORK_LABELS[network]}.`,
+        }),
+    missing.length
+      ? el(
+          'div',
+          { className: 'chips' },
+          ...shown.map((p) =>
+            formView
+              ? el('button', {
+                  type: 'button',
+                  className: 'chip',
+                  textContent: p.name,
+                  title: 'Choisir cette page',
+                  dataset: { page: p.name },
+                })
+              : el('span', { className: 'chip', textContent: p.name }),
+          ),
+          missing.length > shown.length
+            ? el('span', { className: 'chip more', textContent: `+${missing.length - shown.length}` })
+            : null,
+        )
+      : '',
+  );
+}
+
+function renderLast() {
+  const last = state.measures.slice(-5).reverse();
+  $('count').textContent = state.measures.length ? `· ${nf.format(state.measures.length)} au total` : '';
+  $('last').replaceChildren(
+    ...(last.length
+      ? last.map((m) =>
+          el(
+            'li',
+            {},
+            el('span', { className: 'what', textContent: `${m.app} › ${m.page}`, title: m.url }),
+            el('span', { className: 'value', textContent: m.timeout ? `≥ ${fmtMs(m.duration)}` : fmtMs(m.duration) }),
+            el('button', {
+              type: 'button',
+              className: 'del',
+              textContent: '✕',
+              title: 'Supprimer cette mesure',
+              dataset: { del: m.id },
+            }),
+            el('span', { className: 'meta', textContent: `${NETWORK_LABELS[m.network]} · ${fmtDate(m.ts)}` }),
+          ),
+        )
+      : [el('li', {}, el('span', { className: 'muted', textContent: 'Aucune mesure pour le moment.' }))]),
+  );
+}
+
+// ---------------------------------------------------------------- Actions
+
+async function arm() {
+  const app = normName($('app').value);
+  const page = normName($('page').value);
+  $('formError').textContent = '';
+  if (!app) return showError("Indiquez le nom de l'application.", 'app');
+  if (!page) return showError('Indiquez le nom de la page.', 'page');
+  const tab = await targetTab();
+  if (!tab) return showError('Aucun onglet actif.');
+  await saveDraft({ app, page });
+  $('arm').disabled = true;
+  const res = await send({ type: 'arm', tabId: tab.id, app, page, network: state.config.settings.network });
+  $('arm').disabled = false;
+  if (!res || !res.ok) showError((res && res.error) || 'Impossible de lancer la mesure.');
+}
+
+function showError(text, focusId) {
+  $('formError').textContent = text;
+  if (focusId) $(focusId).focus();
+}
+
+async function goNext() {
+  const s = state.session;
+  if (!s) return;
+  const done = new Set(
+    state.model.pages
+      .filter((p) => cellStat(state.model, s.app, p.name, s.network, 'avg').status !== 'missing')
+      .map((p) => nameKey(p.name)),
+  );
+  const next = nextPage(
+    state.model.pages.map((p) => p.name),
+    s.page,
+    done,
+  );
+  await saveDraft({ app: s.app, page: next });
+  state.formFilled = false; // reprendre les valeurs du brouillon
+  await send({ type: 'finish' });
+  await load();
+  $('page').focus();
+  $('page').select();
+}
+
+async function relaunch(network) {
+  const res = await send({ type: 'relaunch', network });
+  if (!res || !res.ok) toast((res && res.error) || 'Impossible de relancer la mesure.');
+}
+
+// ---------------------------------------------------------------- Évènements
+
+for (const b of document.querySelectorAll('[data-network]')) {
+  b.addEventListener('click', () => {
+    // Mise à jour immédiate (sans attendre l'écriture) pour qu'un « Lancer » juste après parte sur ce réseau.
+    state.config.settings = { ...state.config.settings, network: b.dataset.network };
+    renderNetwork(b.dataset.network);
+    renderProgress(state.session ? state.session.app : $('app').value, b.dataset.network);
+    saveSettings({ network: b.dataset.network });
+  });
+}
+$('form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  arm();
+});
+let draftTimer = 0;
+for (const id of ['app', 'page']) {
+  $(id).addEventListener('input', () => {
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(() => saveDraft({ app: $('app').value, page: $('page').value }), 300);
+    if (id === 'app') {
+      renderProgress($('app').value, state.config.settings.network);
+      $('appSuggest').hidden = !state.suggestion || nameKey(state.suggestion) === nameKey($('app').value);
+    }
+  });
+}
+$('appSuggestUse').addEventListener('click', () => {
+  $('app').value = state.suggestion || '';
+  saveDraft({ app: $('app').value });
+  $('appSuggest').hidden = true;
+  renderProgress($('app').value, state.config.settings.network);
+  $('page').focus();
+});
+$('progress').addEventListener('click', (e) => {
+  const chip = e.target.closest('[data-page]');
+  if (!chip) return;
+  $('page').value = chip.dataset.page;
+  saveDraft({ page: chip.dataset.page });
+  $('arm').focus();
+});
+$('cancel').addEventListener('click', () => send({ type: 'cancel' }));
+$('relaunchOther').addEventListener('click', () => relaunch(other(state.session.network)));
+$('relaunchSame').addEventListener('click', () => relaunch(state.session.network));
+$('next').addEventListener('click', goNext);
+$('deleteResult').addEventListener('click', async () => {
+  const id = state.session && state.session.result && state.session.result.measureId;
+  if (id) {
+    await deleteMeasures([id]);
+    toast('Mesure supprimée');
+  }
+});
+$('last').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-del]');
+  if (!b) return;
+  await deleteMeasures([b.dataset.del]);
+  toast('Mesure supprimée');
+});
+$('openExports').addEventListener('click', () =>
+  chrome.tabs.create({ url: chrome.runtime.getURL('report/report.html') }),
+);
+$('openSettings').addEventListener('click', () => chrome.runtime.openOptionsPage());
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'session' && changes.session) scheduleLoad();
+  if (area !== 'local') return;
+  if (changes.settings || changes.apps || changes.pages || Object.keys(changes).some(isMeasureKey)) scheduleLoad();
+});
+if (!fixedTabId) {
+  chrome.tabs.onActivated.addListener(() => !state.session && updateSuggestion());
+  chrome.tabs.onUpdated.addListener((_id, info) => info.url && !state.session && updateSuggestion());
+}
+
+load();

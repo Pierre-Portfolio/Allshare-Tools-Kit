@@ -24,13 +24,83 @@
 }
 
 .bar a,
-.hint a {
+.hint a,
+.legend-row a {
   color: var(--accent);
   text-decoration: none;
 }
 
 main {
   padding: 14px 16px 40px;
+}
+
+/* ---------- Exports */
+.exports {
+  margin-bottom: 22px;
+}
+
+.exports h2,
+.preview-title {
+  font-size: 16px;
+  margin-bottom: 10px;
+}
+
+.export-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.card.export {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+  gap: 8px;
+  padding: 14px 16px 16px;
+}
+
+.card.export .num {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.card.export h3 {
+  font-size: 15px;
+  padding-right: 30px;
+}
+
+.card.export p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.card.export .info {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.card.export select,
+.card.export input {
+  width: 100%;
+}
+
+.card.export button {
+  padding: 9px 12px;
+}
+
+.legend-text {
+  flex-basis: 100%;
 }
 
 /* ---------- Synthèse */
@@ -298,6 +368,51 @@ table.matrix {
   min-width: 66px;
 }
 
+.matrix td.warn,
+table.grid td.warn {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
+.matrix td.crit,
+table.grid td.crit {
+  background: var(--crit-bg);
+  color: var(--crit-text);
+  font-weight: 700;
+}
+
+.vs {
+  font-size: 11px;
+  margin-left: 6px;
+  opacity: 0.75;
+}
+
+.matrix th.page {
+  white-space: nowrap;
+}
+
+.page-name {
+  display: inline-block;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
+.matrix .exp {
+  border: none;
+  background: none;
+  padding: 0 2px;
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.matrix .exp:hover {
+  color: var(--accent);
+}
+
 .matrix td.missing,
 .matrix td.timeout {
   text-align: center;
@@ -412,6 +527,10 @@ dialog::backdrop {
 .dlg-head > div {
   flex: 1;
   min-width: 0;
+}
+
+.dlg-head button {
+  white-space: nowrap;
 }
 
 .dlg-head h2 {

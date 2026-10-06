@@ -315,3 +315,19 @@ dialog::backdrop {
     width: 100%;
   }
 }
+
+.add-pages {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 12px;
+}
+
+.add-pages textarea {
+  width: 100%;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.form-grid div input[type='number'] {
+  width: 90px;
+}

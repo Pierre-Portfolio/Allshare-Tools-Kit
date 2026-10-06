@@ -1,169 +1,371 @@
 // Insigth — service worker.
 //
-//  * injecte les scripts de mesure uniquement sur les hôtes des applications configurées ;
-//  * mémorise le dernier clic de chaque onglet (pour mesurer un chargement de
-//    page complet depuis le clic fait sur la page précédente) ;
-//  * enregistre les mesures en y associant l'application, la page et le réseau ;
-//  * affiche le réseau courant (WiFi / ETH) sur l'icône de l'extension.
+// Une mesure se déroule ainsi (état « session » dans chrome.storage.session) :
+//   armed      le formulaire a été validé : les scripts de mesure sont injectés
+//              dans l'onglet, on attend le clic de l'utilisateur ;
+//   measuring  un clic a changé l'URL (ou une nouvelle page se charge) : chrono en cours ;
+//   done       page complètement affichée : la mesure est enregistrée ;
+//   rearming   « Relancer » : retour à la page de départ avant de réarmer.
+// Les scripts ne sont injectés que pendant une mesure, dans l'onglet concerné.
 
-import { getConfig, addMeasure, newId } from './lib/storage.js';
-import { matchApp, pageKey, matchPatternsFor } from './lib/urls.js';
+import {
+  getConfig,
+  getSession,
+  setSession,
+  addMeasure,
+  ensureInCatalog,
+  saveSettings,
+  newId,
+  migrateV1,
+} from './lib/storage.js';
+import { canonical, normName } from './lib/names.js';
+import { NETWORK_LABELS } from './lib/format.js';
 
-const SCRIPT_IDS = { hook: 'insigth-page-hook', content: 'insigth-content' };
-const clicks = new Map(); // tabId -> { t, leftAt } (aussi copié dans storage.session)
+const SCRIPT_IDS = { content: 'insigth-content', hook: 'insigth-page-hook' };
+const ACTIVE = ['armed', 'measuring', 'rearming'];
 
-// ---------- Injection des scripts sur les applications configurées
+const label = (s) => `${s.app} › ${s.page} · ${NETWORK_LABELS[s.network] || s.network}`;
 
-let syncChain = Promise.resolve();
-function syncContentScripts() {
-  syncChain = syncChain
-    .then(registerScripts)
-    .catch((e) => console.error('[Insigth] enregistrement des scripts impossible', e));
-  return syncChain;
+// ---------------------------------------------------------------- Session (mises à jour sérialisées)
+
+let chain = Promise.resolve();
+/** fn(session) renvoie la nouvelle session, null pour l'effacer, undefined pour ne rien changer. */
+function updateSession(fn) {
+  const run = chain.then(async () => {
+    const current = await getSession();
+    const next = await fn(current);
+    if (next !== undefined) await setSession(next);
+    return next === undefined ? current : next;
+  });
+  chain = run.catch(() => {});
+  return run;
 }
 
+// ---------------------------------------------------------------- Scripts de mesure
+
 async function registerScripts() {
-  const { apps } = await getConfig();
-  const matches = [...new Set(apps.flatMap((a) => (a.baseUrls || []).flatMap(matchPatternsFor)))];
   const ids = Object.values(SCRIPT_IDS);
   const existing = await chrome.scripting.getRegisteredContentScripts({ ids });
+  if (existing.length === ids.length) return;
   if (existing.length) await chrome.scripting.unregisterContentScripts({ ids: existing.map((s) => s.id) });
-  if (!matches.length) return;
+  const common = { matches: ['<all_urls>'], runAt: 'document_start', allFrames: false, persistAcrossSessions: false };
   await chrome.scripting.registerContentScripts([
-    {
-      id: SCRIPT_IDS.content,
-      js: ['content/content.js'],
-      matches,
-      runAt: 'document_start',
-      allFrames: false,
-      persistAcrossSessions: true,
-    },
-    {
-      id: SCRIPT_IDS.hook,
-      js: ['content/page-hook.js'],
-      matches,
-      runAt: 'document_start',
-      allFrames: false,
-      world: 'MAIN',
-      persistAcrossSessions: true,
-    },
+    { id: SCRIPT_IDS.content, js: ['content/content.js'], ...common },
+    { id: SCRIPT_IDS.hook, js: ['content/page-hook.js'], world: 'MAIN', ...common },
   ]);
 }
 
-// ---------- Badge : réseau courant
+async function unregisterScripts() {
+  const existing = await chrome.scripting.getRegisteredContentScripts({ ids: Object.values(SCRIPT_IDS) });
+  if (existing.length) await chrome.scripting.unregisterContentScripts({ ids: existing.map((s) => s.id) });
+}
+
+/** Injection dans la page déjà affichée (celle où l'utilisateur va cliquer). */
+async function injectInto(tabId) {
+  await chrome.scripting.executeScript({ target: { tabId }, files: ['content/page-hook.js'], world: 'MAIN' });
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => {
+      window.__insigthInjected = true; // page déjà chargée : pas de mesure de son chargement
+    },
+  });
+  await chrome.scripting.executeScript({ target: { tabId }, files: ['content/content.js'] });
+}
+
+async function notifyTab(tabId, message) {
+  try {
+    await chrome.tabs.sendMessage(tabId, message);
+  } catch {
+    /* aucun script dans l'onglet */
+  }
+}
+
+// ---------------------------------------------------------------- Badge de l'icône
 
 async function updateBadge() {
-  const { settings } = await getConfig();
-  const wifi = settings.network !== 'ethernet';
-  const text = !settings.recording ? 'OFF' : wifi ? 'WiFi' : 'ETH';
-  const color = !settings.recording ? '#6b7280' : wifi ? '#1d4ed8' : '#15803d';
+  const [{ settings }, s] = await Promise.all([getConfig(), getSession()]);
+  let text = settings.network === 'ethernet' ? 'ETH' : 'WiFi';
+  let color = settings.network === 'ethernet' ? '#15803d' : '#1d4ed8';
+  if (s && (s.state === 'armed' || s.state === 'rearming')) {
+    text = 'PRÊT';
+    color = '#d97706';
+  } else if (s && s.state === 'measuring') {
+    text = '…';
+    color = '#d97706';
+  }
   await chrome.action.setBadgeText({ text });
   await chrome.action.setBadgeBackgroundColor({ color });
   if (chrome.action.setBadgeTextColor) await chrome.action.setBadgeTextColor({ color: '#ffffff' });
-  await chrome.action.setTitle({
-    title: `Insigth — réseau : ${wifi ? 'WiFi' : 'Ethernet'}${settings.recording ? '' : ' (enregistrement en pause)'}`,
-  });
 }
 
-// ---------- Clics en attente (un par onglet)
+// ---------------------------------------------------------------- Actions du panneau
 
-const clickKey = (tabId) => `click_${tabId}`;
+async function arm({ tabId, app, page, network }) {
+  app = normName(app);
+  page = normName(page);
+  if (!app || !page) return { ok: false, error: "Indiquez le nom de l'application et le nom de la page." };
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (!tab || !/^https?:/i.test(tab.url || '')) {
+    return { ok: false, error: "Ouvrez d'abord l'application (page http ou https) dans l'onglet actif." };
+  }
+  const { apps, pages } = await getConfig();
+  app = canonical(
+    app,
+    apps.map((a) => a.name),
+  );
+  page = canonical(
+    page,
+    pages.map((p) => p.name),
+  );
+  const settings = network ? await saveSettings({ network }) : (await getConfig()).settings;
 
-function rememberClick(tabId, click) {
-  clicks.set(tabId, click);
-  chrome.storage.session.set({ [clickKey(tabId)]: click }).catch(() => {});
+  const previous = await getSession();
+  if (previous && ACTIVE.includes(previous.state)) await notifyTab(previous.tabId, { type: 'session-end' });
+  const session = {
+    id: newId(),
+    tabId,
+    app,
+    page,
+    network: settings.network,
+    state: 'armed',
+    armedAt: Date.now(),
+    armUrl: tab.url,
+    click: null,
+    leftAt: null,
+    startEpoch: null,
+    result: null,
+  };
+  await updateSession(() => session);
+  try {
+    await registerScripts();
+    await injectInto(tabId);
+  } catch (e) {
+    await updateSession(() => null);
+    await unregisterScripts();
+    updateBadge();
+    return { ok: false, error: `Impossible de mesurer cet onglet : ${e.message}` };
+  }
+  updateBadge();
+  return { ok: true, session };
 }
 
-function forgetClick(tabId) {
-  clicks.delete(tabId);
-  chrome.storage.session.remove(clickKey(tabId)).catch(() => {});
+async function stop() {
+  const s = await getSession();
+  if (s && ACTIVE.includes(s.state)) await notifyTab(s.tabId, { type: 'session-end' });
+  await updateSession(() => null);
+  await unregisterScripts();
+  updateBadge();
+  return { ok: true };
 }
 
-// La page d'où vient le clic est quittée : on note l'instant (voir content.js).
-async function markLeft(tabId, t) {
-  let click = clicks.get(tabId);
-  if (!click) click = (await chrome.storage.session.get(clickKey(tabId)))[clickKey(tabId)];
-  if (click && click.leftAt == null) rememberClick(tabId, { ...click, leftAt: t });
+/** Attend que l'onglet ait rechargé la page de départ, puis arme (si le script n'y est pas déjà). */
+function rearmWhenLoaded(tabId, sessionId) {
+  let started = false;
+  let done = false;
+  const finish = async () => {
+    if (done) return;
+    done = true;
+    chrome.tabs.onUpdated.removeListener(onUpdated);
+    const s = await getSession();
+    if (!s || s.id !== sessionId || s.state !== 'rearming') return; // déjà armé par la nouvelle page
+    try {
+      await injectInto(tabId);
+    } catch {
+      /* onglet inaccessible */
+    }
+  };
+  const onUpdated = (id, info) => {
+    if (id !== tabId) return;
+    if (info.status === 'loading') started = true;
+    if (info.status === 'complete' && started) finish();
+  };
+  chrome.tabs.onUpdated.addListener(onUpdated);
+  // Changement d'ancre seulement (#/route d'une SPA) : pas de rechargement.
+  setTimeout(() => !started && finish(), 1500);
+  setTimeout(finish, 60000);
 }
 
-async function takeClick(tabId) {
-  let click = clicks.get(tabId);
-  if (!click) click = (await chrome.storage.session.get(clickKey(tabId)))[clickKey(tabId)];
-  forgetClick(tabId);
-  return click || null;
+async function relaunch({ network }) {
+  const s = await getSession();
+  if (!s) return { ok: false, error: 'Aucune mesure à relancer.' };
+  const tab = await chrome.tabs.get(s.tabId).catch(() => null);
+  if (!tab) return { ok: false, error: "L'onglet de la mesure a été fermé." };
+  const settings = network ? await saveSettings({ network }) : (await getConfig()).settings;
+  const target = (s.click && s.click.url) || s.armUrl;
+  if (ACTIVE.includes(s.state)) await notifyTab(s.tabId, { type: 'session-end' });
+  const next = {
+    ...s,
+    id: newId(),
+    network: settings.network,
+    state: 'rearming',
+    armedAt: Date.now(),
+    armUrl: target,
+    click: null,
+    leftAt: null,
+    startEpoch: null,
+    result: null,
+  };
+  await updateSession(() => next);
+  await registerScripts();
+  rearmWhenLoaded(s.tabId, next.id);
+  await chrome.tabs.update(s.tabId, { url: target });
+  updateBadge();
+  return { ok: true, session: next };
 }
 
-// ---------- Messages des scripts de mesure
+// ---------------------------------------------------------------- Messages des scripts de mesure
 
-async function handleInit(msg, tabId) {
-  const click = tabId != null ? await takeClick(tabId) : null;
-  const { apps, settings } = await getConfig();
-  const match = matchApp(msg.url, apps, settings);
-  return { app: match ? { id: match.app.id, name: match.app.name } : null, settings, click };
+async function hello(msg, tabId) {
+  const s = await getSession();
+  if (!s || s.tabId !== tabId || !ACTIVE.includes(s.state)) return null;
+  const { settings } = await getConfig();
+  const base = { settings, label: label(s) };
+  if (s.state === 'rearming' || !msg.fresh) {
+    // Page de départ (rechargée ou déjà affichée) : on attend le clic.
+    if (s.state === 'rearming')
+      await updateSession((cur) => (cur && cur.id === s.id ? { ...cur, state: 'armed' } : undefined));
+    updateBadge();
+    return { ...base, mode: 'armed' };
+  }
+  // Nouvelle page dans l'onglet armé : on mesure son chargement.
+  return { ...base, mode: 'load', click: s.click ? { t: s.click.t, leftAt: s.leftAt } : null };
 }
 
-const KINDS = ['load', 'spa'];
-const TRIGGERS = ['click', 'navigate', 'reload'];
-
-async function handleMeasure(msg, tabId) {
-  if (tabId != null && msg.kind === 'spa') forgetClick(tabId);
-  const { apps, settings } = await getConfig();
-  const match = settings.recording ? matchApp(msg.url, apps, settings) : null;
-  if (!match) return { ok: false };
+async function saveResult(msg, tabId) {
+  const s = await getSession();
+  if (!s || s.tabId !== tabId || !ACTIVE.includes(s.state)) return { ok: false };
   const measure = {
     id: newId(),
     ts: Math.round(Number(msg.startEpoch) || Date.now()),
-    appId: match.app.id,
-    url: String(msg.url),
-    page: pageKey(msg.url, match.basePath, settings),
-    network: settings.network === 'ethernet' ? 'ethernet' : 'wifi',
+    app: s.app,
+    page: s.page,
+    network: s.network,
     duration: Math.max(0, Math.round(Number(msg.duration) || 0)),
-    kind: KINDS.includes(msg.kind) ? msg.kind : 'load',
-    trigger: TRIGGERS.includes(msg.trigger) ? msg.trigger : 'navigate',
     timeout: !!msg.timeout,
+    kind: msg.kind === 'spa' ? 'spa' : 'load',
+    trigger: ['click', 'navigate', 'reload'].includes(msg.trigger) ? msg.trigger : 'navigate',
+    url: String(msg.url || ''),
+    startUrl: (s.click && s.click.url) || s.armUrl,
   };
   await addMeasure(measure);
-  return { ok: true, page: measure.page, appName: match.app.name, network: measure.network };
+  await ensureInCatalog(s.app, s.page);
+  await updateSession((cur) =>
+    cur && cur.id === s.id
+      ? {
+          ...cur,
+          state: 'done',
+          finishedAt: Date.now(),
+          result: { measureId: measure.id, duration: measure.duration, timeout: measure.timeout, url: measure.url },
+        }
+      : undefined,
+  );
+  await unregisterScripts();
+  updateBadge();
+  return { ok: true, label: label(s), duration: measure.duration };
+}
+
+function onTabMessage(msg, tabId) {
+  switch (msg.type) {
+    case 'hello':
+      return hello(msg, tabId);
+    case 'click':
+      return updateSession((s) =>
+        s && s.tabId === tabId && ACTIVE.includes(s.state) && Number.isFinite(msg.t)
+          ? { ...s, click: { t: msg.t, url: String(msg.url || '') }, leftAt: null }
+          : undefined,
+      );
+    case 'idle': // clic sans changement de page : on reste armé
+      return updateSession((s) =>
+        s && s.tabId === tabId && ACTIVE.includes(s.state)
+          ? { ...s, state: 'armed', click: null, startEpoch: null }
+          : undefined,
+      ).then(updateBadge);
+    case 'left': // la page cliquée est quittée : le chrono tourne
+      return updateSession((s) =>
+        s && s.tabId === tabId && s.click && !s.leftAt && ACTIVE.includes(s.state)
+          ? { ...s, state: 'measuring', leftAt: msg.t, startEpoch: s.click.t }
+          : undefined,
+      ).then(updateBadge);
+    case 'measuring':
+      return updateSession((s) =>
+        s && s.tabId === tabId && ACTIVE.includes(s.state)
+          ? { ...s, state: 'measuring', startEpoch: msg.startEpoch }
+          : undefined,
+      ).then(updateBadge);
+    case 'result':
+      return saveResult(msg, tabId);
+    default:
+      return Promise.resolve(null);
+  }
+}
+
+function onPanelMessage(msg) {
+  switch (msg.type) {
+    case 'arm':
+      return arm(msg);
+    case 'cancel':
+    case 'finish':
+      return stop();
+    case 'relaunch':
+      return relaunch(msg);
+    default:
+      return Promise.resolve(null);
+  }
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  const tabId = sender.tab ? sender.tab.id : null;
-  switch (msg && msg.type) {
-    case 'click':
-      if (tabId != null && Number.isFinite(msg.t)) rememberClick(tabId, { t: msg.t });
-      return false;
-    case 'left':
-      if (tabId != null && Number.isFinite(msg.t)) markLeft(tabId, msg.t);
-      return false;
-    case 'clearClick':
-      if (tabId != null) forgetClick(tabId);
-      return false;
-    case 'init':
-      handleInit(msg, tabId).then(sendResponse, () => sendResponse(null));
-      return true;
-    case 'measure':
-      handleMeasure(msg, tabId).then(sendResponse, () => sendResponse({ ok: false }));
-      return true;
-    default:
-      return false;
+  if (!msg || !msg.type) return false;
+  // Pages de l'extension (panneau, même ouvert dans un onglet) ou script de mesure dans une page web.
+  const fromExtension = !sender.tab || (sender.url || '').startsWith(chrome.runtime.getURL(''));
+  const run = fromExtension ? onPanelMessage(msg) : onTabMessage(msg, sender.tab.id);
+  run.then(
+    (r) => sendResponse(r === undefined ? null : r),
+    (e) => sendResponse({ ok: false, error: e && e.message }),
+  );
+  return true;
+});
+
+// ---------------------------------------------------------------- Évènements du navigateur
+
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  const s = await getSession();
+  if (s && s.tabId === tabId) await stop();
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes.settings) return;
+  const network = changes.settings.newValue && changes.settings.newValue.network;
+  updateBadge();
+  if (!network) return;
+  // Réseau changé pendant une mesure armée : la mesure suit le nouveau réseau.
+  updateSession((s) => (s && ACTIVE.includes(s.state) && s.network !== network ? { ...s, network } : undefined)).then(
+    (s) => s && ACTIVE.includes(s.state) && notifyTab(s.tabId, { type: 'label', label: label(s) }),
+  );
+});
+
+// Raccourci clavier : lance la mesure avec les valeurs du formulaire.
+chrome.commands.onCommand.addListener(async (command, tab) => {
+  if (command !== 'arm-measure') return;
+  const target = tab || (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
+  if (!target) return;
+  const { draft } = await getConfig();
+  const res = await arm({ tabId: target.id, app: draft.app, page: draft.page });
+  if (!res.ok && chrome.sidePanel && chrome.sidePanel.open) {
+    chrome.sidePanel.open({ windowId: target.windowId }).catch(() => {});
   }
 });
 
-chrome.tabs.onRemoved.addListener((tabId) => forgetClick(tabId));
+async function boot() {
+  if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+  }
+  await setSession(null);
+  await unregisterScripts();
+  await updateBadge();
+}
 
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== 'local') return;
-  if (changes.apps) syncContentScripts();
-  if (changes.settings) updateBadge();
+chrome.runtime.onInstalled.addListener(async () => {
+  await migrateV1().catch((e) => console.error('[Insigth] migration', e));
+  await boot();
 });
-
-chrome.runtime.onInstalled.addListener((details) => {
-  syncContentScripts();
-  updateBadge();
-  if (details.reason === 'install') chrome.runtime.openOptionsPage();
-});
-
-chrome.runtime.onStartup.addListener(() => {
-  syncContentScripts();
-  updateBadge();
-});
+chrome.runtime.onStartup.addListener(boot);

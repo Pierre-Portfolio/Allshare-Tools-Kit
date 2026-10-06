@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Insigth</title>
+    <link rel="stylesheet" href="../common.css" />
+    <link rel="stylesheet" href="panel.css" />
+  </head>
+  <body>
+    <header class="top">
+      <img src="../icons/icon32.png" alt="" width="22" height="22" />
+      <h1>Insigth</h1>
+      <button id="openExports" type="button" class="ghost">Exports</button>
+      <button id="openSettings" type="button" class="ghost" title="Réglages" aria-label="Réglages">⚙</button>
+    </header>
+
+    <section>
+      <h2>Réseau de la mesure</h2>
+      <div class="segmented" role="radiogroup" aria-label="Réseau">
+        <button type="button" role="radio" data-network="wifi">WiFi</button>
+        <button type="button" role="radio" data-network="ethernet">Ethernet</button>
+      </div>
+      <p id="netHint" class="hint"></p>
+    </section>
+
+    <!-- 1. Formulaire -->
+    <section id="viewForm" hidden>
+      <form id="form" autocomplete="off" novalidate>
+        <label class="field">
+          <span>Nom de l'application</span>
+          <input id="app" type="text" list="appList" placeholder="ex. Client A" spellcheck="false" />
+        </label>
+        <div id="appSuggest" class="suggest" hidden>
+          <span>Cet onglet semble être <strong id="appSuggestName"></strong></span>
+          <button id="appSuggestUse" type="button">Utiliser</button>
+        </div>
+        <label class="field">
+          <span>Nom de la page</span>
+          <input id="page" type="text" list="pageList" placeholder="ex. Factures" spellcheck="false" />
+        </label>
+        <button id="arm" type="submit" class="big primary">● Lancer l'enregistrement</button>
+        <p id="formError" class="error" role="alert"></p>
+        <p class="hint">
+          Cliquez ensuite dans la page sur le lien à mesurer : le chrono part au clic et s'arrête quand la page est
+          complètement affichée. Raccourci : <kbd>Alt</kbd>+<kbd>Maj</kbd>+<kbd>M</kbd>.
+        </p>
+      </form>
+      <datalist id="appList"></datalist>
+      <datalist id="pageList"></datalist>
+    </section>
+
+    <!-- 2. En attente du clic / mesure en cours -->
+    <section id="viewLive" hidden>
+      <div class="card live">
+        <div class="state"><span class="dot"></span><span id="liveState"></span></div>
+        <div id="liveTimer" class="timer">0,0 s</div>
+        <div id="liveLabel" class="what"></div>
+        <p id="liveHint" class="hint"></p>
+        <button id="cancel" type="button">Annuler</button>
+      </div>
+    </section>
+
+    <!-- 3. Résultat -->
+    <section id="viewResult" hidden>
+      <div class="card result">
+        <div id="resLabel" class="what"></div>
+        <div id="resValue" class="value"></div>
+        <ul id="resFacts" class="facts"></ul>
+        <button id="relaunchOther" type="button" class="big primary"></button>
+        <p id="relaunchHint" class="hint"></p>
+        <div class="row">
+          <button id="relaunchSame" type="button"></button>
+          <button id="next" type="button" class="accent">Page suivante →</button>
+        </div>
+        <button id="deleteResult" type="button" class="link danger">Supprimer cette mesure</button>
+      </div>
+    </section>
+
+    <section id="progress" hidden></section>
+
+    <section>
+      <h2>Dernières mesures <span id="count" class="muted"></span></h2>
+      <ul id="last" class="last"></ul>
+    </section>
+
+    <div id="toast" class="toast" role="status"></div>
+    <script type="module" src="panel.js"></script>
+  </body>
+</html>

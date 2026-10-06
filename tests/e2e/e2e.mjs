@@ -131,232 +131,257 @@ try {
     }
   }
 
-  // Configuration : deux applications quasi identiques
-  await storage(async (b) => {
-    await chrome.storage.local.set({
-      apps: [
-        { id: 'app1', name: 'Appli 1', baseUrls: [`${b}/appli1/`] },
-        { id: 'app2', name: 'Appli 2', baseUrls: [`${b}/appli2/`] },
-      ],
-    });
-  }, base);
-  for (let i = 0; i < 50; i++) {
-    const n = await storage(() => chrome.scripting.getRegisteredContentScripts().then((s) => s.length));
-    if (n === 2) break;
-    await sleep(100);
-  }
   for (const p of context.pages()) if (p.url().startsWith('chrome-extension://')) await p.close();
-
-  const page = await context.newPage();
-  const expectRange = (m, min, max, label) => {
+  const session = () => storage(async () => (await chrome.storage.session.get('session')).session || null);
+  async function waitSession(pred, label, timeout = 15000) {
+    const end = Date.now() + timeout;
+    for (;;) {
+      const s = await session();
+      if (pred(s)) return s;
+      if (Date.now() > end) throw new Error(`session : ${label} non atteint (${JSON.stringify(s && s.state)})`);
+      await sleep(100);
+    }
+  }
+  const check = (m, expected, min, max, label) => {
     console.log(
-      `  ${label.padEnd(42)} ${String(m.duration).padStart(5)} ms  [${m.network}/${m.kind}/${m.trigger}] ${m.page}`,
+      `  ${label.padEnd(44)} ${String(m.duration).padStart(5)} ms  [${m.app} › ${m.page} · ${m.network} · ${m.kind}/${m.trigger}]`,
     );
+    for (const [k, v] of Object.entries(expected)) assert.equal(m[k], v, `${label} : ${k}`);
     assert.ok(m.duration >= min && m.duration <= max, `${label} : ${m.duration} ms hors de [${min}, ${max}]`);
   };
 
-  // 1. Chargement initial (URL saisie) : départ = début de navigation
+  // 1. Sans lancer l'enregistrement, rien n'est mesuré
+  const page = await context.newPage();
   await page.goto(`${base}/appli1/`);
-  let list = await waitMeasures(1);
-  expectRange(list[0], SERVER_DELAY.appli1 + API_DELAY, 3000, 'WiFi · appli1 / (URL saisie)');
-  assert.equal(list[0].trigger, 'navigate');
-  assert.equal(list[0].page, '/');
+  await page.click('#nav-clients');
+  await page.waitForLoadState('load');
+  await sleep(2500);
+  assert.equal((await measures()).length, 0, 'aucune mesure sans lancement');
+  await page.goto(`${base}/appli1/`);
+  const tabId = await storage(async (u) => (await chrome.tabs.query({ url: u + '/*' }))[0].id, base);
 
-  // 2. Clic sur un lien -> nouvelle page HTML : départ = clic sur la page précédente
+  // 2. Panneau (ouvert dans un onglet pour le test, ciblant l'onglet de l'appli)
+  const panel = await context.newPage();
+  await panel.setViewportSize({ width: 380, height: 860 });
+  await panel.goto(`chrome-extension://${extId}/panel/panel.html?tabId=${tabId}`);
+  await panel.waitForSelector('#viewForm:not([hidden])');
+  await panel.click('[data-network="wifi"]');
+  await panel.fill('#app', 'Appli 1');
+  await panel.fill('#page', 'Clients');
+  await panel.click('#arm');
+  await waitSession((s) => s && s.state === 'armed', 'armé');
+  await panel.waitForSelector('#viewLive:not([hidden])');
+  await page.waitForSelector('insigth-indicator', { state: 'attached' });
+  await panel.screenshot({ path: join(out, 'panel-pret.png') });
+
+  // 3. Clic dans l'appli -> nouvelle page -> mesure
+  await page.click('#nav-clients');
+  let list = await waitMeasures(1);
+  check(
+    list[0],
+    { app: 'Appli 1', page: 'Clients', network: 'wifi', kind: 'load', trigger: 'click' },
+    800,
+    3000,
+    'WiFi · Clients (clic)',
+  );
+  assert.equal(list[0].startUrl, `${base}/appli1/`);
+  await panel.waitForSelector('#viewResult:not([hidden])');
+  assert.match(await panel.textContent('#resValue'), /ms/);
+  assert.match(await panel.textContent('#relaunchOther'), /Relancer en Ethernet/);
+  await panel.screenshot({ path: join(out, 'panel-resultat.png') });
+
+  // 4. « Relancer en Ethernet » : retour à la page de départ, le chargement de retour n'est pas mesuré
+  await panel.click('#relaunchOther');
+  await waitSession((s) => s && s.state === 'armed' && s.network === 'ethernet', 'réarmé en Ethernet');
+  await page.waitForURL(`${base}/appli1/`);
+  await page.waitForSelector('#nav-clients');
+  await sleep(1500);
+  assert.equal((await measures()).length, 1, 'le retour à la page de départ ne crée pas de mesure');
   await page.click('#nav-clients');
   list = await waitMeasures(2);
-  expectRange(list[1], SERVER_DELAY.appli1 + API_DELAY, 3000, 'WiFi · appli1 /clients (clic)');
-  assert.equal(list[1].trigger, 'click');
-  assert.equal(list[1].kind, 'load');
-  assert.equal(list[1].page, '/clients');
-  assert.equal(await page.locator('insigth-indicator').count(), 1, "l'indicateur est affiché");
-  await page.screenshot({ path: join(out, 'indicateur.png'), clip: { x: 760, y: 780, width: 600, height: 120 } });
+  check(
+    list[1],
+    { app: 'Appli 1', page: 'Clients', network: 'ethernet', trigger: 'click' },
+    800,
+    3000,
+    'Ethernet · Clients (relance)',
+  );
 
+  // 5. « Page suivante » : retour au formulaire, appli conservée
+  await panel.waitForSelector('#viewResult:not([hidden])');
+  await panel.click('#next');
+  await panel.waitForSelector('#viewForm:not([hidden])');
+  assert.equal(await panel.inputValue('#app'), 'Appli 1');
+  await panel.fill('#page', 'Fiche client');
+  await panel.press('#page', 'Enter');
+  await waitSession((s) => s && s.state === 'armed' && s.page === 'Fiche client', 'armé Fiche client');
   await page.click('#nav-clients-42');
   list = await waitMeasures(3);
-  expectRange(list[2], SERVER_DELAY.appli1 + API_DELAY, 3000, 'WiFi · appli1 /clients/42 (clic)');
-  assert.equal(list[2].page, '/clients/:id');
+  check(list[2], { page: 'Fiche client', network: 'ethernet' }, 800, 3000, 'Ethernet · Fiche client');
 
-  // 2 bis. Clic vers une page hors application (SSO) qui revient sur l'appli :
-  // le clic ne doit pas servir de départ (sinon le temps passé sur le SSO serait compté).
-  const ssoHost = base.replace('127.0.0.1', 'localhost');
-  await page.evaluate(
-    (href) => {
-      const a = document.createElement('a');
-      a.id = 'sso';
-      a.href = href;
-      a.textContent = 'SSO';
-      document.body.append(a);
-    },
-    `${ssoHost}/sso?next=${encodeURIComponent(`${base}/appli1/clients`)}`,
-  );
-  await sleep(1200);
-  await page.click('#sso');
-  list = await waitMeasures(4);
-  expectRange(list[3], SERVER_DELAY.appli1 + API_DELAY, 1450, 'WiFi · appli1 /clients (retour du SSO)');
-  assert.equal(list[3].trigger, 'navigate');
-  await storage(async (id) => chrome.storage.local.remove('m_' + id), list[3].id);
-  list = await waitMeasures(3);
-
-  // 3. SPA : pushState + fetch
+  // 6. SPA : un clic sans changement d'URL est ignoré, le clic de navigation est mesuré
   await page.goto(`${base}/appli1/spa/`);
-  list = await waitMeasures(4);
-  await page.click('#noop'); // clic sans navigation : ne doit rien enregistrer
+  await panel.click('#next');
+  await panel.waitForSelector('#viewForm:not([hidden])');
+  await panel.click('[data-network="wifi"]');
+  await panel.fill('#page', 'Factures');
+  await panel.click('#arm');
+  await waitSession((s) => s && s.state === 'armed' && s.page === 'Factures', 'armé SPA');
+  await page.click('#noop');
   await sleep(1800);
-  assert.equal((await measures()).length, 4, 'un clic sans changement de page ne crée pas de mesure');
+  assert.equal((await measures()).length, 3, 'clic sans navigation ignoré');
+  assert.equal((await session()).state, 'armed');
   await page.click('#spa-factures');
+  list = await waitMeasures(4);
+  check(
+    list[3],
+    { page: 'Factures', network: 'wifi', kind: 'spa', trigger: 'click' },
+    400,
+    2000,
+    'WiFi · Factures (SPA)',
+  );
+
+  // 7. Annuler
+  await panel.click('#next');
+  await panel.fill('#page', 'Annulée');
+  await panel.click('#arm');
+  await waitSession((s) => s && s.state === 'armed', 'armé');
+  await panel.click('#cancel');
+  await waitSession((s) => s === null, 'annulé');
+  await page.click('#spa-clients');
+  await sleep(1800);
+  assert.equal((await measures()).length, 4, 'pas de mesure après annulation');
+
+  // 8. Suggestion du nom d'application d'après l'onglet (URL déclarée dans le référentiel)
+  await storage(async (b) => {
+    const { apps = [] } = await chrome.storage.local.get('apps');
+    await chrome.storage.local.set({ apps: [...apps, { id: 'a2', name: 'Appli 2', baseUrls: [`${b}/appli2/`] }] });
+  }, base);
+  const page2 = await context.newPage();
+  await page2.goto(`${base}/appli2/`);
+  const tabId2 = await storage(async (u) => (await chrome.tabs.query({ url: u + '/appli2/*' }))[0].id, base);
+  const panel2 = await context.newPage();
+  await panel2.setViewportSize({ width: 380, height: 860 });
+  await panel2.goto(`chrome-extension://${extId}/panel/panel.html?tabId=${tabId2}`);
+  await panel2.waitForSelector('#appSuggest:not([hidden])');
+  assert.match(await panel2.textContent('#appSuggestName'), /Appli 2/);
+  await panel2.click('#appSuggestUse');
+  assert.equal(await panel2.inputValue('#app'), 'Appli 2');
+  await panel2.fill('#page', 'Clients');
+  await panel2.click('#arm');
+  await waitSession((s) => s && s.state === 'armed' && s.app === 'Appli 2', 'armé Appli 2');
+  await page2.click('#nav-clients');
   list = await waitMeasures(5);
-  expectRange(list[4], SPA_API_DELAY, 2000, 'WiFi · appli1 /spa/factures (SPA)');
-  assert.equal(list[4].kind, 'spa');
-  assert.equal(list[4].page, '/spa/factures');
+  check(list[4], { app: 'Appli 2', page: 'Clients', network: 'wifi' }, 1100, 3500, 'WiFi · Appli 2 · Clients (XHR)');
+  await panel2.waitForSelector('#viewResult:not([hidden])');
+  await panel2.screenshot({ path: join(out, 'panel-resultat-2.png') });
 
-  // 4. Ethernet, appli2 (XHR) — la page /factures n'est pas visitée -> case rouge
-  await storage(async () => {
-    const { settings = {} } = await chrome.storage.local.get('settings');
-    await chrome.storage.local.set({ settings: { ...settings, network: 'ethernet' } });
-  });
-  await page.goto(`${base}/appli2/`);
-  list = await waitMeasures(6);
-  await page.click('#nav-clients');
-  list = await waitMeasures(7);
-  expectRange(list[6], SERVER_DELAY.appli2 + API_DELAY, 3500, 'Ethernet · appli2 /clients (clic, XHR)');
-  assert.equal(list[6].network, 'ethernet');
-  assert.equal(list[6].appId, 'app2');
-  await page.goto(`${base}/appli1/clients`);
-  list = await waitMeasures(8);
-
-  // 5. Rapport : une ligne par application, cases rouges, tri, détail, export Excel
+  // 9. Exports : les trois types
   const report = await context.newPage();
   await report.setViewportSize({ width: 1440, height: 900 });
   await report.goto(`chrome-extension://${extId}/report/report.html`);
   await report.waitForSelector('#matrix table');
   assert.equal(await report.locator('#matrix tbody tr').count(), 2, 'une ligne par application');
-  const missing = await report.locator('#matrix td.missing').count();
-  console.log(`  Rapport : ${missing} case(s) rouge(s) dans la matrice`);
-  assert.ok(missing > 0);
-  await report.click('#matrix thead tr.h2 th >> nth=0');
-  assert.equal(await report.getAttribute('#matrix thead tr.h2 th >> nth=0', 'aria-sort'), 'ascending');
+  const download = async (action, file) => {
+    const [d] = await Promise.all([report.waitForEvent('download'), action()]);
+    await d.saveAs(join(out, file));
+    console.log(`  Export : ${d.suggestedFilename()}`);
+    return d.suggestedFilename();
+  };
+  assert.match(await download(() => report.click('#exAll'), 'export-tout.xlsx'), /^insigth-tout-/);
+  await report.selectOption('#exPageSel', 'Clients');
+  assert.match(await download(() => report.click('#exPage'), 'export-page.xlsx'), /^insigth-page-clients-/);
+  await report.fill('#exAppSel', 'appli 1');
+  assert.match(await download(() => report.click('#exApp'), 'export-client.xlsx'), /^insigth-client-appli-1-/);
   await report.click('#matrix .app-link >> nth=0');
   await report.waitForSelector('#detail[open] .dlg-body table');
   await report.click('#detail [data-close]');
 
-  const [download] = await Promise.all([report.waitForEvent('download'), report.click('#xlsx')]);
-  const xlsxPath = join(out, 'export.xlsx');
-  await download.saveAs(xlsxPath);
-  assert.ok(existsSync(xlsxPath));
-  console.log('  Export Excel :', xlsxPath);
-
+  // 10. Réglages : import en masse (noms seuls acceptés), pages, renommage qui suit les mesures
   const options = await context.newPage();
   await options.setViewportSize({ width: 1280, height: 900 });
   await options.goto(`chrome-extension://${extId}/options/options.html`);
   await options.waitForSelector('#appRows tr');
-
-  // 6. Sauvegarde JSON puis réimport (fusion sans doublon, appli reconnue par son nom)
-  const restored = await options.evaluate(async () => {
-    const s = await import('../lib/storage.js');
-    const backup = await s.exportBackup();
-    const ids = backup.measures.map((m) => m.id);
-    await s.deleteMeasures(ids);
-    backup.apps = backup.apps.map((a) => ({ ...a, id: 'autre-poste-' + a.id }));
-    backup.measures = backup.measures.map((m) => ({ ...m, appId: 'autre-poste-' + m.appId }));
-    const first = await s.importBackup(backup);
-    const again = await s.importBackup(backup);
-    const { apps } = await s.getConfig();
-    const measures = await s.getMeasures();
-    return { first, again, apps: apps.length, appIds: [...new Set(measures.map((m) => m.appId))].sort() };
-  });
-  console.log('  Sauvegarde / import :', JSON.stringify(restored));
-  assert.deepEqual(restored.first, { added: 8, skipped: 0 });
-  assert.deepEqual(restored.again, { added: 0, skipped: 8 });
-  assert.equal(restored.apps, 2);
-  assert.deepEqual(restored.appIds, ['app1', 'app2']);
-
-  // 7. Import en masse depuis l'interface (copier-coller de deux colonnes Excel)
-  await options.reload();
   await options.click('#bulkBtn');
-  await options.fill(
-    '#bulkText',
-    `Nom\tURL\nAppli 1\t${base}/appli1bis/\nAppli 3\thttps://appli3.exemple.fr/\nhttps://appli4.exemple.fr/\nAppli 5\tpas-une-url`,
-  );
+  await options.fill('#bulkText', 'Nom\nAppli 3\nAppli 4\thttps://appli4.exemple.fr/\nAppli 5;pas-une-url ftp://x');
   const preview = await options.textContent('#bulkPreview');
   console.log('  Import en masse :', preview);
-  assert.match(preview, /3 application\(s\) reconnue\(s\) : 2 nouvelle\(s\), 1 existante\(s\)/);
-  assert.match(preview, /1 ligne\(s\) en erreur/);
+  assert.match(preview, /2 application\(s\) reconnue\(s\) : 2 nouvelle\(s\), 0 existante\(s\)/);
   await options.click('#bulkGo');
   await options.waitForFunction(() => document.querySelectorAll('#appRows tr').length === 4);
-  const appsAfter = await storage(async () => (await chrome.storage.local.get('apps')).apps);
-  assert.equal(appsAfter.length, 4);
-  assert.deepEqual(appsAfter.find((a) => a.name === 'Appli 1').baseUrls, [`${base}/appli1/`, `${base}/appli1bis/`]);
-  await options.fill('#appSearch', 'appli4');
-  assert.equal(await options.locator('#appRows tr').count(), 1, 'la recherche filtre les applications');
-  await options.fill('#appSearch', '');
-
-  // 8. Libellé de page (en-tête de colonne) depuis l'interface
-  const labelInput = options.locator('#pageRows input.label-input[placeholder="/clients"]');
-  await labelInput.fill('Clients');
-  await labelInput.press('Tab');
+  await options.click('#addPages');
+  await options.fill('#addPagesText', 'Accueil\nClients\nTableau de bord');
+  await options.click('#addPagesGo');
+  await options.waitForFunction(() => document.querySelectorAll('#pageRows tr').length === 5);
+  // Renommer « Fiche client » en « Fiche Client » puis « Détail client » : les mesures suivent
+  const ficheInput = options.locator('#pageRows input[aria-label="Nom de la page Fiche client"]');
+  await ficheInput.fill('Détail client');
+  await ficheInput.press('Tab');
   await options.waitForFunction(async () => {
-    const { pages = [] } = await chrome.storage.local.get('pages');
-    return pages.some((p) => p.key === '/clients' && p.label === 'Clients');
+    const all = await chrome.storage.local.get(null);
+    return Object.keys(all).some((k) => k.startsWith('m_') && all[k].page === 'Détail client');
   });
-  console.log('  Libellé de page enregistré');
+  const pagesNow = await storage(async () => (await chrome.storage.local.get('pages')).pages.map((p) => p.name));
+  assert.ok(pagesNow.includes('Détail client') && !pagesNow.includes('Fiche client'), 'page renommée');
+  console.log('  Référentiel :', JSON.stringify(pagesNow));
 
-  // 9. Démo à l'échelle : 150 applications × 20 pages (captures pour le README)
+  // 11. Démo à l'échelle : 150 clients × 20 pages (captures pour le README)
   const demo = await storage(async () => {
     const PAGES = [
-      ['/', 'Accueil'],
-      ['/clients', 'Clients'],
-      ['/clients/:id', 'Fiche client'],
-      ['/factures', 'Factures'],
-      ['/factures/:id', 'Facture'],
-      ['/commandes', 'Commandes'],
-      ['/commandes/:id', 'Commande'],
-      ['/produits', 'Produits'],
-      ['/stocks', 'Stocks'],
-      ['/fournisseurs', 'Fournisseurs'],
-      ['/reporting', 'Reporting'],
-      ['/reporting/ventes', 'Ventes'],
-      ['/tableau-de-bord', 'Tableau de bord'],
-      ['/utilisateurs', 'Utilisateurs'],
-      ['/parametres', 'Paramètres'],
-      ['/recherche', 'Recherche'],
-      ['/exports', 'Exports'],
-      ['/planning', 'Planning'],
-      ['/contrats', 'Contrats'],
-      ['/devis', 'Devis'],
+      'Accueil',
+      'Clients',
+      'Fiche client',
+      'Factures',
+      'Facture',
+      'Commandes',
+      'Commande',
+      'Produits',
+      'Stocks',
+      'Fournisseurs',
+      'Reporting',
+      'Ventes',
+      'Tableau de bord',
+      'Utilisateurs',
+      'Paramètres',
+      'Recherche',
+      'Exports',
+      'Planning',
+      'Contrats',
+      'Devis',
     ];
     let seed = 42;
     const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
     await chrome.storage.local.clear();
-    const apps = [];
+    await chrome.storage.session.clear();
     const items = {};
     let id = 0;
+    const apps = [];
     for (let i = 1; i <= 150; i++) {
-      const n = String(i).padStart(3, '0');
-      const app = { id: `demo${n}`, name: `Client ${n}`, baseUrls: [`https://client${n}.exemple.fr/`] };
-      apps.push(app);
-      const appFactor = 0.7 + rnd() * 1.1;
-      PAGES.forEach(([key], p) => {
-        const base = 250 + ((p * 7919) % 20) * 180;
+      const app = `Client ${String(i).padStart(3, '0')}`;
+      apps.push({ id: `a${i}`, name: app, baseUrls: [] });
+      const slow = rnd() < 0.08 ? 2.4 : 0.85 + rnd() * 0.45; // quelques clients anormalement lents
+      PAGES.forEach((page, p) => {
+        const base = 300 + ((p * 7919) % 20) * 170;
         for (const network of ['wifi', 'ethernet']) {
-          if (rnd() > (network === 'wifi' ? 0.9 : 0.62)) continue;
-          const count = 1 + Math.floor(rnd() * 3);
-          for (let k = 0; k < count; k++) {
-            const timeout = rnd() < 0.006;
+          if (rnd() > (network === 'wifi' ? 0.92 : 0.7)) continue;
+          for (let k = 0, count = 1 + Math.floor(rnd() * 2); k < count; k++) {
+            const spike = rnd() < 0.03 ? 2.2 : 1;
             const duration = Math.round(
-              base * appFactor * (network === 'wifi' ? 1.15 + rnd() * 0.35 : 1) * (0.9 + rnd() * 0.2),
+              base * slow * spike * (network === 'wifi' ? 1.15 + rnd() * 0.3 : 1) * (0.92 + rnd() * 0.16),
             );
+            const timeout = rnd() < 0.004;
             const m = {
               id: `d${++id}`,
-              ts: Date.now() - Math.floor(rnd() * 7 * 864e5),
-              appId: app.id,
-              url: `https://client${n}.exemple.fr${key.replace(':id', String(100 + k))}`,
-              page: key,
+              ts: Date.now() - Math.floor(rnd() * 5 * 864e5),
+              app,
+              page,
               network,
               duration: timeout ? 120000 : duration,
+              timeout,
               kind: 'load',
               trigger: 'click',
-              timeout,
+              url: `https://client${i}.exemple.fr/${p}`,
+              startUrl: `https://client${i}.exemple.fr/`,
             };
             items['m_' + m.id] = m;
           }
@@ -365,51 +390,36 @@ try {
     }
     await chrome.storage.local.set({
       apps,
-      pages: PAGES.map(([key, label]) => ({ key, label, hidden: false })),
-      settings: { network: 'wifi', recording: true, stat: 'median', reportView: 'both' },
+      pages: PAGES.map((name, i) => ({ id: `p${i}`, name, hidden: false })),
+      settings: { network: 'wifi', stat: 'median', reportView: 'both' },
+      draft: { app: 'Client 042', page: 'Factures' },
       ...items,
     });
     return { apps: apps.length, measures: id };
   });
-  console.log(`  Démo : ${demo.apps} applications, ${demo.measures} mesures`);
-
+  console.log(`  Démo : ${demo.apps} clients, ${demo.measures} mesures`);
   const t0 = Date.now();
   await report.reload();
   await report.waitForSelector('#matrix tbody tr >> nth=149');
-  console.log(`  Rapport 150 × 20 affiché en ${Date.now() - t0} ms`);
-  assert.equal(await report.locator('#matrix tbody tr').count(), 150);
-  await report.screenshot({ path: join(out, 'rapport.png') });
+  console.log(`  Aperçu 150 × 20 affiché en ${Date.now() - t0} ms`);
+  await report.screenshot({ path: join(out, 'exports.png') });
   await report.click('[data-view="wifi"]');
+  await report.check('#anomalies');
   await report.waitForFunction(() => !document.querySelector('#matrix thead tr.h2'));
-  await report.screenshot({ path: join(out, 'rapport-wifi.png') });
-  await report.click('[data-view="both"]');
-  await report.fill('#search', 'Client 04');
-  await report.waitForFunction(() => document.querySelectorAll('#matrix tbody tr').length === 10);
-  await report.click('#matrix .app-link >> nth=2');
-  await report.waitForSelector('#detail[open] .dlg-body table');
-  await report.screenshot({ path: join(out, 'detail.png') });
-  await report.click('#detail [data-close]');
+  await report.evaluate(() => document.querySelector('.preview-title').scrollIntoView());
+  await report.screenshot({ path: join(out, 'apercu-anomalies.png') });
+  await download(() => report.click('#exAll'), 'demo-tout.xlsx');
+  await report.selectOption('#exPageSel', 'Factures');
+  await download(() => report.click('#exPage'), 'demo-page.xlsx');
+  await report.fill('#exAppSel', 'Client 042');
+  await download(() => report.click('#exApp'), 'demo-client.xlsx');
 
-  const [bigDownload] = await Promise.all([report.waitForEvent('download'), report.click('#xlsx')]);
-  await bigDownload.saveAs(join(out, 'export-demo.xlsx'));
-  console.log('  Export Excel démo :', join(out, 'export-demo.xlsx'));
-
-  // Popup ouvert sur une page d'une application (l'onglet actif est simulé pour la capture)
-  const popup = await context.newPage();
-  await popup.setViewportSize({ width: 390, height: 600 });
-  await popup.addInitScript(() => {
-    chrome.tabs.query = async () => [{ url: 'https://client042.exemple.fr/factures/7' }];
-  });
-  await popup.goto(`chrome-extension://${extId}/popup/popup.html`);
-  await popup.waitForSelector('#tabInfo .progress');
-  assert.equal(await popup.locator('#tabInfo .progress').count(), 2);
-  await popup.screenshot({ path: join(out, 'popup.png') });
-
+  await panel.reload();
+  await panel.waitForSelector('#viewForm:not([hidden])');
+  await panel.screenshot({ path: join(out, 'panel-formulaire.png') });
   await options.reload();
   await options.waitForSelector('#appRows tr >> nth=149');
   await options.screenshot({ path: join(out, 'options.png') });
-  await options.locator('#pages').scrollIntoViewIfNeeded();
-  await options.screenshot({ path: join(out, 'options-pages.png') });
 
   console.log('\nOK : test de bout en bout réussi');
 } catch (e) {

@@ -3,24 +3,64 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Insigth · Rapport</title>
+    <title>Insigth · Exports</title>
     <link rel="stylesheet" href="../common.css" />
     <link rel="stylesheet" href="report.css" />
   </head>
   <body>
     <header class="bar">
       <img src="../icons/icon48.png" alt="" width="26" height="26" />
-      <h1>Temps de réponse par application</h1>
+      <h1>Exports &amp; rapport</h1>
       <div class="bar-actions">
-        <button id="xlsx" class="primary">Extraire (Excel)</button>
-        <button id="csv">CSV</button>
+        <label class="stat"
+          >Valeur affichée
+          <select id="stat"></select
+        ></label>
         <a href="../options/options.html">Réglages</a>
       </div>
     </header>
 
     <main>
-      <section id="kpis" class="kpis" aria-label="Synthèse"></section>
+      <section class="exports" aria-labelledby="exportsTitle">
+        <h2 id="exportsTitle">Exporter en Excel</h2>
+        <div class="export-grid">
+          <article class="card export">
+            <span class="num">1</span>
+            <h3>Tout</h3>
+            <p class="muted">
+              Toutes les applications × toutes les pages, en WiFi et en Ethernet. Une ligne par application, une colonne
+              par page.
+            </p>
+            <p id="exAllInfo" class="info"></p>
+            <button id="exAll" type="button" class="primary">Télécharger l'Excel</button>
+          </article>
+          <article class="card export">
+            <span class="num">2</span>
+            <h3>Une page, tous les clients</h3>
+            <p class="muted">Une ligne par client : WiFi, Ethernet, écart, comparaison à la médiane des clients.</p>
+            <select id="exPageSel" aria-label="Page à exporter"></select>
+            <button id="exPage" type="button" class="primary">Télécharger l'Excel</button>
+          </article>
+          <article class="card export">
+            <span class="num">3</span>
+            <h3>Un client, toutes les pages</h3>
+            <p class="muted">Une ligne par page, comparée à la médiane de tous les clients.</p>
+            <input
+              id="exAppSel"
+              type="text"
+              list="appNames"
+              placeholder="Nom du client…"
+              aria-label="Client à exporter"
+            />
+            <datalist id="appNames"></datalist>
+            <button id="exApp" type="button" class="primary">Télécharger l'Excel</button>
+          </article>
+        </div>
+        <div id="legend" class="legend-row"></div>
+      </section>
 
+      <h2 class="preview-title">Aperçu</h2>
+      <section id="kpis" class="kpis" aria-label="Synthèse"></section>
       <div class="toolbar">
         <div class="segmented" role="radiogroup" aria-label="Vue" id="views">
           <button type="button" role="radio" data-view="both">WiFi + Ethernet</button>
@@ -28,19 +68,19 @@
           <button type="button" role="radio" data-view="ethernet">Ethernet</button>
           <button type="button" role="radio" data-view="diff">Écart</button>
         </div>
-        <input id="search" type="search" placeholder="Filtrer les applications (nom ou URL)…" aria-label="Filtrer" />
+        <input
+          id="search"
+          type="search"
+          placeholder="Filtrer les applications…"
+          aria-label="Filtrer les applications"
+        />
         <label class="check"><input id="incomplete" type="checkbox" /> Incomplètes seulement</label>
-        <label class="stat"
-          >Statistique
-          <select id="stat"></select
-        ></label>
+        <label class="check"><input id="anomalies" type="checkbox" /> Avec anomalie seulement</label>
       </div>
-
-      <div id="legend" class="legend-row"></div>
       <div id="matrix" class="matrix-wrap" tabindex="0"></div>
       <p class="hint muted">
-        Cliquez sur un en-tête pour trier, sur une application pour son détail.
-        <a href="../options/options.html#pages">Ordre, libellés et pages masquées</a>
+        Cliquez sur un en-tête pour trier, sur <span class="mono">⤓</span> pour exporter une page, sur une application
+        pour son détail. <a href="../options/options.html#pages">Ordre et pages masquées</a>
       </p>
 
       <section class="raw">

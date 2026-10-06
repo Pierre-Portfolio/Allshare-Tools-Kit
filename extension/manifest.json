@@ -2,23 +2,31 @@
   "manifest_version": 3,
   "name": "Insigth – Temps de réponse des pages",
   "short_name": "Insigth",
-  "version": "1.0.0",
-  "description": "Mesure le temps entre le clic et l'affichage complet de chaque page, par application et par réseau (WiFi / Ethernet), avec export Excel.",
-  "minimum_chrome_version": "111",
-  "permissions": ["storage", "scripting", "unlimitedStorage"],
+  "version": "2.0.0",
+  "description": "Mesure, à la demande, le temps entre le clic et l'affichage complet d'une page, par application, page et réseau (WiFi / Ethernet), avec exports Excel.",
+  "minimum_chrome_version": "116",
+  "permissions": ["storage", "scripting", "sidePanel", "unlimitedStorage"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
+  "side_panel": {
+    "default_path": "panel/panel.html"
+  },
   "action": {
-    "default_title": "Insigth",
-    "default_popup": "popup/popup.html",
+    "default_title": "Insigth : ouvrir le panneau de mesure",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
+    }
+  },
+  "commands": {
+    "arm-measure": {
+      "suggested_key": { "default": "Alt+Shift+M" },
+      "description": "Lancer l'enregistrement avec les valeurs du formulaire"
     }
   },
   "options_ui": {

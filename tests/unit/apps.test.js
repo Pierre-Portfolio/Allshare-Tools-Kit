@@ -1,8 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseAppList, mergeApps, appsToCsv, urlConflicts, defaultName } from '../../extension/lib/apps.js';
+import {
+  parseAppList,
+  parsePageList,
+  mergeApps,
+  appsToCsv,
+  urlConflicts,
+  defaultName,
+} from '../../extension/lib/apps.js';
 
-test('parseAppList : copier-coller Excel, CSV, URL seule, en-tête, erreurs', () => {
+test('parseAppList : noms seuls, copier-coller Excel, CSV, URL seule, en-tête, erreurs', () => {
   const text = [
     'Nom\tURL',
     'Client A\thttps://clienta.fr/',
@@ -11,9 +18,10 @@ test('parseAppList : copier-coller Excel, CSV, URL seule, en-tête, erreurs', ()
     '# commentaire',
     '',
     'Client D,https://srv/clientD/',
-    'Client E;pas une url',
+    'Dupont, Martin',
     'Client F;https://exemple.fr/ ftp://x',
     '"Client G";"https://srv/g/"',
+    'Client H',
   ].join('\n');
   const { entries, errors } = parseAppList(text);
   assert.deepEqual(entries, [
@@ -21,12 +29,22 @@ test('parseAppList : copier-coller Excel, CSV, URL seule, en-tête, erreurs', ()
     { name: 'Client B', urls: ['https://srv/clientB/', 'https://srv2/clientB/'] },
     { name: 'srv/clientC', urls: ['https://srv/clientC/'] },
     { name: 'Client D', urls: ['https://srv/clientD/'] },
+    { name: 'Dupont, Martin', urls: [] },
     { name: 'Client G', urls: ['https://srv/g/'] },
+    { name: 'Client H', urls: [] },
   ]);
   assert.deepEqual(
     errors.map((e) => e.line),
-    [8, 9],
+    [9],
   );
+});
+
+test('parsePageList : une page par ligne, sans doublon ni en-tête', () => {
+  assert.deepEqual(parsePageList('Pages\nAccueil\n  Clients \naccueil\n\nFiche client\tx'), [
+    'Accueil',
+    'Clients',
+    'Fiche client',
+  ]);
 });
 
 test('mergeApps : ajoute les nouvelles, complète les existantes (même nom)', () => {

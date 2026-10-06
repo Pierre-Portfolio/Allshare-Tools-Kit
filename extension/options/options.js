@@ -7,12 +7,14 @@ import {
   deleteMeasures,
   exportBackup,
   importBackup,
+  renameEverywhere,
   newId,
   isMeasureKey,
 } from '../lib/storage.js';
 import { parseBase } from '../lib/urls.js';
-import { parseAppList, mergeApps, appsToCsv, urlConflicts } from '../lib/apps.js';
-import { buildModel, compareNames } from '../lib/report.js';
+import { parseAppList, parsePageList, mergeApps, appsToCsv, urlConflicts } from '../lib/apps.js';
+import { buildModel } from '../lib/report.js';
+import { normName, nameKey, compareNames } from '../lib/names.js';
 import { downloadBlob } from '../lib/export.js';
 import { fileStamp } from '../lib/format.js';
 
@@ -21,13 +23,11 @@ const nf = new Intl.NumberFormat('fr-FR');
 
 const state = {
   apps: [],
-  pagesConfig: [],
+  pages: [],
   settings: null,
   measures: [],
-  counts: new Map(), // appId -> nombre de mesures
   model: null,
   editing: null, // id de l'appli en cours d'édition, ou 'new'
-  addingPage: false,
   query: '',
   bulk: null,
 };
@@ -50,32 +50,24 @@ function toast(text) {
 const norm = (s) => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 async function load() {
-  const { apps, settings, pages } = await getConfig();
-  state.apps = apps;
-  state.settings = settings;
-  state.pagesConfig = pages;
-  await loadMeasures();
+  const [{ apps, pages, settings }, measures] = await Promise.all([getConfig(), getMeasures()]);
+  Object.assign(state, { apps, pages, settings, measures });
+  state.model = buildModel(measures, apps, pages);
 }
 
-async function loadMeasures() {
-  state.measures = await getMeasures();
-  state.counts = new Map();
-  for (const m of state.measures) state.counts.set(m.appId, (state.counts.get(m.appId) || 0) + 1);
-  state.model = buildModel(state.measures, state.apps, state.settings, state.pagesConfig);
-}
+const countFor = (map, name) => map.get(nameKey(name)) || 0;
 
 // ---------------------------------------------------------------- Applications
 
 function renderApps() {
-  const tbody = $('appRows');
   const q = norm(state.query.trim());
   const conflicts = urlConflicts(state.apps);
   const apps = [...state.apps]
     .sort((a, b) => compareNames(a.name, b.name))
     .filter(
-      (a) => !q || state.editing === a.id || norm(a.name).includes(q) || a.baseUrls.some((u) => norm(u).includes(q)),
+      (a) =>
+        !q || state.editing === a.id || norm(a.name).includes(q) || (a.baseUrls || []).some((u) => norm(u).includes(q)),
     );
-
   const rows = [];
   if (state.editing === 'new') rows.push(editRow({ id: 'new', name: '', baseUrls: [] }));
   for (const app of apps) {
@@ -84,6 +76,7 @@ function renderApps() {
       continue;
     }
     const others = conflicts.get(app.id);
+    const urls = app.baseUrls || [];
     rows.push(
       el(
         'tr',
@@ -92,12 +85,14 @@ function renderApps() {
         el(
           'td',
           { className: 'urls mono' },
-          ...app.baseUrls.flatMap((u, i) => (i ? [el('br'), u] : [u])),
+          ...(urls.length
+            ? urls.flatMap((u, i) => (i ? [el('br'), u] : [u]))
+            : [el('span', { className: 'muted', textContent: '—' })]),
           others
             ? el('div', { className: 'warn', textContent: `⚠ URL aussi déclarée par : ${others.join(', ')}` })
             : null,
         ),
-        el('td', { className: 'num', textContent: nf.format(state.counts.get(app.id) || 0) }),
+        el('td', { className: 'num', textContent: nf.format(countFor(state.model.appCounts, app.name)) }),
         el(
           'td',
           { className: 'actions' },
@@ -113,13 +108,12 @@ function renderApps() {
       ),
     );
   }
-  tbody.replaceChildren(...rows);
-
+  $('appRows').replaceChildren(...rows);
   const empty = $('appEmpty');
   empty.hidden = rows.length > 0;
   empty.textContent = state.apps.length
     ? 'Aucune application ne correspond à la recherche.'
-    : 'Aucune application : cliquez sur « Import en masse » pour coller votre liste depuis Excel, ou sur « + Ajouter ».';
+    : 'Aucune application : elles s’ajoutent à chaque mesure, ou collez votre liste avec « Import en masse ».';
   $('navApps').textContent = state.apps.length ? nf.format(state.apps.length) : '';
 }
 
@@ -131,9 +125,9 @@ function editRow(app) {
     placeholder: 'Nom (ex. Client A)',
   });
   const urls = el('textarea', {
-    value: app.baseUrls.join('\n'),
-    placeholder: 'https://clienta.mondomaine.fr/\n(une URL par ligne)',
-    rows: Math.max(2, app.baseUrls.length),
+    value: (app.baseUrls || []).join('\n'),
+    placeholder: 'Facultatif : https://clienta.mondomaine.fr/\n(une URL par ligne)',
+    rows: Math.max(2, (app.baseUrls || []).length),
   });
   const error = el('div', { className: 'error' });
   const row = el(
@@ -141,7 +135,7 @@ function editRow(app) {
     { className: 'editing', dataset: { id: app.id } },
     el('td', {}, name),
     el('td', {}, urls, error),
-    el('td', { className: 'num', textContent: nf.format(state.counts.get(app.id) || 0) }),
+    el('td', { className: 'num', textContent: nf.format(countFor(state.model.appCounts, app.name)) }),
     el(
       'td',
       { className: 'actions' },
@@ -169,7 +163,7 @@ function cancelEdit() {
 }
 
 async function saveEdit(id, row) {
-  const name = row.querySelector('.name-input').value.trim();
+  const name = normName(row.querySelector('.name-input').value);
   const lines = row
     .querySelector('textarea')
     .value.split(/[\r\n|]+/)
@@ -177,41 +171,49 @@ async function saveEdit(id, row) {
     .filter(Boolean);
   const invalid = lines.filter((l) => !parseBase(l));
   const error = row.querySelector('.error');
-  const duplicate = state.apps.some((a) => a.id !== id && a.name.trim().toLowerCase() === name.toLowerCase());
   error.textContent = !name
     ? 'Donnez un nom à l’application.'
-    : duplicate
-      ? 'Une autre application porte déjà ce nom.'
-      : !lines.length
-        ? 'Indiquez au moins une URL de base (http:// ou https://).'
-        : invalid.length
-          ? `URL invalide : ${invalid.join(', ')}`
-          : '';
+    : invalid.length
+      ? `URL invalide : ${invalid.join(', ')}`
+      : '';
   if (error.textContent) return;
   const baseUrls = [...new Set(lines)];
-  if (id === 'new') state.apps = [...state.apps, { id: newId(), name, baseUrls }];
-  else state.apps = state.apps.map((a) => (a.id === id ? { ...a, name, baseUrls } : a));
+  const old = state.apps.find((a) => a.id === id);
+  const duplicate = state.apps.find((a) => a.id !== id && nameKey(a.name) === nameKey(name));
+  if (id === 'new') {
+    if (duplicate) {
+      error.textContent = 'Cette application existe déjà.';
+      return;
+    }
+    state.apps = [...state.apps, { id: newId(), name, baseUrls }];
+    await saveApps(state.apps);
+  } else {
+    if (
+      duplicate &&
+      !confirm(`« ${duplicate.name} » existe déjà : fusionner « ${old.name} » avec elle (mesures comprises) ?`)
+    )
+      return;
+    await saveApps(state.apps.map((a) => (a.id === id ? { ...a, baseUrls } : a)));
+    if (old.name !== name) await renameEverywhere('app', old.name, name);
+  }
   state.editing = null;
-  await saveApps(state.apps);
-  state.model = buildModel(state.measures, state.apps, state.settings, state.pagesConfig);
-  renderApps();
+  await load();
+  renderAll();
   toast(id === 'new' ? 'Application ajoutée' : 'Application enregistrée');
 }
 
 async function deleteApp(id) {
   const app = state.apps.find((a) => a.id === id);
   if (!app) return;
-  const ids = state.measures.filter((m) => m.appId === id).map((m) => m.id);
+  const ids = state.measures.filter((m) => nameKey(m.app) === nameKey(app.name)).map((m) => m.id);
   const question = ids.length
     ? `Supprimer « ${app.name} » et ses ${ids.length} mesure(s) ?`
     : `Supprimer « ${app.name} » ?`;
   if (!confirm(question)) return;
-  state.apps = state.apps.filter((a) => a.id !== id);
-  await saveApps(state.apps);
+  await saveApps(state.apps.filter((a) => a.id !== id));
   if (ids.length) await deleteMeasures(ids);
-  await loadMeasures();
-  renderApps();
-  renderPages();
+  await load();
+  renderAll();
   toast('Application supprimée');
 }
 
@@ -226,30 +228,26 @@ $('appRows').addEventListener('click', (e) => {
   else if (action === 'save') saveEdit(id, b.closest('tr'));
   else if (action === 'delete') deleteApp(id);
 });
-
 $('addApp').addEventListener('click', () => {
   state.editing = 'new';
   renderApps();
-  $('apps').scrollIntoView({ block: 'start' });
 });
-
 $('appSearch').addEventListener('input', (e) => {
   state.query = e.target.value;
   renderApps();
 });
-
 $('exportApps').addEventListener('click', () => {
   const apps = [...state.apps].sort((a, b) => compareNames(a.name, b.name));
   downloadBlob(appsToCsv(apps), `insigth-applications-${fileStamp()}.csv`, 'text/csv;charset=utf-8');
 });
 
-// ---------------------------------------------------------------- Import en masse
+// ---------------------------------------------------------------- Import en masse des applications
 
 function previewBulk() {
   const parsed = parseAppList($('bulkText').value);
   state.bulk = parsed;
-  const known = new Set(state.apps.map((a) => a.name.trim().toLowerCase()));
-  const existing = parsed.entries.filter((e) => known.has(e.name.trim().toLowerCase())).length;
+  const known = new Set(state.apps.map((a) => nameKey(a.name)));
+  const existing = parsed.entries.filter((e) => known.has(nameKey(e.name))).length;
   const parts = [];
   if (parsed.entries.length) {
     parts.push(
@@ -283,202 +281,182 @@ $('bulkFile').addEventListener('change', async (e) => {
 $('bulkGo').addEventListener('click', async () => {
   if (!state.bulk || !state.bulk.entries.length) return;
   const { apps, added, updated } = mergeApps(state.apps, state.bulk.entries);
-  state.apps = apps;
   await saveApps(apps);
-  state.model = buildModel(state.measures, state.apps, state.settings, state.pagesConfig);
   $('bulk').close();
-  renderApps();
+  await load();
+  renderAll();
   toast(`${added} application(s) ajoutée(s), ${updated} mise(s) à jour`);
 });
 
-// ---------------------------------------------------------------- Pages (colonnes du rapport)
+// ---------------------------------------------------------------- Pages
 
-function currentPages() {
-  return state.model ? state.model.allPages : [];
+/** Pages du référentiel + pages mesurées absentes du référentiel (ajoutées à la fin). */
+function pageList() {
+  return state.model.allPages.map((p) => {
+    const known = state.pages.find((x) => nameKey(x.name) === nameKey(p.name));
+    return known ? { ...known } : { id: newId(), name: p.name, hidden: false };
+  });
 }
 
-async function writePages(list, { render = true } = {}) {
-  state.pagesConfig = list.map((p) => ({ key: p.key, label: p.label !== p.key ? p.label : '', hidden: !!p.hidden }));
-  await savePages(state.pagesConfig);
-  state.model = buildModel(state.measures, state.apps, state.settings, state.pagesConfig);
-  if (render) renderPages(); // pas de re-rendu pendant la saisie des libellés (garde le focus)
-}
-
-function normalizeKey(raw) {
-  let k = String(raw).trim();
-  if (!k) return '';
-  if (!k.startsWith('/')) k = '/' + k;
-  if (k.length > 1) k = k.replace(/\/+$/, '');
-  return state.settings.caseInsensitive !== false ? k.toLowerCase() : k;
+async function writePages(list) {
+  state.pages = list;
+  await savePages(list);
+  state.model = buildModel(state.measures, state.apps, state.pages);
+  renderPages();
 }
 
 function renderPages() {
-  const tbody = $('pageRows');
-  const pages = currentPages();
-  const rows = [];
-  if (state.addingPage) {
-    const key = el('input', { type: 'text', className: 'label-input mono', placeholder: '/factures' });
-    const label = el('input', { type: 'text', className: 'label-input', placeholder: 'Libellé (facultatif)' });
-    const add = async () => {
-      const k = normalizeKey(key.value);
-      if (!k) return key.focus();
-      if (pages.some((p) => p.key === k)) {
-        toast('Cette page existe déjà');
-        return;
-      }
-      state.addingPage = false;
-      await writePages([...pages, { key: k, label: label.value.trim() || k, hidden: false }]);
-      toast('Page ajoutée');
-    };
-    const row = el(
-      'tr',
-      { className: 'editing' },
-      el('td'),
-      el('td', {}, label),
-      el('td', {}, key),
-      el('td'),
-      el('td'),
-      el(
-        'td',
-        { className: 'actions' },
-        el('button', { type: 'button', className: 'primary', textContent: 'Ajouter', onclick: add }),
-        ' ',
-        el('button', {
-          type: 'button',
-          textContent: 'Annuler',
-          onclick: () => {
-            state.addingPage = false;
-            renderPages();
-          },
-        }),
-      ),
-    );
-    row.addEventListener('keydown', (e) => e.key === 'Enter' && add());
-    setTimeout(() => key.focus(), 0);
-    rows.push(row);
-  }
-  pages.forEach((p, i) => {
-    const count = state.model.pageCounts.get(p.key) || 0;
-    const label = el('input', {
+  const pages = pageList();
+  const rows = pages.map((p, i) => {
+    const count = countFor(state.model.pageCounts, p.name);
+    const name = el('input', {
       type: 'text',
       className: 'label-input',
-      value: p.label !== p.key ? p.label : '',
-      placeholder: p.key,
-      ariaLabel: `Libellé de ${p.key}`,
+      value: p.name,
+      ariaLabel: `Nom de la page ${p.name}`,
     });
-    label.addEventListener('change', () => {
-      const list = currentPages().map((x) => (x.key === p.key ? { ...x, label: label.value.trim() || x.key } : x));
-      writePages(list, { render: false }).then(() => toast('Libellé enregistré'));
+    name.addEventListener('change', async () => {
+      const next = normName(name.value);
+      if (!next || next === p.name) {
+        name.value = p.name;
+        return;
+      }
+      const clash = pages.find((x) => x !== p && nameKey(x.name) === nameKey(next));
+      if (clash && !confirm(`« ${clash.name} » existe déjà : fusionner les deux pages (mesures comprises) ?`)) {
+        name.value = p.name;
+        return;
+      }
+      await savePages(pages);
+      await renameEverywhere('page', p.name, next);
+      await load();
+      renderPages();
+      toast('Page renommée');
     });
-    const visible = el('input', { type: 'checkbox', checked: !p.hidden, ariaLabel: `Afficher ${p.key}` });
+    const visible = el('input', {
+      type: 'checkbox',
+      checked: !p.hidden,
+      ariaLabel: `Inclure ${p.name} dans les exports`,
+    });
     visible.addEventListener('change', () =>
-      writePages(currentPages().map((x) => (x.key === p.key ? { ...x, hidden: !visible.checked } : x))),
+      writePages(pages.map((x) => (x === p ? { ...x, hidden: !visible.checked } : x))),
     );
     const move = (delta) => {
-      const list = [...currentPages()];
+      const list = [...pages];
       const j = i + delta;
       if (j < 0 || j >= list.length) return;
       [list[i], list[j]] = [list[j], list[i]];
       writePages(list);
     };
-    rows.push(
+    return el(
+      'tr',
+      { className: p.hidden ? 'hidden-page' : '' },
       el(
-        'tr',
-        { className: p.hidden ? 'hidden-page' : '' },
-        el(
-          'td',
-          { className: 'order' },
-          el('button', {
-            type: 'button',
-            textContent: '↑',
-            title: 'Monter',
-            disabled: i === 0,
-            onclick: () => move(-1),
-          }),
-          ' ',
-          el('button', {
-            type: 'button',
-            textContent: '↓',
-            title: 'Descendre',
-            disabled: i === pages.length - 1,
-            onclick: () => move(1),
-          }),
-        ),
-        el('td', {}, label),
-        el('td', { className: 'mono', textContent: p.key }),
-        el('td', { className: 'num', textContent: nf.format(count) }),
-        el('td', { className: 'center' }, visible),
-        el(
-          'td',
-          { className: 'actions' },
-          p.configured && !count
-            ? el('button', {
-                type: 'button',
-                className: 'danger',
-                textContent: 'Retirer',
-                onclick: () => writePages(currentPages().filter((x) => x.key !== p.key)),
-              })
-            : null,
-        ),
+        'td',
+        { className: 'order' },
+        el('button', { type: 'button', textContent: '↑', title: 'Monter', disabled: i === 0, onclick: () => move(-1) }),
+        ' ',
+        el('button', {
+          type: 'button',
+          textContent: '↓',
+          title: 'Descendre',
+          disabled: i === pages.length - 1,
+          onclick: () => move(1),
+        }),
+      ),
+      el('td', {}, name),
+      el('td', { className: 'num', textContent: nf.format(count) }),
+      el('td', { className: 'center' }, visible),
+      el(
+        'td',
+        { className: 'actions' },
+        count
+          ? null
+          : el('button', {
+              type: 'button',
+              className: 'danger',
+              textContent: 'Retirer',
+              onclick: () => writePages(pages.filter((x) => x !== p)),
+            }),
       ),
     );
   });
-  tbody.replaceChildren(...rows);
+  $('pageRows').replaceChildren(...rows);
   $('pageEmpty').hidden = rows.length > 0;
   const shown = pages.filter((p) => !p.hidden).length;
   $('navPages').textContent = pages.length ? `${shown}${shown < pages.length ? `/${pages.length}` : ''}` : '';
 }
 
-$('addPage').addEventListener('click', () => {
-  state.addingPage = true;
-  renderPages();
+$('addPages').addEventListener('click', () => {
+  $('addPagesBox').hidden = false;
+  $('addPagesText').focus();
 });
-$('resetPages').addEventListener('click', async () => {
-  if (
-    !state.pagesConfig.length ||
-    !confirm('Revenir à l’ordre alphabétique et effacer les libellés et pages attendues ?')
-  )
-    return;
-  state.pagesConfig = [];
-  await savePages([]);
-  state.model = buildModel(state.measures, state.apps, state.settings, []);
-  renderPages();
-  toast('Pages réinitialisées');
+$('addPagesCancel').addEventListener('click', () => {
+  $('addPagesBox').hidden = true;
+  $('addPagesText').value = '';
 });
+$('addPagesGo').addEventListener('click', async () => {
+  const pages = pageList();
+  const names = parsePageList($('addPagesText').value).filter(
+    (n) => !pages.some((p) => nameKey(p.name) === nameKey(n)),
+  );
+  await writePages([...pages, ...names.map((name) => ({ id: newId(), name, hidden: false }))]);
+  $('addPagesBox').hidden = true;
+  $('addPagesText').value = '';
+  toast(`${names.length} page(s) ajoutée(s)`);
+});
+$('sortPages').addEventListener('click', () => writePages(pageList().sort((a, b) => compareNames(a.name, b.name))));
 
 // ---------------------------------------------------------------- Réglages
 
-const checkboxes = ['ignoreQuery', 'replaceIds', 'caseInsensitive', 'showOverlay'];
+const checkboxes = ['showOverlay'];
+const numbers = {
+  quietMs: { min: 200, max: 10000, fallback: 1000, read: (v) => Math.round(v), show: (s) => s.quietMs, key: 'quietMs' },
+  maxWaitS: {
+    min: 10,
+    max: 900,
+    fallback: 120,
+    read: (v) => Math.round(v) * 1000,
+    show: (s) => s.maxWaitMs / 1000,
+    key: 'maxWaitMs',
+  },
+  warnRatio: { min: 1, max: 20, fallback: 1.5, read: (v) => v, show: (s) => s.warnRatio, key: 'warnRatio' },
+  critRatio: { min: 1, max: 20, fallback: 2, read: (v) => v, show: (s) => s.critRatio, key: 'critRatio' },
+  warnS: {
+    min: 0,
+    max: 600,
+    fallback: 0,
+    read: (v) => Math.round(v * 1000),
+    show: (s) => s.warnMs / 1000,
+    key: 'warnMs',
+  },
+  critS: {
+    min: 0,
+    max: 600,
+    fallback: 0,
+    read: (v) => Math.round(v * 1000),
+    show: (s) => s.critMs / 1000,
+    key: 'critMs',
+  },
+  gapPct: { min: 1, max: 1000, fallback: 50, read: (v) => Math.round(v), show: (s) => s.gapPct, key: 'gapPct' },
+};
 
 function renderSettings(settings) {
-  $('quietMs').value = settings.quietMs;
-  $('maxWaitS').value = Math.round(settings.maxWaitMs / 1000);
+  for (const [id, n] of Object.entries(numbers)) $(id).value = n.show(settings);
   $('ignoreSelectors').value = settings.ignoreSelectors;
   for (const id of checkboxes) $(id).checked = !!settings[id];
 }
 
-async function updateSetting(patch) {
-  state.settings = await saveSettings(patch);
-  toast('Réglage enregistré');
-  if (['ignoreQuery', 'replaceIds', 'caseInsensitive'].some((k) => k in patch)) {
-    state.model = buildModel(state.measures, state.apps, state.settings, state.pagesConfig);
-    renderPages();
-  }
-}
-
 function bindSettings() {
-  const clamp = (v, min, max, fallback) => (Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback);
-  $('quietMs').addEventListener('change', (e) => {
-    const v = clamp(Math.round(Number(e.target.value)), 200, 10000, 1000);
-    e.target.value = v;
-    updateSetting({ quietMs: v });
-  });
-  $('maxWaitS').addEventListener('change', (e) => {
-    const v = clamp(Math.round(Number(e.target.value)), 10, 900, 120);
-    e.target.value = v;
-    updateSetting({ maxWaitMs: v * 1000 });
-  });
-  $('ignoreSelectors').addEventListener('change', (e) => {
+  for (const [id, n] of Object.entries(numbers)) {
+    $(id).addEventListener('change', async (e) => {
+      const raw = Number(String(e.target.value).replace(',', '.'));
+      const v = Number.isFinite(raw) ? Math.min(n.max, Math.max(n.min, raw)) : n.fallback;
+      e.target.value = v;
+      state.settings = await saveSettings({ [n.key]: n.read(v) });
+      toast('Réglage enregistré');
+    });
+  }
+  $('ignoreSelectors').addEventListener('change', async (e) => {
     const sel = e.target.value.trim();
     if (sel) {
       try {
@@ -488,9 +466,15 @@ function bindSettings() {
         return;
       }
     }
-    updateSetting({ ignoreSelectors: sel });
+    state.settings = await saveSettings({ ignoreSelectors: sel });
+    toast('Réglage enregistré');
   });
-  for (const id of checkboxes) $(id).addEventListener('change', (e) => updateSetting({ [id]: e.target.checked }));
+  for (const id of checkboxes) {
+    $(id).addEventListener('change', async (e) => {
+      state.settings = await saveSettings({ [id]: e.target.checked });
+      toast('Réglage enregistré');
+    });
+  }
 }
 
 // ---------------------------------------------------------------- Données
@@ -539,12 +523,16 @@ function renderAll() {
 
 let pending = 0;
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== 'local' || !Object.keys(changes).some(isMeasureKey)) return;
+  if (area !== 'local') return;
+  const measuresChanged = Object.keys(changes).some(isMeasureKey);
+  const catalogChanged = changes.apps || changes.pages;
+  if (!measuresChanged && !catalogChanged) return;
   clearTimeout(pending);
   pending = setTimeout(async () => {
-    await loadMeasures();
+    await load();
     renderData();
-    if (!state.addingPage) renderPages();
+    if (document.activeElement && document.activeElement.closest('#pageRows')) return; // saisie en cours
+    renderPages();
     if (state.editing === null) renderApps();
   }, 300);
 });

@@ -1,10 +1,11 @@
-// Gestion de la liste d'applications : import en masse (copier-coller depuis
-// Excel ou fichier CSV), fusion, export, détection des URL en double.
+// Référentiel : import en masse des applications et des pages (copier-coller
+// depuis Excel ou fichier CSV), fusion, export, détection des URL en double.
 
 import { parseBase } from './urls.js';
 import { newId } from './storage.js';
+import { normName, nameKey } from './names.js';
 
-const URL_TOKEN = /^https?:\/\//i;
+const URL_TOKEN = /^[a-z][a-z0-9+.-]*:\/\//i; // tout ce qui ressemble à une URL (seules http/https sont valides)
 
 /** Nom par défaut d'une appli importée sans nom : hôte + chemin de base. */
 export function defaultName(url) {
@@ -14,11 +15,13 @@ export function defaultName(url) {
 
 /**
  * Lit une liste d'applications, une par ligne :
+ *   Nom                (nom seul)
  *   Nom;URL            (ou tabulation : copier-coller de 2 colonnes Excel)
  *   Nom;URL1 | URL2    (plusieurs URL de base)
  *   URL                (le nom est déduit de l'URL)
- * Les lignes vides et celles commençant par # sont ignorées, ainsi qu'une
- * éventuelle ligne d'en-tête (« Nom;URL »).
+ * L'URL, facultative, sert à pré-remplir le nom de l'application d'après
+ * l'onglet ouvert. Les lignes vides et celles commençant par # sont ignorées,
+ * ainsi qu'une éventuelle ligne d'en-tête (« Nom;URL »).
  */
 export function parseAppList(text) {
   const entries = [];
@@ -31,7 +34,8 @@ export function parseAppList(text) {
       if (!line || line.startsWith('#')) return;
       const isFirst = first;
       first = false;
-      const sep = /[;\t]/.test(line) ? /[;\t]/ : /,/;
+      const hasUrl = /https?:\/\//i.test(line);
+      const sep = /[;\t]/.test(line) ? /[;\t]/ : hasUrl ? /,/ : /$^/; // nom seul : pas de découpage
       const names = [];
       const urls = [];
       const bad = [];
@@ -48,20 +52,14 @@ export function parseAppList(text) {
           names.push(p);
         }
       }
-      if (!urls.length) {
-        if (isFirst && /url/i.test(line)) return; // ligne d'en-tête
-        errors.push({
-          line: i + 1,
-          text: line,
-          reason: bad.length ? `URL invalide : ${bad.join(', ')}` : 'aucune URL',
-        });
-        return;
-      }
+      if (isFirst && !urls.length && /^(nom|name|appli|application)s?\b/i.test(line)) return; // en-tête
       if (bad.length) {
         errors.push({ line: i + 1, text: line, reason: `URL invalide : ${bad.join(', ')}` });
         return;
       }
-      entries.push({ name: names.join(' ') || defaultName(urls[0]), urls: [...new Set(urls)] });
+      const name = normName(names.join(' ')) || (urls.length ? defaultName(urls[0]) : '');
+      if (!name) return;
+      entries.push({ name, urls: [...new Set(urls)] });
     });
   return { entries, errors };
 }
@@ -72,14 +70,14 @@ export function parseAppList(text) {
  */
 export function mergeApps(existing, entries) {
   const apps = existing.map((a) => ({ ...a, baseUrls: [...(a.baseUrls || [])] }));
-  const byName = new Map(apps.map((a) => [a.name.trim().toLowerCase(), a]));
+  const byName = new Map(apps.map((a) => [nameKey(a.name), a]));
   let added = 0;
   let updated = 0;
   for (const e of entries) {
-    const key = e.name.trim().toLowerCase();
+    const key = nameKey(e.name);
     let app = byName.get(key);
     if (!app) {
-      app = { id: newId(), name: e.name.trim(), baseUrls: [] };
+      app = { id: newId(), name: normName(e.name), baseUrls: [] };
       apps.push(app);
       byName.set(key, app);
       added++;
@@ -125,4 +123,20 @@ export function urlConflicts(apps) {
     }
   }
   return out;
+}
+
+/** Liste de pages, une par ligne (ou une colonne copiée depuis Excel), sans doublon. */
+export function parsePageList(text) {
+  const seen = new Set();
+  const names = [];
+  String(text || '')
+    .split(/\r?\n/)
+    .forEach((raw, i) => {
+      const name = normName(raw.split('\t')[0].replace(/^"(.*)"$/, '$1'));
+      if (!name || name.startsWith('#') || seen.has(nameKey(name))) return;
+      if (i === 0 && /^pages?$/i.test(name)) return; // en-tête
+      seen.add(nameKey(name));
+      names.push(name);
+    });
+  return names;
 }
