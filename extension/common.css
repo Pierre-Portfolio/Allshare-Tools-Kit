@@ -20,6 +20,14 @@
   --warn-text: #713f12;
   --crit-bg: #fb923c;
   --crit-text: #431407;
+  --pill-missing-bg: #fee2e2;
+  --pill-missing-text: #b91c1c;
+  --pill-warn-bg: #fef3c7;
+  --pill-warn-text: #92400e;
+  --pill-crit-bg: #fed7aa;
+  --pill-crit-text: #9a3412;
+  --pill-timeout-bg: #e5e7eb;
+  --pill-timeout-text: #4b5563;
   --radius: 8px;
   --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
@@ -44,6 +52,14 @@
     --warn-text: #fef08a;
     --crit-bg: rgba(249, 115, 22, 0.7);
     --crit-text: #fff7ed;
+    --pill-missing-bg: rgba(239, 68, 68, 0.16);
+    --pill-missing-text: #f87171;
+    --pill-warn-bg: rgba(250, 204, 21, 0.16);
+    --pill-warn-text: #fde047;
+    --pill-crit-bg: rgba(249, 115, 22, 0.28);
+    --pill-crit-text: #fdba74;
+    --pill-timeout-bg: rgba(156, 163, 175, 0.18);
+    --pill-timeout-text: #9ca3af;
   }
 }
 

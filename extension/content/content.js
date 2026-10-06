@@ -94,16 +94,65 @@
   document.addEventListener('insigth:net-start', onNetStart);
   document.addEventListener('insigth:net-end', onNetEnd);
 
+  // Ressources terminées pendant la mesure ; les appels fetch/XHR sont gardés pour le détail.
+  const NET_TYPES = new Set(['fetch', 'xmlhttprequest']);
+  const netEntries = [];
   let resourceObserver = null;
   try {
     resourceObserver = new PerformanceObserver((list) => {
-      if (!current) return;
       const t = now();
-      for (const e of list.getEntries()) if (e.responseEnd > current.start) activity(Math.min(e.responseEnd, t));
+      for (const e of list.getEntries()) {
+        if (NET_TYPES.has(e.initiatorType) && netEntries.length < 1000) {
+          netEntries.push({ url: e.name, type: e.initiatorType, startTime: e.startTime, duration: e.duration });
+        }
+        if (current && e.responseEnd > current.start) activity(Math.min(e.responseEnd, t));
+      }
     });
-    resourceObserver.observe({ type: 'resource', buffered: false });
+    resourceObserver.observe({ type: 'resource', buffered: true });
   } catch {
     resourceObserver = null;
+  }
+
+  /** Détail (type « Load timings ») : repères en ms depuis le clic + appels fetch/XHR. */
+  function buildDetail(m) {
+    const rel = (t) => Math.round(t - m.start);
+    const marks = { end: rel(m.lastActivity) };
+    const n = m.kind === 'load' ? performance.getEntriesByType('navigation')[0] : null;
+    if (n) {
+      Object.assign(marks, {
+        navStart: rel(0),
+        redirectStart: rel(n.redirectStart),
+        redirectEnd: rel(n.redirectEnd),
+        dnsStart: rel(n.domainLookupStart),
+        dnsEnd: rel(n.domainLookupEnd),
+        connectStart: rel(n.connectStart),
+        connectEnd: rel(n.connectEnd),
+        requestStart: rel(n.requestStart),
+        responseStart: rel(n.responseStart),
+        responseEnd: rel(n.responseEnd),
+        domInteractive: rel(n.domInteractive),
+        dclStart: rel(n.domContentLoadedEventStart),
+        dclEnd: rel(n.domContentLoadedEventEnd),
+        domComplete: rel(n.domComplete),
+        loadStart: rel(n.loadEventStart),
+        loadEnd: rel(n.loadEventEnd),
+      });
+    }
+    const requests = netEntries
+      .filter((e) => e.startTime >= m.start - 1 && e.startTime <= m.lastActivity)
+      .map((e) => ({
+        url: e.url.slice(0, 400),
+        type: e.type === 'xmlhttprequest' ? 'XHR' : 'fetch',
+        start: rel(e.startTime),
+        duration: Math.round(e.duration),
+      }));
+    const slowest = [...requests].sort((a, b) => b.duration - a.duration).slice(0, 15);
+    return {
+      kind: n ? 'load' : 'spa',
+      marks,
+      requests: slowest.sort((a, b) => a.start - b.start),
+      requestCount: requests.length,
+    };
   }
 
   const onLoad = () =>
@@ -192,6 +241,7 @@
       trigger: m.trigger,
       timeout: timedOut,
       startEpoch: performance.timeOrigin + m.start,
+      detail: buildDetail(m),
     }).then((res) => {
       if (!res || !res.ok) return;
       const value = `${new Intl.NumberFormat('fr-FR').format(duration)} ms`;

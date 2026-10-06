@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Insigth · Applications & réglages</title>
+    <title>Insigth · Réglages</title>
     <link rel="stylesheet" href="../common.css" />
     <link rel="stylesheet" href="options.css" />
   </head>
@@ -11,13 +11,13 @@
     <header class="page-head">
       <img src="../icons/icon48.png" alt="" width="30" height="30" />
       <div>
-        <h1>Insigth · Applications &amp; réglages</h1>
+        <h1>Insigth · Réglages</h1>
         <p class="muted">Temps de réponse entre le clic et l'affichage complet de chaque page.</p>
       </div>
       <a class="report-link" href="../report/report.html">Exports →</a>
     </header>
     <nav class="tabs" aria-label="Sections">
-      <a href="#apps">Applications <span id="navApps" class="pill"></span></a>
+      <a href="#apps">Clients <span id="navApps" class="pill"></span></a>
       <a href="#pages">Pages <span id="navPages" class="pill"></span></a>
       <a href="#mesure">Mesure</a>
       <a href="#anomalies">Anomalies</a>
@@ -27,22 +27,24 @@
     <main>
       <section id="apps" class="card">
         <div class="section-head">
-          <h2>Applications</h2>
-          <input id="appSearch" type="search" placeholder="Rechercher…" aria-label="Rechercher une application" />
+          <h2>Clients</h2>
+          <input id="appSearch" type="search" placeholder="Rechercher…" aria-label="Rechercher un client" />
           <button id="addApp" type="button">+ Ajouter</button>
           <button id="bulkBtn" type="button" class="primary">Import en masse</button>
           <button id="exportApps" type="button">Exporter la liste</button>
         </div>
         <p class="muted small">
-          Les noms proposés dans le formulaire de mesure. Les applications mesurées s'ajoutent toutes seules. L'URL est
-          <strong>facultative</strong> : si elle est renseignée, le nom est pré-rempli quand l'onglet est sur cette
-          application. Renommer une application renomme aussi ses mesures (et fusionne si le nom existe déjà).
+          Les clients proposés dans le formulaire de mesure. Les clients mesurés s'ajoutent tout seuls. L'URL est
+          <strong>facultative</strong> : si elle est renseignée, le client est pré-rempli quand l'onglet est sur son
+          application. Renommer un client renomme aussi ses mesures (et fusionne si le nom existe déjà). Supprimer un
+          client supprime aussi toutes ses mesures.
         </p>
         <div class="table-wrap apps-wrap">
           <table class="grid apps-table">
             <thead>
               <tr>
                 <th class="left">Nom</th>
+                <th class="left">SID / versions mesurés</th>
                 <th class="left">URL(s) (facultatif)</th>
                 <th>Mesures</th>
                 <th></th>
@@ -62,8 +64,8 @@
         </div>
         <p class="muted small">
           L'ordre ici est l'ordre des colonnes des exports et celui de « Page suivante ». Renommer une page renomme
-          aussi ses mesures. Une page ajoutée ici apparaît en rouge dans les exports pour les applications où elle n'a
-          pas encore été mesurée.
+          aussi ses mesures. Une page ajoutée ici apparaît en rouge dans les exports pour les clients où elle n'a pas
+          encore été mesurée.
         </p>
         <div id="addPagesBox" class="add-pages" hidden>
           <textarea
@@ -173,7 +175,7 @@
         </div>
         <p class="muted small">
           Astuce : mesurez en WiFi sur un poste et en Ethernet sur un autre, puis importez la sauvegarde de l'un dans
-          l'autre pour obtenir un rapport complet (applications reconnues par leur nom, doublons ignorés).
+          l'autre pour obtenir un rapport complet (clients reconnus par leur nom, doublons ignorés).
         </p>
       </section>
     </main>
@@ -182,9 +184,9 @@
       <form method="dialog" class="bulk-form">
         <h2 id="bulkTitle">Import en masse</h2>
         <p class="muted small">
-          Une application par ligne : <code>Nom</code> ou <code>Nom;URL</code>. Copiez-collez directement une ou deux
-          colonnes depuis Excel. Plusieurs URL pour une même appli : séparez-les par <code>|</code>. Une appli existante
-          (même nom) reçoit les nouvelles URL.
+          Un client par ligne : <code>Nom</code> ou <code>Nom;URL</code>. Copiez-collez directement une ou deux colonnes
+          depuis Excel. Plusieurs URL pour un même client : séparez-les par <code>|</code>. Un client existant (même
+          nom) reçoit les nouvelles URL.
         </p>
         <textarea
           id="bulkText"

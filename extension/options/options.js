@@ -8,6 +8,7 @@ import {
   exportBackup,
   importBackup,
   renameEverywhere,
+  deletePage,
   newId,
   isMeasureKey,
 } from '../lib/storage.js';
@@ -53,6 +54,20 @@ async function load() {
   const [{ apps, pages, settings }, measures] = await Promise.all([getConfig(), getMeasures()]);
   Object.assign(state, { apps, pages, settings, measures });
   state.model = buildModel(measures, apps, pages);
+  state.clientCounts = new Map();
+  for (const m of measures) state.clientCounts.set(nameKey(m.app), (state.clientCounts.get(nameKey(m.app)) || 0) + 1);
+}
+
+/** « PRD (5.3, 5.2) · REC (5.3) » : SID et versions déjà mesurés pour ce client. */
+function linesSummary(client) {
+  const bySid = new Map();
+  for (const l of state.model.lines) {
+    if (nameKey(l.client) !== nameKey(client) || (!l.sid && !l.version)) continue;
+    const sid = l.sid || '—';
+    if (!bySid.has(sid)) bySid.set(sid, []);
+    if (l.version) bySid.get(sid).push(l.version);
+  }
+  return [...bySid].map(([sid, versions]) => (versions.length ? `${sid} (${versions.join(', ')})` : sid)).join(' · ');
 }
 
 const countFor = (map, name) => map.get(nameKey(name)) || 0;
@@ -82,6 +97,7 @@ function renderApps() {
         'tr',
         {},
         el('td', { className: 'name', textContent: app.name }),
+        el('td', { className: 'lines', textContent: linesSummary(app.name) || '—' }),
         el(
           'td',
           { className: 'urls mono' },
@@ -92,7 +108,7 @@ function renderApps() {
             ? el('div', { className: 'warn', textContent: `⚠ URL aussi déclarée par : ${others.join(', ')}` })
             : null,
         ),
-        el('td', { className: 'num', textContent: nf.format(countFor(state.model.appCounts, app.name)) }),
+        el('td', { className: 'num', textContent: nf.format(countFor(state.clientCounts, app.name)) }),
         el(
           'td',
           { className: 'actions' },
@@ -112,8 +128,8 @@ function renderApps() {
   const empty = $('appEmpty');
   empty.hidden = rows.length > 0;
   empty.textContent = state.apps.length
-    ? 'Aucune application ne correspond à la recherche.'
-    : 'Aucune application : elles s’ajoutent à chaque mesure, ou collez votre liste avec « Import en masse ».';
+    ? 'Aucun client ne correspond à la recherche.'
+    : 'Aucun client : ils s’ajoutent à chaque mesure, ou collez votre liste avec « Import en masse ».';
   $('navApps').textContent = state.apps.length ? nf.format(state.apps.length) : '';
 }
 
@@ -134,8 +150,9 @@ function editRow(app) {
     'tr',
     { className: 'editing', dataset: { id: app.id } },
     el('td', {}, name),
+    el('td', { className: 'lines', textContent: linesSummary(app.name) || '—' }),
     el('td', {}, urls, error),
-    el('td', { className: 'num', textContent: nf.format(countFor(state.model.appCounts, app.name)) }),
+    el('td', { className: 'num', textContent: nf.format(countFor(state.clientCounts, app.name)) }),
     el(
       'td',
       { className: 'actions' },
@@ -171,18 +188,14 @@ async function saveEdit(id, row) {
     .filter(Boolean);
   const invalid = lines.filter((l) => !parseBase(l));
   const error = row.querySelector('.error');
-  error.textContent = !name
-    ? 'Donnez un nom à l’application.'
-    : invalid.length
-      ? `URL invalide : ${invalid.join(', ')}`
-      : '';
+  error.textContent = !name ? 'Donnez un nom au client.' : invalid.length ? `URL invalide : ${invalid.join(', ')}` : '';
   if (error.textContent) return;
   const baseUrls = [...new Set(lines)];
   const old = state.apps.find((a) => a.id === id);
   const duplicate = state.apps.find((a) => a.id !== id && nameKey(a.name) === nameKey(name));
   if (id === 'new') {
     if (duplicate) {
-      error.textContent = 'Cette application existe déjà.';
+      error.textContent = 'Ce client existe déjà.';
       return;
     }
     state.apps = [...state.apps, { id: newId(), name, baseUrls }];
@@ -199,7 +212,7 @@ async function saveEdit(id, row) {
   state.editing = null;
   await load();
   renderAll();
-  toast(id === 'new' ? 'Application ajoutée' : 'Application enregistrée');
+  toast(id === 'new' ? 'Client ajouté' : 'Client enregistré');
 }
 
 async function deleteApp(id) {
@@ -214,7 +227,7 @@ async function deleteApp(id) {
   if (ids.length) await deleteMeasures(ids);
   await load();
   renderAll();
-  toast('Application supprimée');
+  toast('Client supprimé');
 }
 
 $('appRows').addEventListener('click', (e) => {
@@ -238,7 +251,7 @@ $('appSearch').addEventListener('input', (e) => {
 });
 $('exportApps').addEventListener('click', () => {
   const apps = [...state.apps].sort((a, b) => compareNames(a.name, b.name));
-  downloadBlob(appsToCsv(apps), `insigth-applications-${fileStamp()}.csv`, 'text/csv;charset=utf-8');
+  downloadBlob(appsToCsv(apps), `insigth-clients-${fileStamp()}.csv`, 'text/csv;charset=utf-8');
 });
 
 // ---------------------------------------------------------------- Import en masse des applications
@@ -251,7 +264,7 @@ function previewBulk() {
   const parts = [];
   if (parsed.entries.length) {
     parts.push(
-      `${nf.format(parsed.entries.length)} application(s) reconnue(s) : ${nf.format(parsed.entries.length - existing)} nouvelle(s), ${nf.format(existing)} existante(s)`,
+      `${nf.format(parsed.entries.length)} client(s) reconnu(s) : ${nf.format(parsed.entries.length - existing)} nouveau(x), ${nf.format(existing)} existant(s)`,
     );
   }
   if (parsed.errors.length) parts.push(`${parsed.errors.length} ligne(s) en erreur`);
@@ -285,7 +298,7 @@ $('bulkGo').addEventListener('click', async () => {
   $('bulk').close();
   await load();
   renderAll();
-  toast(`${added} application(s) ajoutée(s), ${updated} mise(s) à jour`);
+  toast(`${added} client(s) ajouté(s), ${updated} mis à jour`);
 });
 
 // ---------------------------------------------------------------- Pages
@@ -369,14 +382,21 @@ function renderPages() {
       el(
         'td',
         { className: 'actions' },
-        count
-          ? null
-          : el('button', {
-              type: 'button',
-              className: 'danger',
-              textContent: 'Retirer',
-              onclick: () => writePages(pages.filter((x) => x !== p)),
-            }),
+        el('button', {
+          type: 'button',
+          className: 'danger',
+          textContent: 'Supprimer',
+          title: count ? 'Supprimer la page et ses mesures' : 'Retirer la page de la liste',
+          onclick: async () => {
+            if (!count) return writePages(pages.filter((x) => x !== p));
+            if (!confirm(`Supprimer la page « ${p.name} » et ses ${count} mesure(s), pour tous les clients ?`)) return;
+            await savePages(pages);
+            await deletePage(p.name);
+            await load();
+            renderPages();
+            toast('Page supprimée');
+          },
+        }),
       ),
     );
   });

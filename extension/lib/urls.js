@@ -40,3 +40,19 @@ export function matchApp(url, apps) {
   }
   return best;
 }
+
+/**
+ * Fin d'URL : dernier segment du chemin + paramètres.
+ * Ex. https://srv/apex/f?p=103:21:1234 -> « f?p=103:21:1234 » (Oracle APEX).
+ */
+export function urlEnd(url) {
+  try {
+    const u = new URL(url);
+    const segs = u.pathname.split('/');
+    let last = segs.pop();
+    if (!last && segs.length > 1) last = `${segs.pop()}/`;
+    return (last || '/') + u.search + u.hash;
+  } catch {
+    return '';
+  }
+}

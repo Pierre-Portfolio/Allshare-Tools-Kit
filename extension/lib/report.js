@@ -1,20 +1,25 @@
-// Agrégation des mesures, détection des anomalies et construction des exports.
+// Agrégation des mesures, anomalies et contenu des exports (Excel et CSV).
 // Fonctions pures : aucune dépendance aux API Chrome (testables avec Node).
 //
-// Une mesure est identifiée par les noms saisis dans le formulaire
-// (application, page) et le réseau. Présentation : une ligne par application,
-// une colonne par page.
+// Une LIGNE = Client + SID + Version (deux versions d'un même client sont deux
+// lignes, comparables côte à côte). Une COLONNE = une page.
 
 import { NETWORKS, NETWORK_LABELS, STATS, KIND_LABELS, TRIGGER_LABELS, fmtDate } from './format.js';
 import { colName } from './xlsx.js';
 import { normName, nameKey, compareNames } from './names.js';
+import { urlEnd } from './urls.js';
+import { DETAIL_COLUMNS, detailSummary } from './timing.js';
 
 export const MISSING_TEXT = 'N/A';
 export const TIMEOUT_TEXT = 'TIMEOUT';
-/** En dessous de ce nombre de clients mesurés, la comparaison à la médiane n'a pas de sens. */
+/** En dessous de ce nombre de lignes mesurées, la comparaison à la médiane n'a pas de sens. */
 export const MIN_APPS_FOR_RATIO = 3;
 
-const cellKey = (app, page, network) => `${nameKey(app)}\u0000${nameKey(page)}\u0000${network}`;
+export const lineKey = (client, sid = '', version = '') => [client, sid, version].map(nameKey).join('\u0001');
+const cellKey = (line, page, network) => `${line}\u0000${nameKey(page)}\u0000${network}`;
+
+/** « Client A · PRD · 5.3 » */
+export const lineLabel = (l) => [l.client, l.sid, l.version].filter(Boolean).join(' · ');
 
 function median(sorted) {
   const mid = Math.floor(sorted.length / 2);
@@ -22,40 +27,45 @@ function median(sorted) {
 }
 
 /**
- * Regroupe les mesures par application / page / réseau.
- *  apps  : référentiel ∪ applications mesurées, triées par nom (lignes)
- *  pages : pages visibles dans l'ordre du référentiel, puis pages mesurées hors référentiel (colonnes)
+ * Regroupe les mesures par ligne (client · SID · version) / page / réseau.
+ *  lines : triées par client, SID, version
+ *  pages : pages visibles dans l'ordre du référentiel, puis pages mesurées hors référentiel
  */
-export function buildModel(measures, catalogApps = [], catalogPages = []) {
-  const apps = new Map();
+export function buildModel(measures, catalogClients = [], catalogPages = []) {
+  const clients = new Map();
   const pages = new Map();
-  const addApp = (name, baseUrls = []) => {
+  const lines = new Map();
+  const addClient = (name) => {
     const k = nameKey(name);
-    if (k && !apps.has(k)) apps.set(k, { name: normName(name), baseUrls });
+    if (k && !clients.has(k)) clients.set(k, normName(name));
+    return clients.get(k);
   };
   const addPage = (name, hidden = false, order = Infinity) => {
     const k = nameKey(name);
     if (k && !pages.has(k)) pages.set(k, { name: normName(name), hidden, order });
+    return pages.get(k);
   };
-  for (const a of catalogApps) if (a && a.name) addApp(a.name, a.baseUrls || []);
+  for (const c of catalogClients) if (c && c.name) addClient(c.name);
   catalogPages.forEach((p, i) => p && p.name && addPage(p.name, !!p.hidden, i));
 
   const cells = new Map();
   const rows = [];
   const pageCounts = new Map();
-  const appCounts = new Map();
+  const lineCounts = new Map();
   for (const m of measures) {
     if (!m || !m.app || !m.page) continue;
-    addApp(m.app);
-    addPage(m.page);
-    const app = apps.get(nameKey(m.app)).name;
-    const page = pages.get(nameKey(m.page)).name;
-    rows.push({ ...m, app, page });
+    const client = addClient(m.app);
+    const page = addPage(m.page).name;
+    const sid = normName(m.sid);
+    const version = normName(m.version);
+    const key = lineKey(client, sid, version);
+    if (!lines.has(key)) lines.set(key, { key, client, sid, version });
+    rows.push({ ...m, app: client, sid, version, page, line: key, urlEnd: m.urlEnd || urlEnd(m.url) });
     pageCounts.set(nameKey(page), (pageCounts.get(nameKey(page)) || 0) + 1);
-    appCounts.set(nameKey(app), (appCounts.get(nameKey(app)) || 0) + 1);
-    const key = cellKey(app, page, m.network);
-    let c = cells.get(key);
-    if (!c) cells.set(key, (c = { durations: [], timeouts: 0, last: null, lastTs: 0 }));
+    lineCounts.set(key, (lineCounts.get(key) || 0) + 1);
+    const ck = cellKey(key, page, m.network);
+    let c = cells.get(ck);
+    if (!c) cells.set(ck, (c = { durations: [], timeouts: 0, last: null, lastTs: 0 }));
     if (m.timeout) {
       c.timeouts++;
     } else {
@@ -66,16 +76,28 @@ export function buildModel(measures, catalogApps = [], catalogPages = []) {
       }
     }
   }
+  // Client du référentiel jamais mesuré : une ligne vide (toute rouge dans les exports).
+  for (const client of clients.values()) {
+    if (![...lines.values()].some((l) => l.client === client)) {
+      const key = lineKey(client);
+      lines.set(key, { key, client, sid: '', version: '' });
+    }
+  }
+  const sortedLines = [...lines.values()].sort(
+    (a, b) => compareNames(a.client, b.client) || compareNames(a.sid, b.sid) || compareNames(a.version, b.version),
+  );
   const allPages = [...pages.values()].sort((a, b) => a.order - b.order || compareNames(a.name, b.name));
   return {
-    apps: [...apps.values()].sort((a, b) => compareNames(a.name, b.name)),
+    lines: sortedLines,
+    clients: [...clients.values()].sort(compareNames),
     pages: allPages.filter((p) => !p.hidden),
     allPages,
     cells,
     rows,
     pageCounts,
-    appCounts,
-    refs: new Map(),
+    lineCounts,
+    refs: new Map(), // médianes par page (cache)
+    stats: new Map(), // valeurs par case et statistique (cache)
   };
 }
 
@@ -90,12 +112,14 @@ function compute(c, stat) {
   return Math.round(v);
 }
 
-/**
- * Valeur d'une case.
- * status : 'ok' | 'missing' (aucune mesure -> rouge) | 'timeout' (que des timeouts -> gris)
- */
-export function cellStat(model, app, page, network, stat) {
-  const c = model.cells.get(cellKey(app, page, network));
+/** Valeur d'une case : status 'ok' | 'missing' (rouge) | 'timeout' (gris). */
+export function cellStat(model, line, page, network, stat) {
+  const key = `${cellKey(line, page, network)}\u0000${stat}`;
+  if (!model.stats.has(key)) model.stats.set(key, computeCell(model.cells.get(cellKey(line, page, network)), stat));
+  return model.stats.get(key);
+}
+
+function computeCell(c, stat) {
   if (!c) return { status: 'missing', value: null, count: 0, timeouts: 0 };
   if (!c.durations.length) return { status: 'timeout', value: null, count: 0, timeouts: c.timeouts, lastTs: c.lastTs };
   return {
@@ -109,22 +133,22 @@ export function cellStat(model, app, page, network, stat) {
   };
 }
 
-/** Écart WiFi / Ethernet d'une page (positif : le WiFi est plus lent). */
-export function diffStat(model, app, page, stat) {
-  const w = cellStat(model, app, page, 'wifi', stat);
-  const e = cellStat(model, app, page, 'ethernet', stat);
+/** Écart WiFi / Ethernet (positif : le WiFi est plus lent). */
+export function diffStat(model, line, page, stat) {
+  const w = cellStat(model, line, page, 'wifi', stat);
+  const e = cellStat(model, line, page, 'ethernet', stat);
   if (w.status === 'ok' && e.status === 'ok') {
     return { status: 'ok', value: w.value - e.value, pct: e.value > 0 ? (w.value - e.value) / e.value : null, w, e };
   }
   return { status: w.status === 'missing' || e.status === 'missing' ? 'missing' : 'timeout', value: null, w, e };
 }
 
-/** Référence d'une page sur un réseau : médiane des valeurs de tous les clients mesurés. */
+/** Référence d'une page sur un réseau : médiane de toutes les lignes mesurées. */
 export function pageRef(model, page, network, stat) {
   const key = `${stat}\u0000${nameKey(page)}\u0000${network}`;
   if (!model.refs.has(key)) {
-    const values = model.apps
-      .map((a) => cellStat(model, a.name, page, network, stat))
+    const values = model.lines
+      .map((l) => cellStat(model, l.key, page, network, stat))
       .filter((c) => c.status === 'ok')
       .map((c) => c.value)
       .sort((a, b) => a - b);
@@ -138,11 +162,7 @@ export function pageRef(model, page, network, stat) {
   return model.refs.get(key);
 }
 
-/**
- * Niveau d'anomalie d'une valeur : 'crit' (orange), 'warn' (jaune) ou null.
- * Relatif : rapport à la médiane des clients (si au moins MIN_APPS_FOR_RATIO clients mesurés).
- * Absolu : seuils en ms facultatifs.
- */
+/** Niveau d'anomalie : 'crit' (orange), 'warn' (jaune) ou null. */
 export function anomaly(value, ref, settings) {
   const ratio = ref && ref.count >= MIN_APPS_FOR_RATIO && ref.median > 0 ? value / ref.median : null;
   const over = (r, ms) => (ratio !== null && r > 0 && ratio >= r) || (ms > 0 && value >= ms);
@@ -152,8 +172,8 @@ export function anomaly(value, ref, settings) {
 }
 
 /** Valeur + anomalie d'une case. */
-export function rate(model, app, page, network, stat, settings) {
-  const cs = cellStat(model, app, page, network, stat);
+export function rate(model, line, page, network, stat, settings) {
+  const cs = cellStat(model, line, page, network, stat);
   const ref = pageRef(model, page, network, stat);
   const level = cs.status === 'ok' ? anomaly(cs.value, ref, settings) : null;
   const ratio =
@@ -162,18 +182,18 @@ export function rate(model, app, page, network, stat, settings) {
 }
 
 /** Cases mesurées (au moins une mesure, même en timeout) sur le total attendu. */
-export function coverage(model, app, networks = NETWORKS.map((n) => n.id)) {
+export function coverage(model, line, networks = NETWORKS.map((n) => n.id)) {
   let done = 0;
-  for (const p of model.pages) for (const n of networks) if (model.cells.has(cellKey(app, p.name, n))) done++;
+  for (const p of model.pages) for (const n of networks) if (model.cells.has(cellKey(line, p.name, n))) done++;
   return { done, total: model.pages.length * networks.length };
 }
 
-/** Pages visibles pas encore mesurées pour une application et un réseau. */
-export function missingPages(model, app, network) {
-  return model.pages.filter((p) => !model.cells.has(cellKey(app, p.name, network)));
+/** Pages visibles pas encore mesurées pour une ligne et un réseau. */
+export function missingPages(model, line, network) {
+  return model.pages.filter((p) => !model.cells.has(cellKey(line, p.name, network)));
 }
 
-// ---------------------------------------------------------------- Excel
+// ---------------------------------------------------------------- Excel : briques
 
 const fr = (n) => String(n).replace('.', ',');
 
@@ -203,125 +223,138 @@ function vsMedianCell(r, settings) {
   return { v: r.ratio - 1, s: r.ratio >= settings.warnRatio ? 'pctWarn' : 'pct' };
 }
 
-const nameWidth = (names) => Math.max(18, Math.min(40, ...names.map((n) => n.length + 2)));
+const width = (texts, min = 10, max = 40) => Math.max(min, Math.min(max, ...texts.map((t) => String(t).length + 2)));
 const headWidth = (label, min = 10) => Math.max(min, Math.min(26, label.length + 2));
-
-function header(texts, firstLeft = true) {
-  return texts.map((v, i) => ({ v, s: i === 0 && firstLeft ? 'headerLeft' : 'header' }));
-}
+const header = (texts) => texts.map((v, i) => ({ v, s: i === 0 ? 'headerLeft' : 'header' }));
+const lineCells = (l) => [
+  { v: l.client, s: 'textBold' },
+  { v: l.sid, s: 'text' },
+  { v: l.version, s: 'text' },
+];
 
 function subtitle(model, stat, date) {
   return (
     `Statistique : ${STATS[stat] || STATS.avg} · millisecondes entre le clic et l'affichage complet · ` +
-    `${model.apps.length} application(s), ${model.pages.length} page(s) · généré le ${fmtDate(date)}`
+    `${model.lines.length} ligne(s) client, ${model.pages.length} page(s) · généré le ${fmtDate(date)}`
   );
 }
 
+/** Colonnes des mesures brutes (Excel et CSV), URL en option. */
+function measureColumns({ fullUrl = false, urlEnd: withEnd = false } = {}) {
+  const cols = [
+    ['Date', (m) => fmtDate(m.ts), 20],
+    ['Client', (m) => m.app, 24],
+    ['SID', (m) => m.sid || '', 10],
+    ['Version', (m) => m.version || '', 10],
+    ['Page', (m) => m.page, 24],
+    ['Réseau', (m) => NETWORK_LABELS[m.network] || m.network, 10],
+    ['Durée (ms)', (m) => m.duration, 11, 'num'],
+    ['Timeout', (m) => (m.timeout ? 'Oui' : 'Non'), 9],
+    ['Type', (m) => KIND_LABELS[m.kind] || m.kind || '', 24],
+    ['Déclencheur', (m) => TRIGGER_LABELS[m.trigger] || m.trigger || '', 22],
+  ];
+  if (withEnd) cols.push(["Fin d'URL", (m) => m.urlEnd || urlEnd(m.url), 40]);
+  if (fullUrl) cols.push(['URL complète', (m) => m.url || '', 60], ['Page de départ', (m) => m.startUrl || '', 50]);
+  return cols;
+}
+
 /** Feuille des mesures brutes (filtrable). */
-export function rawSheet(rows, name = 'Mesures') {
+export function rawSheet(rows, options = {}, name = 'Mesures') {
+  const cols = measureColumns(options);
   const data = [
-    header([
-      'Date',
-      'Application',
-      'Page',
-      'Réseau',
-      'Durée (ms)',
-      'Timeout',
-      'Type',
-      'Déclencheur',
-      'Page de départ',
-      'URL mesurée',
-    ]).map((c) => ({ ...c, s: 'headerLeft' })),
-    ...rows.map((m) => [
-      { v: fmtDate(m.ts), s: 'text' },
-      { v: m.app, s: 'text' },
-      { v: m.page, s: 'text' },
-      { v: NETWORK_LABELS[m.network] || m.network, s: 'text' },
-      { v: m.duration, s: 'num' },
-      { v: m.timeout ? 'Oui' : 'Non', s: 'text' },
-      { v: KIND_LABELS[m.kind] || m.kind || '', s: 'text' },
-      { v: TRIGGER_LABELS[m.trigger] || m.trigger || '', s: 'text' },
-      { v: m.startUrl || '', s: 'text' },
-      { v: m.url || '', s: 'text' },
-    ]),
+    cols.map(([v]) => ({ v, s: 'headerLeft' })),
+    ...rows.map((m) => cols.map(([, get, , style]) => ({ v: get(m), s: style || 'text' }))),
   ];
   return {
     name,
     rows: data,
-    cols: [20, 24, 24, 10, 11, 9, 24, 22, 45, 45],
+    cols: cols.map((c) => c[2]),
     freeze: { rows: 1 },
-    autoFilter: `A1:J${data.length}`,
+    autoFilter: `A1:${colName(cols.length - 1)}${data.length}`,
   };
 }
 
+// ---------------------------------------------------------------- Export 1 : tout
+
 function networkSheet(model, stat, settings, network, sub) {
-  const { apps, pages } = model;
-  const last = Math.max(5, 4 + apps.length);
+  const { lines, pages } = model;
+  const last = Math.max(5, 4 + lines.length);
   return {
     name: NETWORK_LABELS[network],
     rows: [
       [{ v: `Temps de réponse — ${NETWORK_LABELS[network]} (ms)`, s: 'title' }],
       [{ v: sub, s: 'muted' }],
       [{ v: legendText(settings), s: 'muted' }],
-      header(['Application', 'Couverture', ...pages.map((p) => p.name)]),
-      ...apps.map((app) => {
-        const cov = coverage(model, app.name, [network]);
+      header(['Client', 'SID', 'Version', 'Couverture', ...pages.map((p) => p.name)]),
+      ...lines.map((l) => {
+        const cov = coverage(model, l.key, [network]);
         return [
-          { v: app.name, s: 'textBold' },
+          ...lineCells(l),
           { v: cov.total ? cov.done / cov.total : 0, s: 'pct' },
-          ...pages.map((p) => valueCell(rate(model, app.name, p.name, network, stat, settings))),
+          ...pages.map((p) => valueCell(rate(model, l.key, p.name, network, stat, settings))),
         ];
       }),
     ],
-    cols: [nameWidth(apps.map((a) => a.name)), 11, ...pages.map((p) => headWidth(p.name))],
+    cols: [
+      width(
+        lines.map((l) => l.client),
+        16,
+      ),
+      10,
+      10,
+      11,
+      ...pages.map((p) => headWidth(p.name)),
+    ],
     heights: { 4: 32 },
-    freeze: { rows: 4, cols: 2 },
-    autoFilter: `A4:${colName(pages.length + 1)}${last}`,
+    freeze: { rows: 4, cols: 3 },
+    autoFilter: `A4:${colName(pages.length + 3)}${last}`,
   };
 }
 
-/** Export n°1 : toutes les applications × toutes les pages. */
-export function buildGlobalSheets(model, stat, settings, date = new Date()) {
-  const { apps, pages } = model;
+export function buildGlobalSheets(model, stat, settings, date = new Date(), options = {}) {
+  const { lines, pages } = model;
   const sub = subtitle(model, stat, date);
   const first = 6;
-  const last = Math.max(first, first + apps.length - 1);
-
+  const last = Math.max(first, first + lines.length - 1);
   const pageHead = [
     { v: '', s: 'headerLeft' },
     { v: '', s: 'header' },
+    { v: '', s: 'header' },
+    { v: '', s: 'header' },
   ];
-  const netHead = header(['Application', 'Couverture']);
+  const netHead = header(['Client', 'SID', 'Version', 'Couverture']);
   const merges = [];
   pages.forEach((p, i) => {
-    const c = 2 + i * 2;
+    const c = 4 + i * 2;
     pageHead.push({ v: p.name, s: 'header' }, { v: '', s: 'header' });
     netHead.push(...NETWORKS.map((n) => ({ v: n.label, s: 'header' })));
     merges.push(`${colName(c)}4:${colName(c + 1)}4`);
   });
-
-  const sheets = [
+  return [
     {
       name: 'WiFi + Ethernet',
       rows: [
-        [{ v: 'Insigth — Temps de réponse par application et par page (ms)', s: 'title' }],
+        [{ v: 'Insigth — Temps de réponse par client et par page (ms)', s: 'title' }],
         [{ v: sub, s: 'muted' }],
         [{ v: legendText(settings), s: 'muted' }],
         pageHead,
         netHead,
-        ...apps.map((app) => {
-          const cov = coverage(model, app.name);
+        ...lines.map((l) => {
+          const cov = coverage(model, l.key);
           return [
-            { v: app.name, s: 'textBold' },
+            ...lineCells(l),
             { v: cov.total ? cov.done / cov.total : 0, s: 'pct' },
-            ...pages.flatMap((p) =>
-              NETWORKS.map((n) => valueCell(rate(model, app.name, p.name, n.id, stat, settings))),
-            ),
+            ...pages.flatMap((p) => NETWORKS.map((n) => valueCell(rate(model, l.key, p.name, n.id, stat, settings)))),
           ];
         }),
       ],
       cols: [
-        nameWidth(apps.map((a) => a.name)),
+        width(
+          lines.map((l) => l.client),
+          16,
+        ),
+        10,
+        10,
         11,
         ...pages.flatMap((p) => {
           const w = Math.max(9, headWidth(p.name, 9) / 2 + 3);
@@ -330,73 +363,86 @@ export function buildGlobalSheets(model, stat, settings, date = new Date()) {
       ],
       heights: { 4: 32 },
       merges,
-      freeze: { rows: 5, cols: 2 },
-      autoFilter: `A5:${colName(1 + pages.length * 2)}${last}`,
+      freeze: { rows: 5, cols: 3 },
+      autoFilter: `A5:${colName(3 + pages.length * 2)}${last}`,
     },
     ...NETWORKS.map((n) => networkSheet(model, stat, settings, n.id, sub)),
+    {
+      name: 'Écart WiFi-Ethernet',
+      rows: [
+        [{ v: 'Écart WiFi / Ethernet : + 30 % = le WiFi est 30 % plus lent', s: 'title' }],
+        [{ v: sub, s: 'muted' }],
+        [
+          {
+            v: `Jaune = écart d'au moins ${settings.gapPct} % · Rouge = mesure WiFi ou Ethernet manquante`,
+            s: 'muted',
+          },
+        ],
+        header(['Client', 'SID', 'Version', ...pages.map((p) => p.name)]),
+        ...lines.map((l) => [
+          ...lineCells(l),
+          ...pages.map((p) => gapCell(diffStat(model, l.key, p.name, stat), settings)),
+        ]),
+      ],
+      cols: [
+        width(
+          lines.map((l) => l.client),
+          16,
+        ),
+        10,
+        10,
+        ...pages.map((p) => headWidth(p.name)),
+      ],
+      heights: { 4: 32 },
+      freeze: { rows: 4, cols: 3 },
+      autoFilter: `A4:${colName(pages.length + 2)}${Math.max(5, 4 + lines.length)}`,
+    },
+    {
+      name: 'Référence par page',
+      rows: [
+        header([
+          'Page',
+          'Lignes mesurées WiFi',
+          'Médiane WiFi (ms)',
+          'Lignes mesurées Ethernet',
+          'Médiane Ethernet (ms)',
+        ]),
+        ...pages.map((p) => {
+          const w = pageRef(model, p.name, 'wifi', stat);
+          const e = pageRef(model, p.name, 'ethernet', stat);
+          return [
+            { v: p.name, s: 'textBold' },
+            { v: w ? w.count : 0, s: 'num' },
+            { v: w ? w.median : '', s: 'num' },
+            { v: e ? e.count : 0, s: 'num' },
+            { v: e ? e.median : '', s: 'num' },
+          ];
+        }),
+      ],
+      cols: [30, 14, 14, 14, 14],
+      heights: { 1: 32 },
+      freeze: { rows: 1 },
+    },
+    rawSheet(model.rows, options),
   ];
-
-  // Écart WiFi / Ethernet en %
-  sheets.push({
-    name: 'Écart WiFi-Ethernet',
-    rows: [
-      [{ v: 'Écart WiFi / Ethernet : + 30 % = le WiFi est 30 % plus lent', s: 'title' }],
-      [{ v: sub, s: 'muted' }],
-      [{ v: `Jaune = écart d'au moins ${settings.gapPct} % · Rouge = mesure WiFi ou Ethernet manquante`, s: 'muted' }],
-      header(['Application', ...pages.map((p) => p.name)]),
-      ...apps.map((app) => [
-        { v: app.name, s: 'textBold' },
-        ...pages.map((p) => gapCell(diffStat(model, app.name, p.name, stat), settings)),
-      ]),
-    ],
-    cols: [nameWidth(apps.map((a) => a.name)), ...pages.map((p) => headWidth(p.name))],
-    heights: { 4: 32 },
-    freeze: { rows: 4, cols: 1 },
-    autoFilter: `A4:${colName(pages.length)}${Math.max(5, 4 + apps.length)}`,
-  });
-
-  // Référence utilisée pour les couleurs
-  sheets.push({
-    name: 'Référence par page',
-    rows: [
-      header([
-        'Page',
-        'Clients mesurés WiFi',
-        'Médiane WiFi (ms)',
-        'Clients mesurés Ethernet',
-        'Médiane Ethernet (ms)',
-      ]),
-      ...pages.map((p) => {
-        const w = pageRef(model, p.name, 'wifi', stat);
-        const e = pageRef(model, p.name, 'ethernet', stat);
-        return [
-          { v: p.name, s: 'textBold' },
-          { v: w ? w.count : 0, s: 'num' },
-          { v: w ? w.median : '', s: 'num' },
-          { v: e ? e.count : 0, s: 'num' },
-          { v: e ? e.median : '', s: 'num' },
-        ];
-      }),
-    ],
-    cols: [30, 14, 14, 14, 14],
-    heights: { 1: 32 },
-    freeze: { rows: 1 },
-  });
-
-  sheets.push(rawSheet(model.rows));
-  return sheets;
 }
 
-/** Export n°2 : une page, tous les clients. */
-export function buildPageSheets(model, pageName, stat, settings, date = new Date()) {
-  const page = (model.allPages.find((p) => nameKey(p.name) === nameKey(pageName)) || { name: normName(pageName) }).name;
-  const apps = model.apps;
+// ---------------------------------------------------------------- Export 2 : une page, tous les clients
+
+const findPage = (model, name) =>
+  (model.allPages.find((p) => nameKey(p.name) === nameKey(name)) || { name: normName(name) }).name;
+
+export function buildPageSheets(model, pageName, stat, settings, date = new Date(), options = {}) {
+  const page = findPage(model, pageName);
+  const { lines } = model;
   const rows = [
     [{ v: `Page « ${page} » — tous les clients`, s: 'title' }],
     [{ v: subtitle(model, stat, date), s: 'muted' }],
     [{ v: legendText(settings), s: 'muted' }],
     header([
-      'Application',
+      'Client',
+      'SID',
+      'Version',
       'WiFi (ms)',
       'Ethernet (ms)',
       'Écart WiFi / Eth.',
@@ -407,15 +453,15 @@ export function buildPageSheets(model, pageName, stat, settings, date = new Date
       'Dernière mesure',
     ]),
   ];
-  for (const app of apps) {
-    const w = rate(model, app.name, page, 'wifi', stat, settings);
-    const e = rate(model, app.name, page, 'ethernet', stat, settings);
+  for (const l of lines) {
+    const w = rate(model, l.key, page, 'wifi', stat, settings);
+    const e = rate(model, l.key, page, 'ethernet', stat, settings);
     const lastTs = Math.max(w.lastTs || 0, e.lastTs || 0);
     rows.push([
-      { v: app.name, s: 'textBold' },
+      ...lineCells(l),
       valueCell(w),
       valueCell(e),
-      gapCell(diffStat(model, app.name, page, stat), settings),
+      gapCell(diffStat(model, l.key, page, stat), settings),
       vsMedianCell(w, settings),
       vsMedianCell(e, settings),
       { v: w.count, s: 'num' },
@@ -425,73 +471,222 @@ export function buildPageSheets(model, pageName, stat, settings, date = new Date
   }
   const lastRow = rows.length;
   const refs = NETWORKS.map((n) => pageRef(model, page, n.id, stat));
+  const pad = [
+    { v: '', s: 'headerLeft' },
+    { v: '', s: 'headerLeft' },
+  ];
   rows.push(
     [],
     ...[
       ['Médiane (tous clients)', 'median'],
       ['Minimum', 'min'],
       ['Maximum', 'max'],
-    ].map(([label, k]) => [{ v: label, s: 'headerLeft' }, ...refs.map((r) => ({ v: r ? r[k] : '', s: 'num' }))]),
-    [{ v: 'Clients mesurés', s: 'headerLeft' }, ...refs.map((r) => ({ v: r ? r.count : 0, s: 'num' }))],
+      ['Lignes mesurées', 'count'],
+    ].map(([label, k]) => [
+      { v: label, s: 'headerLeft' },
+      ...pad,
+      ...refs.map((r) => ({ v: r ? r[k] : '', s: 'num' })),
+    ]),
   );
   return [
     {
       name: page,
       rows,
-      cols: [nameWidth(apps.map((a) => a.name)), 12, 13, 14, 14, 16, 13, 15, 19],
+      cols: [
+        width(
+          lines.map((l) => l.client),
+          18,
+        ),
+        10,
+        10,
+        12,
+        13,
+        14,
+        14,
+        16,
+        13,
+        15,
+        19,
+      ],
       heights: { 4: 32 },
-      freeze: { rows: 4, cols: 1 },
-      autoFilter: `A4:I${Math.max(5, lastRow)}`,
+      freeze: { rows: 4, cols: 3 },
+      autoFilter: `A4:K${Math.max(5, lastRow)}`,
     },
-    rawSheet(model.rows.filter((m) => nameKey(m.page) === nameKey(page))),
+    rawSheet(
+      model.rows.filter((m) => nameKey(m.page) === nameKey(page)),
+      options,
+    ),
   ];
 }
 
-/** Export n°3 : un client, toutes ses pages. */
-export function buildAppSheets(model, appName, stat, settings, date = new Date()) {
-  const app = (model.apps.find((a) => nameKey(a.name) === nameKey(appName)) || { name: normName(appName) }).name;
-  const rows = [
-    [{ v: `${app} — toutes les pages`, s: 'title' }],
-    [{ v: subtitle(model, stat, date), s: 'muted' }],
-    [{ v: legendText(settings), s: 'muted' }],
-    header([
-      'Page',
-      'WiFi (ms)',
-      'Ethernet (ms)',
-      'Écart WiFi / Eth.',
-      'Médiane clients WiFi (ms)',
-      'WiFi vs médiane',
-      'Médiane clients Ethernet (ms)',
-      'Ethernet vs médiane',
-      'Nb mesures WiFi',
-      'Nb mesures Ethernet',
-    ]),
-  ];
-  for (const p of model.pages) {
-    const w = rate(model, app, p.name, 'wifi', stat, settings);
-    const e = rate(model, app, p.name, 'ethernet', stat, settings);
-    rows.push([
-      { v: p.name, s: 'textBold' },
-      valueCell(w),
-      valueCell(e),
-      gapCell(diffStat(model, app, p.name, stat), settings),
-      { v: w.ref ? w.ref.median : '', s: 'num' },
-      vsMedianCell(w, settings),
-      { v: e.ref ? e.ref.median : '', s: 'num' },
-      vsMedianCell(e, settings),
-      { v: w.count, s: 'num' },
-      { v: e.count, s: 'num' },
-    ]);
-  }
-  return [
-    {
-      name: app,
+// ---------------------------------------------------------------- Export 3 : un client, toutes les pages
+
+/** Une feuille par ligne du client (SID / version), puis ses mesures. */
+export function buildClientSheets(model, clientName, stat, settings, date = new Date(), options = {}) {
+  const lines = model.lines.filter((l) => nameKey(l.client) === nameKey(clientName));
+  const sheets = lines.map((l) => {
+    const rows = [
+      [{ v: `${lineLabel(l)} — toutes les pages`, s: 'title' }],
+      [{ v: subtitle(model, stat, date), s: 'muted' }],
+      [{ v: legendText(settings), s: 'muted' }],
+      header([
+        'Page',
+        'WiFi (ms)',
+        'Ethernet (ms)',
+        'Écart WiFi / Eth.',
+        'Médiane clients WiFi (ms)',
+        'WiFi vs médiane',
+        'Médiane clients Ethernet (ms)',
+        'Ethernet vs médiane',
+        'Nb mesures WiFi',
+        'Nb mesures Ethernet',
+      ]),
+    ];
+    for (const p of model.pages) {
+      const w = rate(model, l.key, p.name, 'wifi', stat, settings);
+      const e = rate(model, l.key, p.name, 'ethernet', stat, settings);
+      rows.push([
+        { v: p.name, s: 'textBold' },
+        valueCell(w),
+        valueCell(e),
+        gapCell(diffStat(model, l.key, p.name, stat), settings),
+        { v: w.ref ? w.ref.median : '', s: 'num' },
+        vsMedianCell(w, settings),
+        { v: e.ref ? e.ref.median : '', s: 'num' },
+        vsMedianCell(e, settings),
+        { v: w.count, s: 'num' },
+        { v: e.count, s: 'num' },
+      ]);
+    }
+    return {
+      name: [l.sid, l.version].filter(Boolean).join(' · ') || l.client,
       rows,
-      cols: [nameWidth(model.pages.map((p) => p.name)), 12, 13, 14, 16, 14, 18, 16, 13, 15],
+      cols: [
+        width(
+          model.pages.map((p) => p.name),
+          18,
+        ),
+        12,
+        13,
+        14,
+        16,
+        14,
+        18,
+        16,
+        13,
+        15,
+      ],
       heights: { 4: 32 },
       freeze: { rows: 4, cols: 1 },
       autoFilter: `A4:J${Math.max(5, rows.length)}`,
-    },
-    rawSheet(model.rows.filter((m) => nameKey(m.app) === nameKey(app))),
+    };
+  });
+  const keys = new Set(lines.map((l) => l.key));
+  return [
+    ...sheets,
+    rawSheet(
+      model.rows.filter((m) => keys.has(m.line)),
+      options,
+    ),
   ];
+}
+
+// ---------------------------------------------------------------- Export 4 : détail des temps d'une page
+
+function detailColumns(options) {
+  return [
+    ...measureColumns({}).slice(0, 7), // Date … Durée
+    ...DETAIL_COLUMNS.map(([, label], i) => [`${label} (ms)`, (m) => m._sum.durations[i] ?? '', 12, 'num']),
+    ['Nb requêtes', (m) => m._sum.requestCount ?? '', 11, 'num'],
+    ['Requête la plus lente (ms)', (m) => (m._sum.slowest ? Math.round(m._sum.slowest.duration) : ''), 14, 'num'],
+    ['URL requête la plus lente', (m) => (m._sum.slowest ? m._sum.slowest.url : ''), 50],
+    ...measureColumns(options).slice(10), // URL en option
+  ];
+}
+
+export function buildDetailSheets(model, pageName, date = new Date(), options = {}) {
+  const page = findPage(model, pageName);
+  const measures = model.rows
+    .filter((m) => nameKey(m.page) === nameKey(page))
+    .map((m) => ({ ...m, _sum: detailSummary(m.detail) }));
+  const cols = detailColumns(options);
+  const data = [
+    [{ v: `Détail des temps — page « ${page} »`, s: 'title' }],
+    [
+      {
+        v: `Une ligne par mesure · étapes en ms (attente serveur = temps de réponse du serveur, requêtes SQL comprises) · généré le ${fmtDate(date)}`,
+        s: 'muted',
+      },
+    ],
+    cols.map(([v]) => ({ v, s: 'header' })),
+    ...measures.map((m) => cols.map(([, get, , style]) => ({ v: get(m), s: style || 'text' }))),
+  ];
+  const requests = [
+    header(['Date', 'Client', 'SID', 'Version', 'Réseau', 'Début (ms après le clic)', 'Durée (ms)', 'Type', 'URL']),
+    ...measures.flatMap((m) =>
+      ((m.detail && m.detail.requests) || []).map((r) => [
+        { v: fmtDate(m.ts), s: 'text' },
+        { v: m.app, s: 'text' },
+        { v: m.sid, s: 'text' },
+        { v: m.version, s: 'text' },
+        { v: NETWORK_LABELS[m.network], s: 'text' },
+        { v: Math.round(r.start), s: 'num' },
+        { v: Math.round(r.duration), s: 'num' },
+        { v: r.type || '', s: 'text' },
+        { v: r.url, s: 'text' },
+      ]),
+    ),
+  ];
+  return [
+    {
+      name: `Détail ${page}`,
+      rows: data,
+      cols: cols.map((c) => c[2]),
+      heights: { 3: 45 },
+      freeze: { rows: 3, cols: 2 },
+      autoFilter: `A3:${colName(cols.length - 1)}${Math.max(4, data.length)}`,
+    },
+    {
+      name: 'Requêtes',
+      rows: requests,
+      cols: [20, 24, 10, 10, 10, 14, 11, 14, 70],
+      freeze: { rows: 1 },
+      autoFilter: `A1:I${Math.max(2, requests.length)}`,
+    },
+  ];
+}
+
+// ---------------------------------------------------------------- CSV (une ligne par mesure)
+
+function toCsv(cols, rows) {
+  const q = (v) => {
+    const s = v === null || v === undefined ? '' : String(v);
+    return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  return (
+    '﻿' +
+    [cols.map(([h]) => q(h)).join(';'), ...rows.map((m) => cols.map(([, get]) => q(get(m))).join(';'))].join('\r\n') +
+    '\r\n'
+  );
+}
+
+/** Mesures du périmètre choisi, une par ligne ; URL complète / fin d'URL en option. */
+export function measuresCsv(rows, options = {}) {
+  return toCsv(measureColumns(options), rows);
+}
+
+/** Détail des temps (une ligne par mesure) d'une page. */
+export function detailCsv(model, pageName, options = {}) {
+  const page = findPage(model, pageName);
+  const rows = model.rows
+    .filter((m) => nameKey(m.page) === nameKey(page))
+    .map((m) => ({ ...m, _sum: detailSummary(m.detail) }));
+  return toCsv(detailColumns(options), rows);
+}
+
+/** Mesures couvertes par un type d'export. */
+export function scopeRows(model, { type, page, client }) {
+  if (type === 'page' || type === 'detail') return model.rows.filter((m) => nameKey(m.page) === nameKey(page));
+  if (type === 'client') return model.rows.filter((m) => nameKey(m.app) === nameKey(client));
+  return model.rows;
 }

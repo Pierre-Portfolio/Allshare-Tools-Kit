@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { matchApp, parseBase } from '../../extension/lib/urls.js';
+import { matchApp, parseBase, urlEnd } from '../../extension/lib/urls.js';
 
 const apps = [
   { id: 'a', name: 'Appli 1', baseUrls: ['https://srv.example.com/appli1/'] },
@@ -22,4 +22,12 @@ test("matchApp choisit l'URL de base la plus longue, sans tenir compte de la cas
   assert.equal(matchApp('http://localhost:8080/x', apps).app.id, 'b');
   assert.equal(matchApp('http://localhost:9090/x', apps), null, 'le port compte');
   assert.equal(matchApp('https://ailleurs.fr/', apps), null);
+});
+
+test('urlEnd : dernier segment + paramètres', () => {
+  assert.equal(urlEnd('https://dsb.fr/apex/f?p=103:21:2020327542118:::'), 'f?p=103:21:2020327542118:::');
+  assert.equal(urlEnd('https://srv/app/clients/'), 'clients/');
+  assert.equal(urlEnd('https://srv/'), '/');
+  assert.equal(urlEnd('https://srv/a/b#/route'), 'b#/route');
+  assert.equal(urlEnd('pas une url'), '');
 });

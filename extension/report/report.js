@@ -1,13 +1,14 @@
-// Exports (3 types) et aperçu : une ligne par application, une colonne par page.
-import { saveSettings, deleteMeasures, isMeasureKey } from '../lib/storage.js';
-import { rate, diffStat, coverage, legendText, MISSING_TEXT } from '../lib/report.js';
-import { loadModel, exportAll, exportPage, exportApp } from '../lib/export.js';
+// Tableau de bord : export en une ligne, grille clients × pages, mesures.
+import { saveSettings, deleteMeasures, deleteClient, deletePage, isMeasureKey } from '../lib/storage.js';
+import { rate, diffStat, coverage, lineLabel, legendText, MISSING_TEXT } from '../lib/report.js';
+import { loadModel, exportData } from '../lib/export.js';
 import { nameKey, compareNames } from '../lib/names.js';
-import { NETWORKS, NETWORK_LABELS, STATS, KIND_LABELS, TRIGGER_LABELS, fmtMs, fmtDate } from '../lib/format.js';
+import { NETWORKS, NETWORK_LABELS, STATS, fmtMs, fmtDate } from '../lib/format.js';
 
 const $ = (id) => document.getElementById(id);
 const nf = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
 const pf = new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFractionDigits: 0, signDisplay: 'exceptZero' });
+const pct = new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFractionDigits: 0 });
 const xf = (r) => r.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
 const VIEWS = ['both', 'wifi', 'ethernet', 'diff'];
 const RAW_PAGE = 100;
@@ -27,8 +28,15 @@ const state = {
 };
 
 const esc = (s) =>
-  String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const norm = (s) => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  String(s ?? '').replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
+  );
+const norm = (s) =>
+  String(s ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
 
 function toast(text) {
   const t = $('toast');
@@ -38,107 +46,115 @@ function toast(text) {
   toast.timer = setTimeout(() => t.classList.remove('show'), 2500);
 }
 
-// ---------------------------------------------------------------- Exports
+// ---------------------------------------------------------------- Export
 
-function renderExports() {
-  const { model } = state;
-  $('exAllInfo').textContent =
-    `${nf.format(model.apps.length)} application(s) × ${nf.format(model.pages.length)} page(s) · ${nf.format(model.rows.length)} mesure(s)`;
-  const sel = $('exPageSel');
-  const keep = sel.value;
-  sel.replaceChildren(
-    ...model.pages.map((p) => Object.assign(document.createElement('option'), { value: p.name, textContent: p.name })),
+const EXPORT_HELP = {
+  all: 'Excel : feuilles WiFi + Ethernet, WiFi, Ethernet, Écart, Référence par page et Mesures. CSV : une ligne par mesure.',
+  page: 'Une ligne par client (SID, version) : WiFi, Ethernet, écart et comparaison à la médiane. CSV : les mesures de la page.',
+  client:
+    'Une feuille par SID / version du client : chaque page comparée à la médiane des clients. CSV : les mesures du client.',
+  detail:
+    'Une ligne par mesure de la page : redirection, DNS, connexion, attente serveur, téléchargement, DOM, load, après load, requête la plus lente, + feuille Requêtes.',
+};
+
+function renderExport() {
+  const { model, settings } = state;
+  const type = settings.exportType || 'all';
+  $('exType').value = type;
+  $('exPageFld').hidden = type !== 'page' && type !== 'detail';
+  $('exClientFld').hidden = type !== 'client';
+  const fill = (select, values) => {
+    const keep = select.value;
+    select.replaceChildren(
+      ...values.map((v) => Object.assign(document.createElement('option'), { value: v, textContent: v })),
+    );
+    if (values.includes(keep)) select.value = keep;
+  };
+  fill(
+    $('exPage'),
+    model.allPages.map((p) => p.name),
   );
-  if (model.pages.some((p) => p.name === keep)) sel.value = keep;
-  $('appNames').replaceChildren(
-    ...model.apps.map((a) => Object.assign(document.createElement('option'), { value: a.name })),
-  );
-  $('exAll').disabled = !model.rows.length;
-  $('exPage').disabled = !model.pages.length;
-  $('legend').innerHTML =
-    '<span class="legend"><span class="swatch warn"></span> Jaune : lent</span>' +
-    '<span class="legend"><span class="swatch crit"></span> Orange : très lent</span>' +
-    `<span class="legend"><span class="swatch missing"></span> Rouge (${MISSING_TEXT}) : pas de mesure</span>` +
-    '<span class="legend"><span class="swatch timeout"></span> Gris (T/O) : timeout</span>' +
-    `<span class="legend-text">${esc(legendText(state.settings))}</span>`;
+  fill($('exClient'), model.clients);
+  for (const b of $('exFormat').querySelectorAll('[data-format]')) {
+    b.setAttribute('aria-checked', String(b.dataset.format === (settings.exportFormat || 'xlsx')));
+  }
+  $('exFullUrl').checked = !!settings.exportFullUrl;
+  $('exUrlEnd').checked = !!settings.exportUrlEnd;
+  const opts = [settings.exportFullUrl && 'URL complète', settings.exportUrlEnd && "fin d'URL"].filter(Boolean);
+  $('exHelp').textContent =
+    EXPORT_HELP[type] +
+    (opts.length ? ` Colonnes ajoutées aux mesures : ${opts.join(', ')}.` : '') +
+    (type === 'detail' ? ' Le détail est enregistré avec chaque nouvelle mesure.' : '');
+  $('exGo').disabled = !model.rows.length;
 }
 
-async function runExport(fn, ...args) {
+async function runExport(req = {}) {
+  const s = state.settings;
+  const full = {
+    type: s.exportType || 'all',
+    page: $('exPage').value,
+    client: $('exClient').value,
+    format: s.exportFormat || 'xlsx',
+    fullUrl: !!s.exportFullUrl,
+    urlEnd: !!s.exportUrlEnd,
+    stat: state.stat,
+    ...req,
+  };
+  if ((full.type === 'page' || full.type === 'detail') && !full.page) return toast('Choisissez une page');
+  if (full.type === 'client' && !full.client) return toast('Choisissez un client');
   try {
-    await fn(...args, state.stat);
-    toast('Excel téléchargé');
+    await exportData(full);
+    toast('Export téléchargé');
   } catch (e) {
     toast(`Export impossible : ${e.message}`);
   }
 }
 
-// ---------------------------------------------------------------- Aperçu : colonnes, valeurs
+async function setSetting(patch) {
+  state.settings = { ...state.settings, ...patch };
+  renderExport();
+  await saveSettings(patch);
+}
+
+// ---------------------------------------------------------------- Grille
 
 const viewNetworks = (view) => (view === 'wifi' || view === 'ethernet' ? [view] : ['wifi', 'ethernet']);
 
 function columns(model, view) {
   if (view === 'both') {
     return model.pages.flatMap((p) =>
-      NETWORKS.map((n, i) => ({ id: `${p.name}\n${n.id}`, page: p, net: n.id, sep: i === 0 })),
+      NETWORKS.map((n, i) => ({ id: `${p.name}\n${n.id}`, page: p, net: n.id, grp: i === 0 })),
     );
   }
-  return model.pages.map((p) => ({ id: `${p.name}\n${view}`, page: p, net: view, sep: false }));
+  return model.pages.map((p) => ({ id: `${p.name}\n${view}`, page: p, net: view, grp: true }));
 }
 
-function valueOf(model, app, col) {
-  if (col.net !== 'diff') return rate(model, app, col.page.name, col.net, state.stat, state.settings);
-  const d = diffStat(model, app, col.page.name, state.stat);
+function valueOf(model, line, col) {
+  if (col.net !== 'diff') return rate(model, line, col.page.name, col.net, state.stat, state.settings);
+  const d = diffStat(model, line, col.page.name, state.stat);
   const level = d.status === 'ok' && d.pct !== null && Math.abs(d.pct) * 100 >= state.settings.gapPct ? 'warn' : null;
   return { ...d, level };
 }
 
-function renderKpis(model, measures, shown, anomalies) {
-  const total = model.apps.length * model.pages.length;
-  const done = (net) => model.apps.reduce((sum, a) => sum + coverage(model, a.name, [net]).done, 0);
-  const cov = (net) => (total ? done(net) / total : 0);
-  const wifi = measures.filter((m) => m.network === 'wifi').length;
-  const tile = (label, value, sub = '', bar = null) =>
-    `<div class="kpi"><div class="label">${label}</div><div class="value">${value}</div>` +
-    (sub ? `<div class="sub">${sub}</div>` : '') +
-    (bar !== null ? `<div class="bar-track"><i style="width:${Math.round(bar * 100)}%"></i></div>` : '') +
-    '</div>';
-  const pctf = new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFractionDigits: 0 });
-  $('kpis').innerHTML =
-    tile(
-      'Applications',
-      nf.format(model.apps.length),
-      shown === model.apps.length ? '' : `${nf.format(shown)} affichée(s)`,
-    ) +
-    tile('Pages', nf.format(model.pages.length)) +
-    tile('Mesures', nf.format(measures.length), `WiFi ${nf.format(wifi)} · Eth. ${nf.format(measures.length - wifi)}`) +
-    tile('Anomalies', nf.format(anomalies), 'cases jaunes ou orange') +
-    tile('Couverture WiFi', pctf.format(cov('wifi')), `${nf.format(done('wifi'))} / ${nf.format(total)}`, cov('wifi')) +
-    tile(
-      'Couverture Ethernet',
-      pctf.format(cov('ethernet')),
-      `${nf.format(done('ethernet'))} / ${nf.format(total)}`,
-      cov('ethernet'),
-    );
-}
-
 const RANK = { ok: 0, timeout: 1, missing: 2 };
 
-function sortApps(apps, cols, grid, model) {
+function sortLines(lines, cols, grid, model) {
   const { key, dir } = state.sort;
-  const byName = (a, b) => compareNames(a.name, b.name);
+  const byName = (a, b) =>
+    compareNames(a.client, b.client) || compareNames(a.sid, b.sid) || compareNames(a.version, b.version);
   if (key === 'coverage') {
     const nets = viewNetworks(state.view);
-    const ratio = (a) => {
-      const c = coverage(model, a.name, nets);
+    const ratio = (l) => {
+      const c = coverage(model, l.key, nets);
       return c.total ? c.done / c.total : 0;
     };
-    return apps.sort((a, b) => dir * (ratio(a) - ratio(b)) || byName(a, b));
+    return lines.sort((a, b) => dir * (ratio(a) - ratio(b)) || byName(a, b));
   }
   const idx = cols.findIndex((c) => c.id === key);
-  if (idx < 0) return apps.sort((a, b) => (key === 'name' ? dir : 1) * byName(a, b));
-  return apps.sort((a, b) => {
-    const va = grid.get(a.name)[idx];
-    const vb = grid.get(b.name)[idx];
+  if (idx < 0) return lines.sort((a, b) => (key === 'name' ? dir : 1) * byName(a, b));
+  return lines.sort((a, b) => {
+    const va = grid.get(a.key)[idx];
+    const vb = grid.get(b.key)[idx];
     if (va.status !== vb.status) return RANK[va.status] - RANK[vb.status];
     if (va.status === 'ok') return dir * (va.value - vb.value) || byName(a, b);
     return byName(a, b);
@@ -148,209 +164,354 @@ function sortApps(apps, cols, grid, model) {
 const sortAttr = (key) =>
   state.sort.key === key ? ` aria-sort="${state.sort.dir > 0 ? 'ascending' : 'descending'}"` : '';
 
-function cellHtml(app, col, v) {
-  const where = `${app.name} · ${col.page.name}`;
-  const sep = col.sep ? ' sep' : '';
-  if (v.status === 'missing')
-    return `<td class="missing${sep}" title="${esc(where)} : aucune mesure">${MISSING_TEXT}</td>`;
-  if (v.status === 'timeout')
-    return `<td class="timeout${sep}" title="${esc(where)} : uniquement des timeouts">T/O</td>`;
-  const cls = `v${sep}${v.level ? ` ${v.level}` : ''}`;
-  if (col.net === 'diff') {
-    const text = v.pct === null ? `${v.value > 0 ? '+' : ''}${nf.format(v.value)}` : pf.format(v.pct);
-    return `<td class="${cls}" title="${esc(`${where} : WiFi ${fmtMs(v.w.value)} · Ethernet ${fmtMs(v.e.value)}`)}">${text}</td>`;
+function cellHtml(line, col, v) {
+  const cls = `v${col.grp ? ' grp' : ''}`;
+  const where = `${lineLabel(line)} · ${col.page.name}`;
+  if (v.status === 'missing') {
+    return `<td class="${cls}" title="${esc(where)} : aucune mesure"><span class="pill missing">${MISSING_TEXT}</span></td>`;
   }
-  const vs =
-    v.ratio !== null ? ` · ${xf(v.ratio)} × la médiane des ${v.ref.count} clients (${fmtMs(v.ref.median)})` : '';
-  const title = `${where} · ${NETWORK_LABELS[col.net]} : ${fmtMs(v.value)} — ${v.count} mesure(s), min ${fmtMs(v.min)}, max ${fmtMs(v.max)}${vs}`;
-  return `<td class="${cls}" title="${esc(title)}">${nf.format(v.value)}</td>`;
+  if (v.status === 'timeout') {
+    return `<td class="${cls}" title="${esc(where)} : uniquement des timeouts"><span class="pill timeout">T/O</span></td>`;
+  }
+  let text;
+  let title;
+  if (col.net === 'diff') {
+    text = v.pct === null ? `${v.value > 0 ? '+' : ''}${nf.format(v.value)}` : pf.format(v.pct);
+    title = `${where} : WiFi ${fmtMs(v.w.value)} · Ethernet ${fmtMs(v.e.value)}`;
+  } else {
+    text = nf.format(v.value);
+    const vs = v.ratio !== null ? ` · ${xf(v.ratio)} × la médiane des clients (${fmtMs(v.ref.median)})` : '';
+    title = `${where} · ${NETWORK_LABELS[col.net]} : ${fmtMs(v.value)} — ${v.count} mesure(s), min ${fmtMs(v.min)}, max ${fmtMs(v.max)}${vs}`;
+  }
+  const inner = v.level ? `<span class="pill ${v.level}">${text}</span>` : text;
+  return `<td class="${cls}" title="${esc(title)}">${inner}</td>`;
 }
 
 function renderMatrix() {
   const { model } = state;
   const box = $('matrix');
-  if (!model.apps.length || !model.pages.length) {
+  if (!model.lines.length || !model.pages.length) {
     box.innerHTML =
-      '<div class="empty muted">Aucune mesure pour le moment : lancez une mesure depuis le panneau Insigth.</div>';
+      '<div class="empty">Aucune mesure pour le moment : lancez une mesure depuis le panneau Insigth.</div>';
     return { shown: 0, anomalies: 0 };
   }
   const cols = columns(model, state.view);
-  const grid = new Map(model.apps.map((a) => [a.name, cols.map((c) => valueOf(model, a.name, c))]));
+  const grid = new Map(model.lines.map((l) => [l.key, cols.map((c) => valueOf(model, l.key, c))]));
   let anomalies = 0;
   for (const values of grid.values()) for (const v of values) if (v.level) anomalies++;
 
   const q = norm(state.query.trim());
   const nets = viewNetworks(state.view);
-  let apps = model.apps.filter((a) => !q || norm(a.name).includes(q));
+  let lines = model.lines.filter((l) => !q || norm(lineLabel(l)).includes(q));
   if (state.incomplete) {
-    apps = apps.filter((a) => {
-      const c = coverage(model, a.name, nets);
+    lines = lines.filter((l) => {
+      const c = coverage(model, l.key, nets);
       return c.done < c.total;
     });
   }
-  if (state.anomaliesOnly) apps = apps.filter((a) => grid.get(a.name).some((v) => v.level));
-  apps = sortApps(apps, cols, grid, model);
+  if (state.anomaliesOnly) lines = lines.filter((l) => grid.get(l.key).some((v) => v.level));
+  lines = sortLines(lines, cols, grid, model);
 
   const pageTh = (p, attrs, cls) =>
-    `<th class="page${cls}"${attrs} title="${esc(p.name)}"><span class="page-name">${esc(p.name)}</span>` +
-    `<button type="button" class="exp" data-export-page="${esc(p.name)}" title="Exporter cette page (tous les clients)">⤓</button></th>`;
+    `<th class="page grp${cls}"${attrs} title="${esc(p.name)}">${esc(p.name)} ` +
+    `<button type="button" class="dots" data-page-menu="${esc(p.name)}" aria-label="Actions sur la page ${esc(p.name)}">⋯</button></th>`;
   let head;
   if (state.view === 'both') {
     head =
       '<tr class="h1">' +
-      `<th class="c-app sortable" rowspan="2" data-sort="name"${sortAttr('name')}>Application</th>` +
+      `<th class="c-client sortable" rowspan="2" data-sort="name"${sortAttr('name')}>Client</th>` +
       `<th class="c-cov sortable" rowspan="2" data-sort="coverage"${sortAttr('coverage')}>Couverture</th>` +
-      model.pages.map((p) => pageTh(p, ' colspan="2"', ' sep')).join('') +
+      model.pages.map((p) => pageTh(p, ' colspan="2"', '')).join('') +
       '</tr><tr class="h2">' +
       cols
         .map(
           (c) =>
-            `<th class="sortable${c.sep ? ' sep' : ''}" data-sort="${esc(c.id)}"${sortAttr(c.id)} title="Trier par ${esc(c.page.name)} · ${NETWORK_LABELS[c.net]}">${c.net === 'wifi' ? 'WiFi' : 'Eth.'}</th>`,
+            `<th class="sortable${c.grp ? ' grp' : ''}" data-sort="${esc(c.id)}"${sortAttr(c.id)} title="Trier par ${esc(c.page.name)} · ${NETWORK_LABELS[c.net]}">${c.net === 'wifi' ? 'WiFi' : 'Eth.'}</th>`,
         )
         .join('') +
       '</tr>';
   } else {
     head =
       '<tr class="h1">' +
-      `<th class="c-app sortable" data-sort="name"${sortAttr('name')}>Application</th>` +
+      `<th class="c-client sortable" data-sort="name"${sortAttr('name')}>Client</th>` +
       `<th class="c-cov sortable" data-sort="coverage"${sortAttr('coverage')}>Couverture</th>` +
       cols.map((c) => pageTh(c.page, ` data-sort="${esc(c.id)}"${sortAttr(c.id)}`, ' sortable')).join('') +
       '</tr>';
   }
-  const body = apps
-    .map((app) => {
-      const c = coverage(model, app.name, nets);
+  const body = lines
+    .map((l) => {
+      const c = coverage(model, l.key, nets);
       const ratio = c.total ? c.done / c.total : 0;
-      const values = grid.get(app.name);
+      const values = grid.get(l.key);
+      const sub = [l.sid && `SID ${l.sid}`, l.version && `v. ${l.version}`].filter(Boolean).join(' · ');
       return (
         '<tr>' +
-        `<th class="c-app" scope="row"><button type="button" class="app-link" data-app="${esc(app.name)}">${esc(app.name)}</button></th>` +
+        '<th class="c-client" scope="row"><div class="client"><div class="names">' +
+        `<button type="button" class="name" data-line="${esc(l.key)}" title="Voir le détail">${esc(l.client)}</button>` +
+        (sub ? `<span class="sub">${esc(sub)}</span>` : '') +
+        `</div><button type="button" class="dots" data-line-menu="${esc(l.key)}" aria-label="Actions sur ${esc(lineLabel(l))}">⋯</button></div></th>` +
         `<td class="c-cov"><div class="cov${c.done === c.total ? ' full' : ''}" title="${c.done} case(s) mesurée(s) sur ${c.total}">` +
         `<span>${c.done}/${c.total}</span><span class="track"><i style="width:${Math.round(ratio * 100)}%"></i></span></div></td>` +
-        cols.map((col, i) => cellHtml(app, col, values[i])).join('') +
+        cols.map((col, i) => cellHtml(l, col, values[i])).join('') +
         '</tr>'
       );
     })
     .join('');
-  box.innerHTML = apps.length
+  box.innerHTML = lines.length
     ? `<table class="matrix"><thead>${head}</thead><tbody>${body}</tbody></table>`
-    : '<div class="empty muted">Aucune application ne correspond aux filtres.</div>';
-  return { shown: apps.length, anomalies };
+    : '<div class="empty">Aucun client ne correspond aux filtres.</div>';
+  return { shown: lines.length, anomalies };
 }
 
-// ---------------------------------------------------------------- Dernières mesures
+function renderSummary({ shown, anomalies }) {
+  const { model, measures } = state;
+  const total = model.lines.length * model.pages.length;
+  const done = (net) => model.lines.reduce((sum, l) => sum + coverage(model, l.key, [net]).done, 0);
+  const cov = (net) => (total ? pct.format(done(net) / total) : '—');
+  const wifi = measures.filter((m) => m.network === 'wifi').length;
+  const sep = '<span class="sep">·</span>';
+  $('summary').innerHTML =
+    `<b>${nf.format(model.clients.length)}</b> client(s)` +
+    (model.lines.length !== model.clients.length ? ` (${nf.format(model.lines.length)} lignes SID / version)` : '') +
+    (shown !== model.lines.length ? `, ${nf.format(shown)} affichée(s)` : '') +
+    `${sep}<b>${nf.format(model.pages.length)}</b> page(s)` +
+    `${sep}<b>${nf.format(measures.length)}</b> mesure(s) — WiFi ${nf.format(wifi)}, Ethernet ${nf.format(measures.length - wifi)}` +
+    `${sep}couverture WiFi <b>${cov('wifi')}</b>, Ethernet <b>${cov('ethernet')}</b>` +
+    `${sep}<b class="${anomalies ? 'warn' : ''}">${nf.format(anomalies)}</b> anomalie(s)`;
+}
 
-function rawTable(rows, withApp = true) {
-  const heads = [
-    'Date',
-    withApp ? 'Application' : null,
-    'Page',
-    'Réseau',
-    'Durée',
-    'Type',
-    'Déclencheur',
-    'URL mesurée',
-    '',
-  ].filter((t) => t !== null);
-  const head = `<tr>${heads.map((t) => `<th class="${t === 'Durée' ? '' : 'left'}">${t}</th>`).join('')}</tr>`;
+function renderLegend() {
+  const s = state.settings;
+  const fr = (n) => String(n).replace('.', ',');
+  $('legend').innerHTML =
+    (state.view === 'diff'
+      ? `<span><span class="pill warn">±${s.gapPct} %</span> écart WiFi / Ethernet important</span>`
+      : `<span><span class="pill warn">lent</span> ≥ ${fr(s.warnRatio)} × la médiane des clients</span>` +
+        `<span><span class="pill crit">très lent</span> ≥ ${fr(s.critRatio)} ×</span>`) +
+    `<span><span class="pill missing">${MISSING_TEXT}</span> pas de mesure</span>` +
+    '<span><span class="pill timeout">T/O</span> timeout</span>' +
+    `<span>${STATS[state.stat]} en ms · clic sur un en-tête pour trier</span>`;
+  $('legend').title = legendText(s);
+}
+
+// ---------------------------------------------------------------- Mesures
+
+function measuresTable(rows, withClient = true) {
+  const head =
+    '<tr><th>Date</th>' +
+    (withClient ? '<th>Client</th><th>SID</th><th>Version</th>' : '') +
+    '<th>Page</th><th>Réseau</th><th class="n">Durée</th><th></th></tr>';
   const body = rows
     .map(
       (m) =>
-        '<tr>' +
-        `<td class="left">${fmtDate(m.ts)}</td>` +
-        (withApp ? `<td class="left">${esc(m.app)}</td>` : '') +
-        `<td class="left">${esc(m.page)}</td>` +
-        `<td class="left">${NETWORK_LABELS[m.network] || esc(m.network)}</td>` +
+        `<tr title="${esc(m.url)}">` +
+        `<td class="muted">${fmtDate(m.ts)}</td>` +
+        (withClient
+          ? `<td>${esc(m.app)}</td><td class="muted">${esc(m.sid)}</td><td class="muted">${esc(m.version)}</td>`
+          : '') +
+        `<td>${esc(m.page)}</td>` +
+        `<td class="muted">${NETWORK_LABELS[m.network] || esc(m.network)}</td>` +
         (m.timeout
-          ? `<td class="timeout" title="Timeout : exclue des statistiques">≥ ${fmtMs(m.duration)}</td>`
-          : `<td class="num">${fmtMs(m.duration)}</td>`) +
-        `<td class="left">${KIND_LABELS[m.kind] || esc(m.kind || '')}</td>` +
-        `<td class="left">${TRIGGER_LABELS[m.trigger] || esc(m.trigger || '')}</td>` +
-        `<td class="left url" title="${esc(m.url || '')}">${esc(m.url || '')}</td>` +
-        `<td><button type="button" class="del" data-del="${esc(m.id)}" title="Supprimer cette mesure">✕</button></td>` +
+          ? `<td class="n"><span class="pill timeout" title="Timeout : exclue des calculs">≥ ${nf.format(m.duration)}</span></td>`
+          : `<td class="n">${fmtMs(m.duration)}</td>`) +
+        `<td class="n"><button type="button" class="del" data-del="${esc(m.id)}" title="Supprimer cette mesure" aria-label="Supprimer cette mesure">✕</button></td>` +
         '</tr>',
     )
     .join('');
-  return `<div class="table-wrap"><table class="grid"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+  return `<table class="list"><thead>${head}</thead><tbody>${body}</tbody></table>`;
 }
 
 function renderRaw() {
   const q = norm(state.query.trim());
   const net = $('filterNet').value;
-  const rows = state.model.rows.filter((m) => (!net || m.network === net) && (!q || norm(m.app).includes(q))).reverse();
+  const rows = state.model.rows
+    .filter(
+      (m) =>
+        (!net || m.network === net) &&
+        (!q || norm(lineLabel({ client: m.app, sid: m.sid, version: m.version })).includes(q)),
+    )
+    .reverse();
   $('rawCount').textContent = `${nf.format(rows.length)} mesure(s)`;
-  $('raw').innerHTML = rows.length ? rawTable(rows.slice(0, state.rawLimit)) : '';
+  $('raw').innerHTML = rows.length ? measuresTable(rows.slice(0, state.rawLimit)) : '';
   const more = $('more');
   more.hidden = rows.length <= state.rawLimit;
   more.textContent = `Afficher plus (${nf.format(rows.length - state.rawLimit)} restante(s))`;
 }
 
-// ---------------------------------------------------------------- Détail d'une application
+// ---------------------------------------------------------------- Détail d'une ligne client
 
 function renderDetail() {
   const dlg = $('detail');
   const { model, settings } = state;
-  const app = model.apps.find((a) => nameKey(a.name) === nameKey(state.detail));
-  if (!app) {
+  const line = model.lines.find((l) => l.key === state.detail);
+  if (!line) {
     if (dlg.open) dlg.close();
     return;
   }
-  const cov = (n) => coverage(model, app.name, [n]);
+  const cov = (n) => coverage(model, line.key, [n]);
   const cell = (r) => {
-    if (r.status === 'missing') return `<td class="missing">${MISSING_TEXT}</td>`;
-    if (r.status === 'timeout') return '<td class="timeout">T/O</td>';
+    if (r.status === 'missing') return `<td class="n"><span class="pill missing">${MISSING_TEXT}</span></td>`;
+    if (r.status === 'timeout') return '<td class="n"><span class="pill timeout">T/O</span></td>';
     const vs = r.ratio !== null ? `<span class="vs">${xf(r.ratio)}×</span>` : '';
-    return `<td class="num${r.level ? ` ${r.level}` : ''}" title="${r.count} mesure(s) · min ${fmtMs(r.min)} · max ${fmtMs(r.max)}">${nf.format(r.value)}${vs}</td>`;
+    const v = nf.format(r.value);
+    return `<td class="n" title="${r.count} mesure(s) · min ${fmtMs(r.min)} · max ${fmtMs(r.max)}">${r.level ? `<span class="pill ${r.level}">${v}</span>` : v}${vs}</td>`;
   };
   const rows = model.pages
     .map((p) => {
-      const w = rate(model, app.name, p.name, 'wifi', state.stat, settings);
-      const e = rate(model, app.name, p.name, 'ethernet', state.stat, settings);
-      const d = diffStat(model, app.name, p.name, state.stat);
+      const w = rate(model, line.key, p.name, 'wifi', state.stat, settings);
+      const e = rate(model, line.key, p.name, 'ethernet', state.stat, settings);
+      const d = diffStat(model, line.key, p.name, state.stat);
       const gap =
         d.status === 'ok' && d.pct !== null
-          ? `<td class="num${Math.abs(d.pct) * 100 >= settings.gapPct ? ' warn' : ''}">${pf.format(d.pct)}</td>`
+          ? `<td class="n">${Math.abs(d.pct) * 100 >= settings.gapPct ? `<span class="pill warn">${pf.format(d.pct)}</span>` : pf.format(d.pct)}</td>`
           : '<td></td>';
-      return `<tr><td class="left"><strong>${esc(p.name)}</strong></td>${cell(w)}${cell(e)}${gap}<td class="num muted">${w.count} / ${e.count}</td></tr>`;
+      return `<tr><td>${esc(p.name)}</td>${cell(w)}${cell(e)}${gap}<td class="n muted">${w.count} / ${e.count}</td></tr>`;
     })
     .join('');
-  const measures = model.rows.filter((m) => nameKey(m.app) === nameKey(app.name)).reverse();
+  const measures = model.rows.filter((m) => m.line === line.key).reverse();
   dlg.innerHTML =
     '<div class="dlg-head"><div>' +
-    `<h2 id="detailTitle">${esc(app.name)}</h2>` +
-    `<div class="muted">Couverture : WiFi ${cov('wifi').done}/${cov('wifi').total} · Ethernet ${cov('ethernet').done}/${cov('ethernet').total} · ${measures.length} mesure(s)</div>` +
+    `<h2 id="detailTitle">${esc(lineLabel(line))}</h2>` +
+    `<p>Couverture : WiFi ${cov('wifi').done}/${cov('wifi').total} · Ethernet ${cov('ethernet').done}/${cov('ethernet').total} · ${measures.length} mesure(s)</p>` +
     '</div>' +
-    `<button type="button" class="primary" data-export-app="${esc(app.name)}">Exporter ce client</button>` +
+    `<button type="button" class="primary" data-export-client="${esc(line.client)}">Exporter le client</button>` +
     '<button type="button" data-close>Fermer</button></div>' +
     '<div class="dlg-body">' +
-    `<div><h3>Pages (${STATS[state.stat].toLowerCase()}, ms ; « 1,8× » = 1,8 fois la médiane des clients)</h3>` +
-    '<div class="table-wrap"><table class="grid"><thead><tr><th class="left">Page</th><th>WiFi</th><th>Ethernet</th><th>Écart WiFi / Eth.</th><th>Nb mesures (W / E)</th></tr></thead>' +
-    `<tbody>${rows}</tbody></table></div></div>` +
-    `<div><h3>Mesures</h3>${measures.length ? rawTable(measures.slice(0, 200), false) : '<p class="muted">Aucune mesure.</p>'}</div>` +
-    (measures.length
-      ? `<div><button type="button" class="danger" data-clear-app="${esc(app.name)}">Supprimer les ${measures.length} mesure(s) de ce client</button></div>`
-      : '') +
+    `<div><h3>Pages — ${STATS[state.stat].toLowerCase()} en ms (« 1,8× » = 1,8 fois la médiane des clients)</h3>` +
+    '<table class="list"><thead><tr><th>Page</th><th class="n">WiFi</th><th class="n">Ethernet</th><th class="n">Écart</th><th class="n">Mesures (W / E)</th></tr></thead>' +
+    `<tbody>${rows}</tbody></table></div>` +
+    `<div><h3>Mesures</h3>${measures.length ? measuresTable(measures.slice(0, 200), false) : '<p class="muted">Aucune mesure.</p>'}</div>` +
     '</div>';
+}
+
+// ---------------------------------------------------------------- Menus « ⋯ » (client / page)
+
+function openMenu(anchor, items) {
+  const menu = $('menu');
+  menu.replaceChildren(
+    ...items.map((it) => {
+      if (it === '-') return document.createElement('hr');
+      if (it.title) return Object.assign(document.createElement('div'), { className: 'title', textContent: it.title });
+      const b = Object.assign(document.createElement('button'), {
+        type: 'button',
+        textContent: it.label,
+        className: it.danger ? 'danger' : '',
+      });
+      b.setAttribute('role', 'menuitem');
+      b.addEventListener('click', () => {
+        closeMenu();
+        it.run();
+      });
+      return b;
+    }),
+  );
+  menu.hidden = false;
+  const r = anchor.getBoundingClientRect();
+  const w = menu.offsetWidth;
+  const h = menu.offsetHeight;
+  menu.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, r.left))}px`;
+  menu.style.top = `${r.bottom + h + 8 > window.innerHeight ? Math.max(8, r.top - h - 4) : r.bottom + 4}px`;
+  anchor.setAttribute('aria-expanded', 'true');
+  menu.anchor = anchor;
+  menu.querySelector('button')?.focus();
+}
+
+function closeMenu() {
+  const menu = $('menu');
+  if (menu.hidden) return;
+  menu.hidden = true;
+  if (menu.anchor) menu.anchor.removeAttribute('aria-expanded');
+}
+
+async function confirmDelete(question, action, done) {
+  if (!confirm(question)) return;
+  const n = await action();
+  toast(done.replace('{n}', nf.format(n)));
+}
+
+function lineMenu(anchor, key) {
+  const line = state.model.lines.find((l) => l.key === key);
+  if (!line) return;
+  const lineCount = state.model.lineCounts.get(key) || 0;
+  const clientLines = state.model.lines.filter((l) => l.client === line.client);
+  const clientCount = clientLines.reduce((s, l) => s + (state.model.lineCounts.get(l.key) || 0), 0);
+  const items = [
+    { title: lineLabel(line) },
+    { label: 'Voir le détail', run: () => openDetail(key) },
+    {
+      label: 'Exporter ce client (Excel)',
+      run: () => runExport({ type: 'client', client: line.client, format: 'xlsx' }),
+    },
+    '-',
+  ];
+  if (clientLines.length > 1) {
+    items.push({
+      label: `Supprimer cette ligne SID / version (${lineCount} mesure(s))`,
+      danger: true,
+      run: () =>
+        confirmDelete(
+          `Supprimer les ${lineCount} mesure(s) de « ${lineLabel(line)} » ?`,
+          () => deleteClient(line.client, line),
+          '{n} mesure(s) supprimée(s)',
+        ),
+    });
+  }
+  items.push({
+    label: `Supprimer le client (${clientCount} mesure(s))`,
+    danger: true,
+    run: () =>
+      confirmDelete(
+        `Supprimer le client « ${line.client} » et ses ${clientCount} mesure(s) (toutes versions) ?`,
+        () => deleteClient(line.client),
+        'Client supprimé ({n} mesure(s))',
+      ),
+  });
+  openMenu(anchor, items);
+}
+
+function pageMenu(anchor, page) {
+  const count = state.model.pageCounts.get(nameKey(page)) || 0;
+  openMenu(anchor, [
+    { title: page },
+    { label: 'Exporter cette page (Excel)', run: () => runExport({ type: 'page', page, format: 'xlsx' }) },
+    { label: 'Détail des temps de cette page (Excel)', run: () => runExport({ type: 'detail', page, format: 'xlsx' }) },
+    '-',
+    {
+      label: `Supprimer la page (${count} mesure(s))`,
+      danger: true,
+      run: () =>
+        confirmDelete(
+          `Supprimer la page « ${page} » et ses ${count} mesure(s), pour tous les clients ?`,
+          () => deletePage(page),
+          'Page supprimée ({n} mesure(s))',
+        ),
+    },
+  ]);
+}
+
+function openDetail(key) {
+  state.detail = key;
+  renderDetail();
+  $('detail').showModal();
 }
 
 // ---------------------------------------------------------------- Rendu global
 
 function renderAll() {
   if (!state.model) return;
-  for (const b of $('views').querySelectorAll('[data-view]'))
+  for (const b of $('views').querySelectorAll('[data-view]')) {
     b.setAttribute('aria-checked', String(b.dataset.view === state.view));
-  renderExports();
-  const { shown, anomalies } = renderMatrix();
-  renderKpis(state.model, state.measures, shown, anomalies);
+  }
+  renderExport();
+  renderLegend();
+  renderSummary(renderMatrix());
   renderRaw();
   if (state.detail && $('detail').open) renderDetail();
 }
 
 async function load() {
   const { model, settings, measures } = await loadModel();
-  state.model = model;
-  state.settings = settings;
-  state.measures = measures;
+  Object.assign(state, { model, settings, measures });
   state.stat = STATS[settings.stat] ? settings.stat : 'median';
   state.view = VIEWS.includes(settings.reportView) ? settings.reportView : 'both';
   $('stat').value = state.stat;
@@ -372,7 +533,6 @@ $('stat').append(
 );
 $('stat').addEventListener('change', (e) => {
   state.stat = e.target.value;
-  state.model.refs.clear();
   renderAll();
   saveSettings({ stat: state.stat });
 });
@@ -405,63 +565,58 @@ $('more').addEventListener('click', () => {
   state.rawLimit += RAW_PAGE;
   renderRaw();
 });
-$('exAll').addEventListener('click', () => runExport(exportAll));
-$('exPage').addEventListener('click', () => $('exPageSel').value && runExport(exportPage, $('exPageSel').value));
-$('exApp').addEventListener('click', () => {
-  const name = $('exAppSel').value.trim();
-  const app = state.model.apps.find((a) => nameKey(a.name) === nameKey(name));
-  if (!app) {
-    toast(name ? `Client inconnu : ${name}` : 'Choisissez un client');
-    $('exAppSel').focus();
-    return;
-  }
-  runExport(exportApp, app.name);
+
+$('exType').addEventListener('change', (e) => setSetting({ exportType: e.target.value }));
+$('exFormat').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-format]');
+  if (b) setSetting({ exportFormat: b.dataset.format });
 });
+$('exFullUrl').addEventListener('change', (e) => setSetting({ exportFullUrl: e.target.checked }));
+$('exUrlEnd').addEventListener('change', (e) => setSetting({ exportUrlEnd: e.target.checked }));
+$('exGo').addEventListener('click', () => runExport());
 
 $('matrix').addEventListener('click', (e) => {
-  const exp = e.target.closest('[data-export-page]');
-  if (exp) {
-    runExport(exportPage, exp.dataset.exportPage);
-    return;
+  const lm = e.target.closest('[data-line-menu]');
+  if (lm) return lineMenu(lm, lm.dataset.lineMenu);
+  const pm = e.target.closest('[data-page-menu]');
+  if (pm) {
+    e.stopPropagation();
+    return pageMenu(pm, pm.dataset.pageMenu);
   }
   const th = e.target.closest('th[data-sort]');
   if (th) {
     const key = th.dataset.sort;
     state.sort = { key, dir: state.sort.key === key ? -state.sort.dir : 1 };
-    renderMatrix();
+    renderSummary(renderMatrix());
     return;
   }
-  const link = e.target.closest('[data-app]');
-  if (link) {
-    state.detail = link.dataset.app;
-    renderDetail();
-    $('detail').showModal();
-  }
+  const name = e.target.closest('[data-line]');
+  if (name) openDetail(name.dataset.line);
 });
 
 async function onDelete(e) {
   const del = e.target.closest('[data-del]');
-  if (del) {
-    await deleteMeasures([del.dataset.del]);
-    toast('Mesure supprimée');
-    return;
-  }
-  const clear = e.target.closest('[data-clear-app]');
-  if (clear) {
-    const ids = state.model.rows.filter((m) => nameKey(m.app) === nameKey(clear.dataset.clearApp)).map((m) => m.id);
-    if (ids.length && confirm(`Supprimer définitivement ces ${ids.length} mesure(s) ?`)) {
-      await deleteMeasures(ids);
-      toast('Mesures supprimées');
-    }
-  }
+  if (!del) return;
+  await deleteMeasures([del.dataset.del]);
+  toast('Mesure supprimée');
 }
 $('raw').addEventListener('click', onDelete);
 $('detail').addEventListener('click', (e) => {
   if (e.target.closest('[data-close]') || e.target === $('detail')) $('detail').close();
-  else if (e.target.closest('[data-export-app]'))
-    runExport(exportApp, e.target.closest('[data-export-app]').dataset.exportApp);
-  else onDelete(e);
+  else if (e.target.closest('[data-export-client]')) {
+    runExport({
+      type: 'client',
+      client: e.target.closest('[data-export-client]').dataset.exportClient,
+      format: 'xlsx',
+    });
+  } else onDelete(e);
 });
+
+document.addEventListener('click', (e) => {
+  if (!$('menu').hidden && !e.target.closest('#menu') && !e.target.closest('.dots')) closeMenu();
+});
+document.addEventListener('keydown', (e) => e.key === 'Escape' && closeMenu());
+window.addEventListener('scroll', closeMenu, true);
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;

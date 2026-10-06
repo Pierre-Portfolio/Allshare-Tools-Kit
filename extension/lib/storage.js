@@ -1,13 +1,14 @@
 // Stockage de l'extension.
 //
 // chrome.storage.local (permanent)
-//   apps      référentiel des applications [{ id, name, baseUrls: [] }]
-//             (URL facultatives : servent à pré-remplir le nom d'après l'onglet)
+//   apps      référentiel des clients [{ id, name, baseUrls: [] }]
+//             (URL facultatives : servent à pré-remplir le client d'après l'onglet)
 //   pages     référentiel ordonné des pages [{ id, name, hidden }] = colonnes des exports
 //   settings  réglages (voir DEFAULT_SETTINGS)
-//   draft     dernières valeurs du formulaire { app, page }
+//   draft     dernières valeurs du formulaire { app, sid, version, page }
 //   m_<id>    une mesure par clé :
-//             { id, ts, app, page, network, duration, timeout, kind, trigger, url, startUrl }
+//             { id, ts, app (= client), sid, version, page, network, duration, timeout,
+//               kind, trigger, url, urlEnd, startUrl, detail }
 // chrome.storage.session (jusqu'à la fermeture du navigateur)
 //   session   mesure en cours (voir background.js)
 
@@ -27,6 +28,11 @@ export const DEFAULT_SETTINGS = {
   warnMs: 0, // seuils absolus facultatifs (0 = désactivé)
   critMs: 0,
   gapPct: 50, // écart WiFi / Ethernet signalé à partir de 50 %
+  // Dernier export choisi
+  exportType: 'all', // all | page | client | detail
+  exportFormat: 'xlsx', // xlsx | csv
+  exportFullUrl: false, // ajouter l'URL complète (enregistrée avec chaque mesure)
+  exportUrlEnd: false, // ajouter la fin d'URL
 };
 
 const MEASURE_PREFIX = 'm_';
@@ -125,6 +131,33 @@ export async function renameEverywhere(kind, oldName, newName) {
   const measures = (await getMeasures()).filter((m) => nameKey(m[field]) === nameKey(oldName));
   await chrome.storage.local.set({ [listKey]: next });
   if (measures.length) await putMeasures(measures.map((m) => ({ ...m, [field]: target })));
+}
+
+/**
+ * Supprime un client : toutes ses mesures et son entrée du référentiel.
+ * Avec { sid, version } : seulement la ligne client · SID · version (le client reste).
+ * @returns {Promise<number>} nombre de mesures supprimées
+ */
+export async function deleteClient(client, line = null) {
+  const same = (a, b) => nameKey(a) === nameKey(b);
+  const ids = (await getMeasures())
+    .filter((m) => same(m.app, client) && (!line || (same(m.sid, line.sid) && same(m.version, line.version))))
+    .map((m) => m.id);
+  if (ids.length) await deleteMeasures(ids);
+  if (!line) {
+    const { apps } = await getConfig();
+    await saveApps(apps.filter((a) => !same(a.name, client)));
+  }
+  return ids.length;
+}
+
+/** Supprime une page : toutes ses mesures (tous clients) et son entrée du référentiel. */
+export async function deletePage(page) {
+  const ids = (await getMeasures()).filter((m) => nameKey(m.page) === nameKey(page)).map((m) => m.id);
+  if (ids.length) await deleteMeasures(ids);
+  const { pages } = await getConfig();
+  await savePages(pages.filter((p) => nameKey(p.name) !== nameKey(page)));
+  return ids.length;
 }
 
 // ---------------------------------------------------------------- Sauvegarde / fusion

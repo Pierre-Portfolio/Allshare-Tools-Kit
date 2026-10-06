@@ -28,16 +28,26 @@
     <section id="viewForm" hidden>
       <form id="form" autocomplete="off" novalidate>
         <label class="field">
-          <span>Nom de l'application</span>
-          <input id="app" type="text" list="appList" placeholder="ex. Client A" spellcheck="false" />
+          <span>Client</span>
+          <input id="app" type="text" list="appList" placeholder="ex. Test Consultant" spellcheck="false" />
         </label>
         <div id="appSuggest" class="suggest" hidden>
           <span>Cet onglet semble être <strong id="appSuggestName"></strong></span>
           <button id="appSuggestUse" type="button">Utiliser</button>
         </div>
+        <div class="field-row">
+          <label class="field">
+            <span>SID</span>
+            <input id="sid" type="text" list="sidList" placeholder="ex. PRD" spellcheck="false" />
+          </label>
+          <label class="field">
+            <span>Version application</span>
+            <input id="version" type="text" list="versionList" placeholder="ex. 5.3.2" spellcheck="false" />
+          </label>
+        </div>
         <label class="field">
-          <span>Nom de la page</span>
-          <input id="page" type="text" list="pageList" placeholder="ex. Factures" spellcheck="false" />
+          <span>Page</span>
+          <input id="page" type="text" list="pageList" placeholder="ex. Salarié" spellcheck="false" />
         </label>
         <button id="arm" type="submit" class="big primary">● Lancer l'enregistrement</button>
         <p id="formError" class="error" role="alert"></p>
@@ -48,6 +58,8 @@
       </form>
       <datalist id="appList"></datalist>
       <datalist id="pageList"></datalist>
+      <datalist id="sidList"></datalist>
+      <datalist id="versionList"></datalist>
     </section>
 
     <!-- 2. En attente du clic / mesure en cours -->
@@ -73,6 +85,10 @@
           <button id="relaunchSame" type="button"></button>
           <button id="next" type="button" class="accent">Page suivante →</button>
         </div>
+        <details id="detail" class="detail">
+          <summary>Détail du chargement</summary>
+          <div id="detailBody"></div>
+        </details>
         <button id="deleteResult" type="button" class="link danger">Supprimer cette mesure</button>
       </div>
     </section>

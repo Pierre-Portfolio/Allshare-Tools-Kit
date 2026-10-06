@@ -8,8 +8,10 @@ import {
   deleteMeasures,
   isMeasureKey,
 } from '../lib/storage.js';
-import { buildModel, cellStat, rate, coverage, missingPages } from '../lib/report.js';
-import { nameKey, normName, suggestApp, nextPage } from '../lib/names.js';
+import { buildModel, cellStat, rate, coverage, missingPages, lineKey, lineLabel } from '../lib/report.js';
+import { nameKey, normName, suggestApp, nextPage, compareNames } from '../lib/names.js';
+import { phases } from '../lib/timing.js';
+import { urlEnd } from '../lib/urls.js';
 import { NETWORKS, NETWORK_LABELS, STATS, fmtMs, fmtDate } from '../lib/format.js';
 
 const $ = (id) => document.getElementById(id);
@@ -25,7 +27,13 @@ const state = {
   formFilled: false,
   liveTimer: 0,
   suggestion: null,
+  autoFilled: { sid: '', version: '' }, // valeurs SID / version pré-remplies (remplaçables)
 };
+
+const describe = (s) =>
+  `${lineLabel({ client: s.app, sid: s.sid, version: s.version })} › ${s.page} · ${NETWORK_LABELS[s.network]}`;
+const formLine = () => lineKey($('app').value, $('sid').value, $('version').value);
+const sessionLine = (s) => lineKey(s.app, s.sid, s.version);
 
 function el(tag, { dataset, ...props } = {}, ...children) {
   const node = Object.assign(document.createElement(tag), props);
@@ -93,7 +101,7 @@ function render() {
   if (view === 'form') renderForm();
   if (view === 'live') renderLive(s);
   if (view === 'result') renderResult(s);
-  renderProgress(s ? s.app : $('app').value, s ? s.network : settings.network);
+  renderProgress(s ? sessionLine(s) : formLine(), s ? s.network : settings.network);
   renderLast();
 }
 
@@ -114,14 +122,49 @@ function renderNetHint(settings) {
 
 function renderForm() {
   const { model, config } = state;
-  $('appList').replaceChildren(...model.apps.map((a) => el('option', { value: a.name })));
+  $('appList').replaceChildren(...model.clients.map((name) => el('option', { value: name })));
   $('pageList').replaceChildren(...model.allPages.map((p) => el('option', { value: p.name })));
   if (!state.formFilled) {
     state.formFilled = true;
     $('app').value = config.draft.app || '';
+    $('sid').value = config.draft.sid || '';
+    $('version').value = config.draft.version || '';
     $('page').value = config.draft.page || '';
   }
+  renderLineLists();
   updateSuggestion();
+}
+
+/** SID et versions proposés : ceux déjà vus pour ce client d'abord. */
+function renderLineLists() {
+  const client = nameKey($('app').value);
+  const pick = (field) => {
+    const mine = new Set();
+    const all = new Set();
+    for (const l of state.model.lines) {
+      if (!l[field]) continue;
+      (nameKey(l.client) === client ? mine : all).add(l[field]);
+    }
+    return [...mine, ...[...all].filter((v) => !mine.has(v)).sort(compareNames)];
+  };
+  $('sidList').replaceChildren(...pick('sid').map((v) => el('option', { value: v })));
+  $('versionList').replaceChildren(...pick('version').map((v) => el('option', { value: v })));
+}
+
+/** Client choisi : SID et version repris de sa dernière mesure (si les champs sont vides ou pré-remplis). */
+function prefillLine() {
+  const client = nameKey($('app').value);
+  const last = [...state.measures].reverse().find((m) => nameKey(m.app) === client);
+  for (const field of ['sid', 'version']) {
+    const input = $(field);
+    if (input.value && input.value !== state.autoFilled[field]) continue; // saisi à la main
+    const value = last ? last[field] || '' : '';
+    input.value = value;
+    state.autoFilled[field] = value;
+  }
+  renderLineLists();
+  saveDraft({ app: $('app').value, sid: $('sid').value, version: $('version').value });
+  renderProgress(formLine(), state.config.settings.network);
 }
 
 async function updateSuggestion() {
@@ -132,8 +175,7 @@ async function updateSuggestion() {
   const typed = $('app').value;
   if (suggestion && !normName(typed)) {
     $('app').value = suggestion;
-    saveDraft({ app: suggestion });
-    renderProgress(suggestion, state.config.settings.network);
+    prefillLine();
   }
   box.hidden = !suggestion || nameKey(suggestion) === nameKey($('app').value);
   $('appSuggestName').textContent = suggestion ? `« ${suggestion} »` : '';
@@ -149,7 +191,7 @@ function renderLive(s) {
       : measuring
         ? 'Mesure en cours…'
         : 'Prêt : en attente de votre clic';
-  $('liveLabel').textContent = `${s.app} › ${s.page} · ${NETWORK_LABELS[s.network]}`;
+  $('liveLabel').textContent = describe(s);
   $('liveHint').textContent = measuring
     ? "Le chrono s'arrête tout seul quand la page est complètement affichée."
     : 'Cliquez dans la page sur le lien (ou le menu) qui ouvre cette page.';
@@ -169,7 +211,9 @@ function renderResult(s) {
   const { settings } = config;
   const r = s.result || {};
   const deleted = !state.measures.some((m) => m.id === r.measureId);
-  $('resLabel').textContent = `${s.app} › ${s.page} · ${NETWORK_LABELS[s.network]}`;
+  $('resLabel').textContent = describe(s);
+  const line = sessionLine(s);
+  renderDetail(state.measures.find((m) => m.id === r.measureId));
 
   const facts = [];
   const value = $('resValue');
@@ -183,7 +227,7 @@ function renderResult(s) {
   } else {
     value.textContent = fmtMs(r.duration);
     const stat = settings.stat;
-    const mine = rate(model, s.app, s.page, s.network, stat, settings);
+    const mine = rate(model, line, s.page, s.network, stat, settings);
     if (mine.ref && mine.ref.count >= 3) {
       const ratio = r.duration / mine.ref.median;
       const level = ratio >= settings.critRatio ? 'crit' : ratio >= settings.warnRatio ? 'warn' : '';
@@ -201,7 +245,7 @@ function renderResult(s) {
           textContent: `${mine.count} mesures sur ce réseau · ${STATS[stat].toLowerCase()} ${fmtMs(mine.value)}`,
         }),
       );
-    const o = cellStat(model, s.app, s.page, other(s.network), stat);
+    const o = cellStat(model, line, s.page, other(s.network), stat);
     if (o.status === 'ok') {
       const pct = Math.round(((r.duration - o.value) / o.value) * 100);
       facts.push(
@@ -235,27 +279,103 @@ function progressRow(label, done, total, current) {
   );
 }
 
-function renderProgress(appName, network) {
+/** Détail du chargement (type « Load timings »), disponible juste après la mesure. */
+function renderDetail(measure) {
+  const d = measure && measure.detail;
+  $('detail').hidden = !d;
+  if (!d) return;
+  const rows = phases(d);
+  const total = Math.max(1, ...rows.map((p) => p.end));
+  const n = (v) => nf.format(v);
+  const table = el(
+    'table',
+    { className: 'timings' },
+    el(
+      'thead',
+      {},
+      el(
+        'tr',
+        {},
+        el('th', { textContent: 'Étape' }),
+        el('th', { className: 'n', textContent: 'Début' }),
+        el('th', { className: 'n', textContent: 'Durée' }),
+        el('th', { className: 'n', textContent: 'Fin' }),
+        el('th'),
+      ),
+    ),
+    el(
+      'tbody',
+      {},
+      ...rows.map((p) =>
+        el(
+          'tr',
+          { className: p.id === 'total' ? 'total' : p.sub ? 'sub' : p.id === 'request' ? 'key' : '' },
+          el('td', {
+            textContent: p.label,
+            title: p.id === 'request' ? 'Temps de réponse du serveur (requêtes SQL comprises)' : '',
+          }),
+          el('td', { className: 'n', textContent: n(p.start) }),
+          el('td', { className: 'n', textContent: n(p.duration) }),
+          el('td', { className: 'n', textContent: n(p.end) }),
+          el(
+            'td',
+            {},
+            el(
+              'div',
+              { className: 'bar' },
+              el('i', { style: `left:${(p.start / total) * 100}%;width:${(p.duration / total) * 100}%` }),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  const slowest = [...(d.requests || [])].sort((a, b) => b.duration - a.duration).slice(0, 5);
+  $('detailBody').replaceChildren(
+    table,
+    slowest.length
+      ? el(
+          'div',
+          { className: 'reqs' },
+          el('h4', { textContent: `Requêtes les plus lentes (${d.requestCount || slowest.length} au total)` }),
+          el(
+            'ul',
+            {},
+            ...slowest.map((r) =>
+              el(
+                'li',
+                {},
+                el('strong', { textContent: `${n(r.duration)} ms` }),
+                el('span', { className: 'url', textContent: urlEnd(r.url) || r.url, title: r.url }),
+              ),
+            ),
+          ),
+        )
+      : '',
+  );
+}
+
+function renderProgress(line, network) {
   const box = $('progress');
   const { model } = state;
-  const app = model.apps.find((a) => nameKey(a.name) === nameKey(appName));
-  if (!app || !model.pages.length) {
+  const found = model.lines.find((l) => l.key === line);
+  if (!found || !model.pages.length) {
     box.hidden = true;
     return;
   }
   box.hidden = false;
   const rows = NETWORKS.map((n) => {
-    const c = coverage(model, app.name, [n.id]);
+    const c = coverage(model, line, [n.id]);
     return progressRow(n.label, c.done, c.total, n.id === network);
   });
-  const missing = missingPages(model, app.name, network);
+  const missing = missingPages(model, line, network);
   const formView = !state.session;
   const shown = missing.slice(0, 15);
   box.replaceChildren(
     el(
       'div',
       { className: 'prog-head' },
-      el('strong', { textContent: app.name }),
+      el('strong', { textContent: lineLabel(found) }),
       el('span', { className: 'muted', textContent: 'pages mesurées' }),
     ),
     ...rows,
@@ -297,7 +417,11 @@ function renderLast() {
           el(
             'li',
             {},
-            el('span', { className: 'what', textContent: `${m.app} › ${m.page}`, title: m.url }),
+            el('span', {
+              className: 'what',
+              textContent: `${lineLabel({ client: m.app, sid: m.sid, version: m.version })} › ${m.page}`,
+              title: m.url,
+            }),
             el('span', { className: 'value', textContent: m.timeout ? `≥ ${fmtMs(m.duration)}` : fmtMs(m.duration) }),
             el('button', {
               type: 'button',
@@ -317,15 +441,25 @@ function renderLast() {
 
 async function arm() {
   const app = normName($('app').value);
+  const sid = normName($('sid').value);
+  const version = normName($('version').value);
   const page = normName($('page').value);
   $('formError').textContent = '';
-  if (!app) return showError("Indiquez le nom de l'application.", 'app');
+  if (!app) return showError('Indiquez le client.', 'app');
   if (!page) return showError('Indiquez le nom de la page.', 'page');
   const tab = await targetTab();
   if (!tab) return showError('Aucun onglet actif.');
-  await saveDraft({ app, page });
+  await saveDraft({ app, sid, version, page });
   $('arm').disabled = true;
-  const res = await send({ type: 'arm', tabId: tab.id, app, page, network: state.config.settings.network });
+  const res = await send({
+    type: 'arm',
+    tabId: tab.id,
+    app,
+    sid,
+    version,
+    page,
+    network: state.config.settings.network,
+  });
   $('arm').disabled = false;
   if (!res || !res.ok) showError((res && res.error) || 'Impossible de lancer la mesure.');
 }
@@ -340,7 +474,7 @@ async function goNext() {
   if (!s) return;
   const done = new Set(
     state.model.pages
-      .filter((p) => cellStat(state.model, s.app, p.name, s.network, 'avg').status !== 'missing')
+      .filter((p) => cellStat(state.model, sessionLine(s), p.name, s.network, 'avg').status !== 'missing')
       .map((p) => nameKey(p.name)),
   );
   const next = nextPage(
@@ -348,7 +482,7 @@ async function goNext() {
     s.page,
     done,
   );
-  await saveDraft({ app: s.app, page: next });
+  await saveDraft({ app: s.app, sid: s.sid || '', version: s.version || '', page: next });
   state.formFilled = false; // reprendre les valeurs du brouillon
   await send({ type: 'finish' });
   await load();
@@ -368,7 +502,7 @@ for (const b of document.querySelectorAll('[data-network]')) {
     // Mise à jour immédiate (sans attendre l'écriture) pour qu'un « Lancer » juste après parte sur ce réseau.
     state.config.settings = { ...state.config.settings, network: b.dataset.network };
     renderNetwork(b.dataset.network);
-    renderProgress(state.session ? state.session.app : $('app').value, b.dataset.network);
+    renderProgress(state.session ? sessionLine(state.session) : formLine(), b.dataset.network);
     saveSettings({ network: b.dataset.network });
   });
 }
@@ -377,21 +511,24 @@ $('form').addEventListener('submit', (e) => {
   arm();
 });
 let draftTimer = 0;
-for (const id of ['app', 'page']) {
+for (const id of ['app', 'sid', 'version', 'page']) {
   $(id).addEventListener('input', () => {
     clearTimeout(draftTimer);
-    draftTimer = setTimeout(() => saveDraft({ app: $('app').value, page: $('page').value }), 300);
+    draftTimer = setTimeout(
+      () => saveDraft({ app: $('app').value, sid: $('sid').value, version: $('version').value, page: $('page').value }),
+      300,
+    );
     if (id === 'app') {
-      renderProgress($('app').value, state.config.settings.network);
       $('appSuggest').hidden = !state.suggestion || nameKey(state.suggestion) === nameKey($('app').value);
     }
+    renderProgress(formLine(), state.config.settings.network);
   });
 }
+$('app').addEventListener('change', prefillLine);
 $('appSuggestUse').addEventListener('click', () => {
   $('app').value = state.suggestion || '';
-  saveDraft({ app: $('app').value });
   $('appSuggest').hidden = true;
-  renderProgress($('app').value, state.config.settings.network);
+  prefillLine();
   $('page').focus();
 });
 $('progress').addEventListener('click', (e) => {

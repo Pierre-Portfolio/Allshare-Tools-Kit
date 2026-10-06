@@ -3,89 +3,84 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Insigth · Exports</title>
+    <title>Insigth · Tableau de bord</title>
     <link rel="stylesheet" href="../common.css" />
     <link rel="stylesheet" href="report.css" />
   </head>
   <body>
-    <header class="bar">
-      <img src="../icons/icon48.png" alt="" width="26" height="26" />
-      <h1>Exports &amp; rapport</h1>
-      <div class="bar-actions">
-        <label class="stat"
-          >Valeur affichée
-          <select id="stat"></select
-        ></label>
-        <a href="../options/options.html">Réglages</a>
+    <header class="top">
+      <div class="brand">
+        <img src="../icons/icon48.png" alt="" width="28" height="28" />
+        <div>
+          <h1>Insigth</h1>
+          <p>Temps de réponse · du clic à l'affichage complet</p>
+        </div>
       </div>
+      <a class="link" href="../options/options.html">Réglages</a>
     </header>
 
-    <main>
-      <section class="exports" aria-labelledby="exportsTitle">
-        <h2 id="exportsTitle">Exporter en Excel</h2>
-        <div class="export-grid">
-          <article class="card export">
-            <span class="num">1</span>
-            <h3>Tout</h3>
-            <p class="muted">
-              Toutes les applications × toutes les pages, en WiFi et en Ethernet. Une ligne par application, une colonne
-              par page.
-            </p>
-            <p id="exAllInfo" class="info"></p>
-            <button id="exAll" type="button" class="primary">Télécharger l'Excel</button>
-          </article>
-          <article class="card export">
-            <span class="num">2</span>
-            <h3>Une page, tous les clients</h3>
-            <p class="muted">Une ligne par client : WiFi, Ethernet, écart, comparaison à la médiane des clients.</p>
-            <select id="exPageSel" aria-label="Page à exporter"></select>
-            <button id="exPage" type="button" class="primary">Télécharger l'Excel</button>
-          </article>
-          <article class="card export">
-            <span class="num">3</span>
-            <h3>Un client, toutes les pages</h3>
-            <p class="muted">Une ligne par page, comparée à la médiane de tous les clients.</p>
-            <input
-              id="exAppSel"
-              type="text"
-              list="appNames"
-              placeholder="Nom du client…"
-              aria-label="Client à exporter"
-            />
-            <datalist id="appNames"></datalist>
-            <button id="exApp" type="button" class="primary">Télécharger l'Excel</button>
-          </article>
+    <main class="wrap">
+      <!-- Export : une seule ligne -->
+      <section class="export" aria-label="Exporter">
+        <label class="fld grow">
+          <span>Export</span>
+          <select id="exType">
+            <option value="all">Tout — clients × pages</option>
+            <option value="page">Une page — tous les clients</option>
+            <option value="client">Un client — toutes les pages</option>
+            <option value="detail">Détail des temps — une page</option>
+          </select>
+        </label>
+        <label class="fld grow" id="exPageFld" hidden>
+          <span>Page</span>
+          <select id="exPage"></select>
+        </label>
+        <label class="fld grow" id="exClientFld" hidden>
+          <span>Client</span>
+          <select id="exClient"></select>
+        </label>
+        <div class="fld">
+          <span>Format</span>
+          <div class="segmented small" id="exFormat" role="radiogroup" aria-label="Format">
+            <button type="button" role="radio" data-format="xlsx">Excel</button>
+            <button type="button" role="radio" data-format="csv">CSV</button>
+          </div>
         </div>
-        <div id="legend" class="legend-row"></div>
+        <div class="fld">
+          <span>Ajouter</span>
+          <div class="checks">
+            <label><input id="exFullUrl" type="checkbox" /> URL complète</label>
+            <label><input id="exUrlEnd" type="checkbox" /> Fin d'URL</label>
+          </div>
+        </div>
+        <button id="exGo" type="button" class="primary go">Télécharger</button>
+        <p id="exHelp" class="help"></p>
       </section>
 
-      <h2 class="preview-title">Aperçu</h2>
-      <section id="kpis" class="kpis" aria-label="Synthèse"></section>
+      <p id="summary" class="summary"></p>
+
       <div class="toolbar">
-        <div class="segmented" role="radiogroup" aria-label="Vue" id="views">
+        <div class="segmented small" role="radiogroup" aria-label="Vue" id="views">
           <button type="button" role="radio" data-view="both">WiFi + Ethernet</button>
           <button type="button" role="radio" data-view="wifi">WiFi</button>
           <button type="button" role="radio" data-view="ethernet">Ethernet</button>
           <button type="button" role="radio" data-view="diff">Écart</button>
         </div>
-        <input
-          id="search"
-          type="search"
-          placeholder="Filtrer les applications…"
-          aria-label="Filtrer les applications"
-        />
-        <label class="check"><input id="incomplete" type="checkbox" /> Incomplètes seulement</label>
-        <label class="check"><input id="anomalies" type="checkbox" /> Avec anomalie seulement</label>
+        <input id="search" type="search" placeholder="Rechercher un client, un SID…" aria-label="Rechercher" />
+        <label class="toggle"><input id="incomplete" type="checkbox" /> Incomplets</label>
+        <label class="toggle"><input id="anomalies" type="checkbox" /> Anomalies</label>
+        <label class="inline"
+          >Valeur
+          <select id="stat"></select
+        ></label>
       </div>
-      <div id="matrix" class="matrix-wrap" tabindex="0"></div>
-      <p class="hint muted">
-        Cliquez sur un en-tête pour trier, sur <span class="mono">⤓</span> pour exporter une page, sur une application
-        pour son détail. <a href="../options/options.html#pages">Ordre et pages masquées</a>
-      </p>
+      <div id="legend" class="legend"></div>
 
-      <section class="raw">
+      <div id="matrix" class="matrix-wrap" tabindex="0"></div>
+
+      <section class="measures">
         <div class="section-head">
-          <h2>Dernières mesures</h2>
+          <h2>Mesures</h2>
           <select id="filterNet" aria-label="Filtrer par réseau">
             <option value="">Tous les réseaux</option>
             <option value="wifi">WiFi</option>
@@ -94,10 +89,11 @@
           <span id="rawCount" class="muted"></span>
         </div>
         <div id="raw"></div>
-        <button id="more" type="button" hidden>Afficher plus</button>
+        <button id="more" type="button" class="more" hidden>Afficher plus</button>
       </section>
     </main>
 
+    <div id="menu" class="menu" role="menu" hidden></div>
     <dialog id="detail" aria-labelledby="detailTitle"></dialog>
     <div id="toast" class="toast" role="status"></div>
     <script type="module" src="report.js"></script>

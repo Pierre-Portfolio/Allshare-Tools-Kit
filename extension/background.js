@@ -19,12 +19,14 @@ import {
   migrateV1,
 } from './lib/storage.js';
 import { canonical, normName } from './lib/names.js';
+import { urlEnd } from './lib/urls.js';
 import { NETWORK_LABELS } from './lib/format.js';
 
 const SCRIPT_IDS = { content: 'insigth-content', hook: 'insigth-page-hook' };
 const ACTIVE = ['armed', 'measuring', 'rearming'];
 
-const label = (s) => `${s.app} › ${s.page} · ${NETWORK_LABELS[s.network] || s.network}`;
+const label = (s) =>
+  `${[s.app, s.sid, s.version].filter(Boolean).join(' · ')} › ${s.page} · ${NETWORK_LABELS[s.network] || s.network}`;
 
 // ---------------------------------------------------------------- Session (mises à jour sérialisées)
 
@@ -100,10 +102,11 @@ async function updateBadge() {
 
 // ---------------------------------------------------------------- Actions du panneau
 
-async function arm({ tabId, app, page, network }) {
+async function arm({ tabId, app, sid, version, page, network }) {
   app = normName(app);
   page = normName(page);
-  if (!app || !page) return { ok: false, error: "Indiquez le nom de l'application et le nom de la page." };
+  if (!app) return { ok: false, error: 'Indiquez le client.' };
+  if (!page) return { ok: false, error: 'Indiquez le nom de la page.' };
   const tab = await chrome.tabs.get(tabId).catch(() => null);
   if (!tab || !/^https?:/i.test(tab.url || '')) {
     return { ok: false, error: "Ouvrez d'abord l'application (page http ou https) dans l'onglet actif." };
@@ -125,6 +128,8 @@ async function arm({ tabId, app, page, network }) {
     id: newId(),
     tabId,
     app,
+    sid: normName(sid),
+    version: normName(version),
     page,
     network: settings.network,
     state: 'armed',
@@ -231,6 +236,25 @@ async function hello(msg, tabId) {
   return { ...base, mode: 'load', click: s.click ? { t: s.click.t, leftAt: s.leftAt } : null };
 }
 
+/** Détail des temps reçu de la page : on ne garde que des nombres et des URL bornées. */
+function sanitizeDetail(d) {
+  if (!d || typeof d !== 'object' || !d.marks) return null;
+  const marks = {};
+  for (const [k, v] of Object.entries(d.marks)) if (Number.isFinite(v)) marks[k] = Math.round(v);
+  const requests = (Array.isArray(d.requests) ? d.requests : []).slice(0, 15).map((r) => ({
+    url: String(r.url || '').slice(0, 400),
+    type: String(r.type || '').slice(0, 10),
+    start: Math.round(Number(r.start) || 0),
+    duration: Math.round(Number(r.duration) || 0),
+  }));
+  return {
+    kind: d.kind === 'load' ? 'load' : 'spa',
+    marks,
+    requests,
+    requestCount: Number.isFinite(d.requestCount) ? d.requestCount : requests.length,
+  };
+}
+
 async function saveResult(msg, tabId) {
   const s = await getSession();
   if (!s || s.tabId !== tabId || !ACTIVE.includes(s.state)) return { ok: false };
@@ -238,6 +262,8 @@ async function saveResult(msg, tabId) {
     id: newId(),
     ts: Math.round(Number(msg.startEpoch) || Date.now()),
     app: s.app,
+    sid: s.sid || '',
+    version: s.version || '',
     page: s.page,
     network: s.network,
     duration: Math.max(0, Math.round(Number(msg.duration) || 0)),
@@ -245,7 +271,9 @@ async function saveResult(msg, tabId) {
     kind: msg.kind === 'spa' ? 'spa' : 'load',
     trigger: ['click', 'navigate', 'reload'].includes(msg.trigger) ? msg.trigger : 'navigate',
     url: String(msg.url || ''),
+    urlEnd: urlEnd(String(msg.url || '')),
     startUrl: (s.click && s.click.url) || s.armUrl,
+    detail: sanitizeDetail(msg.detail),
   };
   await addMeasure(measure);
   await ensureInCatalog(s.app, s.page);
@@ -349,7 +377,7 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
   const target = tab || (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
   if (!target) return;
   const { draft } = await getConfig();
-  const res = await arm({ tabId: target.id, app: draft.app, page: draft.page });
+  const res = await arm({ tabId: target.id, app: draft.app, sid: draft.sid, version: draft.version, page: draft.page });
   if (!res.ok && chrome.sidePanel && chrome.sidePanel.open) {
     chrome.sidePanel.open({ windowId: target.windowId }).catch(() => {});
   }

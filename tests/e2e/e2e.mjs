@@ -8,7 +8,7 @@
 
 import { createRequire } from 'node:module';
 import http from 'node:http';
-import { mkdirSync, rmSync, mkdtempSync, existsSync } from 'node:fs';
+import { mkdirSync, rmSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -121,6 +121,13 @@ try {
         .map((k) => all[k])
         .sort((a, b) => a.ts - b.ts);
     });
+  async function waitCount(count, timeout = 10000) {
+    const end = Date.now() + timeout;
+    while ((await measures()).length !== count) {
+      if (Date.now() > end) throw new Error(`attendu ${count} mesure(s)`);
+      await sleep(150);
+    }
+  }
   async function waitMeasures(count, timeout = 15000) {
     const end = Date.now() + timeout;
     for (;;) {
@@ -167,6 +174,8 @@ try {
   await panel.waitForSelector('#viewForm:not([hidden])');
   await panel.click('[data-network="wifi"]');
   await panel.fill('#app', 'Appli 1');
+  await panel.fill('#sid', 'PRD');
+  await panel.fill('#version', '5.3');
   await panel.fill('#page', 'Clients');
   await panel.click('#arm');
   await waitSession((s) => s && s.state === 'armed', 'armé');
@@ -179,16 +188,33 @@ try {
   let list = await waitMeasures(1);
   check(
     list[0],
-    { app: 'Appli 1', page: 'Clients', network: 'wifi', kind: 'load', trigger: 'click' },
+    { app: 'Appli 1', sid: 'PRD', version: '5.3', page: 'Clients', network: 'wifi', kind: 'load', trigger: 'click' },
     800,
     3000,
     'WiFi · Clients (clic)',
   );
   assert.equal(list[0].startUrl, `${base}/appli1/`);
+  assert.equal(list[0].url, `${base}/appli1/clients`, 'URL complète enregistrée');
+  assert.equal(list[0].urlEnd, 'clients', "fin d'URL enregistrée");
+  // Détail : repères Navigation Timing + appel fetch /api/data (500 ms)
+  const d = list[0].detail;
+  assert.equal(d.kind, 'load');
+  assert.ok(d.marks.responseStart - d.marks.requestStart >= 250, 'attente serveur ≥ délai serveur');
+  const apiCall = d.requests.find((r) => r.url.includes('/api/data'));
+  assert.ok(apiCall && apiCall.duration >= 480, `appel /api/data mesuré (${apiCall && apiCall.duration} ms)`);
+  console.log(
+    `  Détail : attente serveur ${d.marks.responseStart - d.marks.requestStart} ms, /api/data ${apiCall.duration} ms, fin ${d.marks.end} ms`,
+  );
   await panel.waitForSelector('#viewResult:not([hidden])');
   assert.match(await panel.textContent('#resValue'), /ms/);
+  assert.match(await panel.textContent('#resLabel'), /Appli 1 · PRD · 5\.3 › Clients · WiFi/);
   assert.match(await panel.textContent('#relaunchOther'), /Relancer en Ethernet/);
   await panel.screenshot({ path: join(out, 'panel-resultat.png') });
+  await panel.click('#detail summary');
+  await panel.waitForSelector('#detail .timings tbody tr');
+  assert.match(await panel.textContent('#detail'), /Requête \(attente serveur\)/);
+  await panel.screenshot({ path: join(out, 'panel-detail.png'), fullPage: true });
+  await panel.click('#detail summary');
 
   // 4. « Relancer en Ethernet » : retour à la page de départ, le chargement de retour n'est pas mesuré
   await panel.click('#relaunchOther');
@@ -212,6 +238,8 @@ try {
   await panel.click('#next');
   await panel.waitForSelector('#viewForm:not([hidden])');
   assert.equal(await panel.inputValue('#app'), 'Appli 1');
+  assert.equal(await panel.inputValue('#sid'), 'PRD', 'SID conservé');
+  assert.equal(await panel.inputValue('#version'), '5.3', 'version conservée');
   await panel.fill('#page', 'Fiche client');
   await panel.press('#page', 'Enter');
   await waitSession((s) => s && s.state === 'armed' && s.page === 'Fiche client', 'armé Fiche client');
@@ -276,26 +304,60 @@ try {
   await panel2.waitForSelector('#viewResult:not([hidden])');
   await panel2.screenshot({ path: join(out, 'panel-resultat-2.png') });
 
-  // 9. Exports : les trois types
+  // 9. Tableau de bord : 4 exports, CSV avec URL, suppressions par menu
   const report = await context.newPage();
+  report.on('dialog', (dlg) => dlg.accept());
   await report.setViewportSize({ width: 1440, height: 900 });
   await report.goto(`chrome-extension://${extId}/report/report.html`);
   await report.waitForSelector('#matrix table');
-  assert.equal(await report.locator('#matrix tbody tr').count(), 2, 'une ligne par application');
-  const download = async (action, file) => {
-    const [d] = await Promise.all([report.waitForEvent('download'), action()]);
+  assert.equal(await report.locator('#matrix tbody tr').count(), 2, 'une ligne par client · SID · version');
+  const download = async (file) => {
+    const [d] = await Promise.all([report.waitForEvent('download'), report.click('#exGo')]);
     await d.saveAs(join(out, file));
     console.log(`  Export : ${d.suggestedFilename()}`);
     return d.suggestedFilename();
   };
-  assert.match(await download(() => report.click('#exAll'), 'export-tout.xlsx'), /^insigth-tout-/);
-  await report.selectOption('#exPageSel', 'Clients');
-  assert.match(await download(() => report.click('#exPage'), 'export-page.xlsx'), /^insigth-page-clients-/);
-  await report.fill('#exAppSel', 'appli 1');
-  assert.match(await download(() => report.click('#exApp'), 'export-client.xlsx'), /^insigth-client-appli-1-/);
-  await report.click('#matrix .app-link >> nth=0');
+  await report.selectOption('#exType', 'all');
+  assert.match(await download('export-tout.xlsx'), /^insigth-tout-.*\.xlsx$/);
+  await report.selectOption('#exType', 'page');
+  await report.selectOption('#exPage', 'Clients');
+  assert.match(await download('export-page.xlsx'), /^insigth-page-clients-/);
+  await report.selectOption('#exType', 'client');
+  await report.selectOption('#exClient', 'Appli 1');
+  assert.match(await download('export-client.xlsx'), /^insigth-client-appli-1-/);
+  await report.selectOption('#exType', 'detail');
+  await report.selectOption('#exPage', 'Clients');
+  assert.match(await download('export-detail.xlsx'), /^insigth-detail-clients-/);
+  await report.selectOption('#exType', 'all');
+  await report.click('#exFormat [data-format="csv"]');
+  await report.check('#exFullUrl');
+  await report.check('#exUrlEnd');
+  assert.match(await download('export-tout.csv'), /\.csv$/);
+  const csv = readFileSync(join(out, 'export-tout.csv'), 'utf8').replace('﻿', '').trim().split('\r\n');
+  assert.match(csv[0], /Fin d'URL;URL complète;Page de départ$/);
+  assert.equal(csv.length, 1 + (await measures()).length);
+  assert.ok(
+    csv.some((l) => l.includes(';clients;') && l.includes(`${base}/appli1/clients`)),
+    'URL dans le CSV',
+  );
+  await report.click('#exFormat [data-format="xlsx"]');
+  await report.uncheck('#exFullUrl');
+  await report.uncheck('#exUrlEnd');
+  await report.click('#matrix .name >> nth=0');
   await report.waitForSelector('#detail[open] .dlg-body table');
   await report.click('#detail [data-close]');
+  // Supprimer une page (menu ⋯ de l'en-tête) puis un client (menu ⋯ de la ligne)
+  const before = (await measures()).length;
+  await report.click('[data-page-menu="Factures"]');
+  await report.click('#menu button:has-text("Supprimer la page")');
+  await waitCount(before - 1);
+  await report.waitForFunction(() => !document.querySelector('[data-page-menu="Factures"]'));
+  await report.click('[data-line-menu] >> nth=1'); // Appli 2
+  await report.click('#menu button:has-text("Supprimer le client")');
+  await waitCount(before - 2);
+  const left = await measures();
+  assert.ok(!left.some((x) => x.app === 'Appli 2' || x.page === 'Factures'), 'page et client supprimés');
+  console.log(`  Suppressions : page « Factures » et client « Appli 2 » (${left.length} mesures restantes)`);
 
   // 10. Réglages : import en masse (noms seuls acceptés), pages, renommage qui suit les mesures
   const options = await context.newPage();
@@ -306,13 +368,13 @@ try {
   await options.fill('#bulkText', 'Nom\nAppli 3\nAppli 4\thttps://appli4.exemple.fr/\nAppli 5;pas-une-url ftp://x');
   const preview = await options.textContent('#bulkPreview');
   console.log('  Import en masse :', preview);
-  assert.match(preview, /2 application\(s\) reconnue\(s\) : 2 nouvelle\(s\), 0 existante\(s\)/);
+  assert.match(preview, /2 client\(s\) reconnu\(s\) : 2 nouveau\(x\), 0 existant\(s\)/);
   await options.click('#bulkGo');
-  await options.waitForFunction(() => document.querySelectorAll('#appRows tr').length === 4);
+  await options.waitForFunction(() => document.querySelectorAll('#appRows tr').length === 3);
   await options.click('#addPages');
   await options.fill('#addPagesText', 'Accueil\nClients\nTableau de bord');
   await options.click('#addPagesGo');
-  await options.waitForFunction(() => document.querySelectorAll('#pageRows tr').length === 5);
+  await options.waitForFunction(() => document.querySelectorAll('#pageRows tr').length === 4);
   // Renommer « Fiche client » en « Fiche Client » puis « Détail client » : les mesures suivent
   const ficheInput = options.locator('#pageRows input[aria-label="Nom de la page Fiche client"]');
   await ficheInput.fill('Détail client');
@@ -374,6 +436,8 @@ try {
               id: `d${++id}`,
               ts: Date.now() - Math.floor(rnd() * 5 * 864e5),
               app,
+              sid: i % 4 === 0 ? 'REC' : 'PRD',
+              version: i % 6 === 0 ? '5.4' : '5.3',
               page,
               network,
               duration: timeout ? 120000 : duration,
@@ -392,7 +456,7 @@ try {
       apps,
       pages: PAGES.map((name, i) => ({ id: `p${i}`, name, hidden: false })),
       settings: { network: 'wifi', stat: 'median', reportView: 'both' },
-      draft: { app: 'Client 042', page: 'Factures' },
+      draft: { app: 'Client 042', sid: 'PRD', version: '5.4', page: 'Factures' },
       ...items,
     });
     return { apps: apps.length, measures: id };
@@ -402,17 +466,24 @@ try {
   await report.reload();
   await report.waitForSelector('#matrix tbody tr >> nth=149');
   console.log(`  Aperçu 150 × 20 affiché en ${Date.now() - t0} ms`);
-  await report.screenshot({ path: join(out, 'exports.png') });
+  await report.screenshot({ path: join(out, 'dashboard.png') });
+  await report.click('[data-page-menu="Factures"]');
+  await report.screenshot({ path: join(out, 'dashboard-menu.png'), clip: { x: 0, y: 0, width: 1440, height: 520 } });
+  await report.keyboard.press('Escape');
+  await report.emulateMedia({ colorScheme: 'dark' });
   await report.click('[data-view="wifi"]');
   await report.check('#anomalies');
   await report.waitForFunction(() => !document.querySelector('#matrix thead tr.h2'));
-  await report.evaluate(() => document.querySelector('.preview-title').scrollIntoView());
-  await report.screenshot({ path: join(out, 'apercu-anomalies.png') });
-  await download(() => report.click('#exAll'), 'demo-tout.xlsx');
-  await report.selectOption('#exPageSel', 'Factures');
-  await download(() => report.click('#exPage'), 'demo-page.xlsx');
-  await report.fill('#exAppSel', 'Client 042');
-  await download(() => report.click('#exApp'), 'demo-client.xlsx');
+  await report.screenshot({ path: join(out, 'dashboard-sombre.png') });
+  await report.emulateMedia({ colorScheme: 'light' });
+  await report.selectOption('#exType', 'all');
+  await download('demo-tout.xlsx');
+  await report.selectOption('#exType', 'page');
+  await report.selectOption('#exPage', 'Factures');
+  await download('demo-page.xlsx');
+  await report.selectOption('#exType', 'client');
+  await report.selectOption('#exClient', 'Client 042');
+  await download('demo-client.xlsx');
 
   await panel.reload();
   await panel.waitForSelector('#viewForm:not([hidden])');
