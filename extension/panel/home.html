@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Quels outils ?</title>
+    <link rel="stylesheet" href="../common.css" />
+    <link rel="stylesheet" href="panel.css" />
+    <link rel="stylesheet" href="tools.css" />
+  </head>
+  <body>
+    <header class="top">
+      <h1>Quels outils ?</h1>
+    </header>
+
+    <nav class="tools" aria-label="Outils">
+      <a id="toolCapsule" class="tool" href="capsule.html">
+        <img src="../icons/capsule.svg" alt="" width="44" height="44" />
+        <span class="tool-text">
+          <strong>Capsule</strong>
+          <small>Sauvegarder tous les onglets ouverts et les rouvrir d'un clic</small>
+          <small id="capsuleCount" class="tool-count"></small>
+        </span>
+        <span class="chev" aria-hidden="true">›</span>
+      </a>
+      <a id="toolInsigth" class="tool" href="panel.html">
+        <img src="../icons/icon48.png" alt="" width="44" height="44" />
+        <span class="tool-text">
+          <strong>Insigth</strong>
+          <small>Temps de réponse des pages : du clic à l'affichage complet</small>
+        </span>
+        <span class="chev" aria-hidden="true">›</span>
+      </a>
+    </nav>
+
+    <script type="module" src="home.js"></script>
+  </body>
+</html>

@@ -12,14 +12,42 @@ mesure apparaissent en rouge.
 Conçue pour un parc de **100 à 200 clients** sur une application quasi identique d'une vingtaine
 de pages.
 
+## Les outils
+
+À chaque ouverture, le panneau latéral demande **Quels outils ?** :
+
+| Quels outils ? | Capsule |
+| :-: | :-: |
+| ![Quels outils ?](docs/panel-outils.png) | ![Capsule](docs/capsule.png) |
+
+- **Capsule** : sauvegarde tous les onglets ouverts dans le navigateur et les rouvre d'un clic.
+- **Insigth** : mesure du temps de réponse des pages (tout le reste de ce document).
+
+La flèche **‹** en haut à gauche ramène au choix de l'outil. Si une mesure Insigth est en cours, le
+panneau s'ouvre directement sur Insigth pour afficher le chrono.
+
+### Capsule : sauvegarde des onglets
+
+1. **Mes sessions** (replié au départ) liste les sessions sauvegardées, la plus récente en premier :
+   titre, nombre d'onglets, date. Dépliez une session pour voir son commentaire et ses liens.
+2. **＋ Sauvegarder cette session** demande un **titre** et un **commentaire** facultatif, puis
+   enregistre tous les onglets ouverts, dans toutes les fenêtres.
+3. **Rouvrir** (ou **↗ Tout rouvrir**) rouvre tous les onglets de la session, dans une nouvelle
+   fenêtre par fenêtre d'origine (onglets épinglés compris). Un clic sur un lien n'ouvre que celui-là.
+   **Supprimer** retire la session.
+
+Seules les pages web sont enregistrées (http, https, fichiers locaux) : pas les pages internes de
+Chrome (`chrome://…`) ni la navigation privée. Les sessions restent dans le navigateur ; elles ne font
+pas partie de la sauvegarde JSON des mesures.
+
 ## Le parcours
 
 | 1. Formulaire | 2. En attente du clic | 3. Résultat |
 | :-: | :-: | :-: |
 | ![Formulaire](docs/panel-formulaire.png) | ![Prêt](docs/panel-pret.png) | ![Résultat](docs/panel-resultat.png) |
 
-1. Cliquez sur l'icône Insigth : le **panneau latéral** s'ouvre. Il reste ouvert pendant que vous
-   cliquez dans l'application.
+1. Cliquez sur l'icône de l'extension : le **panneau latéral** s'ouvre sur **Quels outils ?**,
+   choisissez **Insigth**. Le panneau reste ouvert pendant que vous cliquez dans l'application.
 2. Choisissez le réseau (**WiFi** / **Ethernet**) et remplissez **Client**, **SID**,
    **Version application** et **Page**. La page se choisit dans la liste du menu de l'application,
    rangée par rubrique (Fiche Salarié, Listes Collaborateurs, RH Suivi Effectifs, Masse Salariale,
@@ -235,7 +263,8 @@ extension/
   content/
     page-hook.js         contexte de la page : suivi des requêtes fetch / XHR
     content.js           mesure clic → affichage complet, détail du chargement, indicateur
-  panel/                 panneau latéral : formulaire, chrono, résultat, détail
+  panel/                 panneau latéral : choix de l'outil (home), Insigth (panel : formulaire, chrono,
+                         résultat, détail), Capsule (capsule)
   report/                tableau de bord : export, grille clients × pages, mesures
   options/               référentiel clients / pages, réglages, anomalies, données
   lib/
@@ -245,6 +274,7 @@ extension/
     storage.js           stockage, renommage, suppression, sauvegarde / import, migration
     names.js             noms (normalisation, suggestion du client, page suivante)
     menu.js              pages du menu de l'application, par rubrique (liste du champ « Page »)
+    capsule.js           Capsule : onglets ouverts, sessions sauvegardées, réouverture
     apps.js              import en masse des clients et des pages
     urls.js, export.js, format.js
 tests/
@@ -264,6 +294,7 @@ npm run zip            # crée insigth-extension.zip (dossier extension/)
 Le test de bout en bout lance deux applications de démonstration dont les délais sont connus :
 serveur 300 / 600 ms, appel de données 500 ms, navigation sans rechargement 400 ms. Il déroule tout
 le parcours du panneau : client / SID / version, relance en Ethernet, page suivante, application
-sans rechargement, annulation, suggestion. Il vérifie le détail des temps (attente serveur, appel
+sans rechargement, annulation, suggestion, puis l'accueil « Quels outils ? » et Capsule (sauvegarde,
+réouverture, suppression). Il vérifie le détail des temps (attente serveur, appel
 AJAX), les 4 exports, le CSV avec les URL et les suppressions, puis génère une démo de 150 clients ×
 20 pages. Captures et fichiers dans `tests/e2e/out/`.

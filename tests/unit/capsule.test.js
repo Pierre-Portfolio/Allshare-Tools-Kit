@@ -1,0 +1,47 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { isSavable, snapshot, byWindow, describeTabs, host } from '../../extension/lib/capsule.js';
+
+const tab = (url, title = '', pinned = false) => ({ url, title, pinned });
+
+test('snapshot : pages web de chaque fenêtre, pages internes et navigation privée ignorées', () => {
+  const tabs = snapshot([
+    {
+      tabs: [
+        tab('https://a.fr/x', '  Page   A ', true),
+        tab('chrome://newtab/', 'Nouvel onglet'),
+        tab('chrome-extension://abc/panel.html'),
+        { pendingUrl: 'http://b.fr/', title: '' }, // onglet en cours de chargement, sans titre
+      ],
+    },
+    { incognito: true, tabs: [tab('https://prive.fr/')] },
+    { tabs: [tab('chrome://settings/')] }, // fenêtre sans page web : pas de numéro
+    { tabs: [tab('file:///C:/rapport.html', 'Rapport')] },
+  ]);
+  assert.deepEqual(tabs, [
+    { url: 'https://a.fr/x', title: 'Page A', pinned: true, win: 0 },
+    { url: 'http://b.fr/', title: 'http://b.fr/', pinned: false, win: 0 },
+    { url: 'file:///C:/rapport.html', title: 'Rapport', pinned: false, win: 1 },
+  ]);
+});
+
+test('regroupement par fenêtre et résumé', () => {
+  const tabs = [
+    { url: 'https://a.fr/', win: 0 },
+    { url: 'https://b.fr/', win: 1 },
+    { url: 'https://c.fr/', win: 0 },
+  ];
+  assert.deepEqual(
+    byWindow(tabs).map((g) => g.map((t) => t.url)),
+    [['https://a.fr/', 'https://c.fr/'], ['https://b.fr/']],
+  );
+  assert.equal(describeTabs(tabs), '3 onglets · 2 fenêtres');
+  assert.equal(describeTabs(tabs.slice(0, 1)), '1 onglet');
+});
+
+test('adresses : rouvrables et domaine affiché', () => {
+  assert.ok(isSavable('https://a.fr') && isSavable('HTTP://a.fr') && isSavable('file:///x'));
+  assert.ok(!isSavable('chrome://newtab/') && !isSavable('about:blank') && !isSavable(undefined));
+  assert.equal(host('https://srv.exemple.fr:8443/app/f?p=1'), 'srv.exemple.fr:8443');
+  assert.equal(host('file:///C:/x.html'), 'fichier local');
+});

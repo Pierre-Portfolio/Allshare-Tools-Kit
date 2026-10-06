@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Capsule</title>
+    <link rel="stylesheet" href="../common.css" />
+    <link rel="stylesheet" href="panel.css" />
+    <link rel="stylesheet" href="tools.css" />
+  </head>
+  <body>
+    <header class="top">
+      <a class="back" href="home.html?choose" title="Changer d'outil" aria-label="Changer d'outil">‹</a>
+      <img src="../icons/capsule.svg" alt="" width="22" height="22" />
+      <h1>Capsule</h1>
+    </header>
+    <p class="hint tagline">Sauvegardez tous les onglets ouverts, rouvrez-les d'un clic.</p>
+
+    <!-- Sessions sauvegardées (repliées au départ) -->
+    <details id="saved" class="saved card">
+      <summary>
+        <span>Mes sessions</span>
+        <span id="savedCount" class="muted"></span>
+      </summary>
+      <ul id="capsules" class="capsules"></ul>
+      <p id="savedEmpty" class="hint" hidden>
+        Aucune session pour le moment : cliquez sur « Sauvegarder cette session » ci-dessous.
+      </p>
+    </details>
+
+    <button id="saveOpen" type="button" class="big primary">＋ Sauvegarder cette session</button>
+
+    <form id="saveForm" class="card save-form" autocomplete="off" novalidate hidden>
+      <p id="saveWhat" class="hint"></p>
+      <label class="field">
+        <span>Titre</span>
+        <input id="saveTitle" type="text" placeholder="ex. Recette client X" maxlength="120" />
+      </label>
+      <label class="field">
+        <span>Commentaire <small>(facultatif)</small></span>
+        <textarea id="saveComment" rows="3" placeholder="Pourquoi cette session, ce qu'il reste à faire…"></textarea>
+      </label>
+      <p id="saveError" class="error" role="alert"></p>
+      <div class="row">
+        <button id="saveCancel" type="button">Annuler</button>
+        <button id="saveGo" type="submit" class="primary">Enregistrer</button>
+      </div>
+    </form>
+
+    <div id="toast" class="toast" role="status"></div>
+    <script type="module" src="capsule.js"></script>
+  </body>
+</html>

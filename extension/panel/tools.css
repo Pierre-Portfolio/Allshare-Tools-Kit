@@ -1,0 +1,237 @@
+/* Accueil « Quels outils ? » et outil Capsule (panneau latéral). */
+
+.back {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-left: -4px;
+  border-radius: 6px;
+  color: var(--accent);
+  font-size: 22px;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.back:hover {
+  background: var(--accent-soft);
+}
+
+/* ---------- Accueil */
+.tools {
+  display: grid;
+  gap: 10px;
+}
+
+.tool {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: inherit;
+  text-decoration: none;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.tool:hover,
+.tool:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.12);
+  outline: none;
+}
+
+.tool img {
+  border-radius: 10px;
+}
+
+.tool-text {
+  display: grid;
+  gap: 2px;
+}
+
+.tool-text strong {
+  font-size: 16px;
+}
+
+.tool-text small {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.tool-text .tool-count {
+  color: #7c3aed;
+  font-weight: 600;
+}
+
+.tool-text .tool-count:empty {
+  display: none;
+}
+
+.chev {
+  color: var(--muted);
+  font-size: 22px;
+}
+
+/* ---------- Capsule */
+.tagline {
+  margin: -6px 0 12px;
+}
+
+.saved {
+  padding: 0;
+  margin-bottom: 12px;
+}
+
+.saved > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 11px 14px;
+  cursor: pointer;
+  font-weight: 650;
+  list-style: none;
+}
+
+.saved > summary::-webkit-details-marker,
+.capsule > summary::-webkit-details-marker {
+  display: none;
+}
+
+.saved > summary::before,
+.capsule > summary::before {
+  content: '▸';
+  color: var(--muted);
+}
+
+.saved[open] > summary::before,
+.capsule[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.saved > .hint {
+  margin: 0;
+  padding: 0 14px 12px;
+}
+
+.capsules {
+  list-style: none;
+  margin: 0;
+  padding: 0 8px 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.capsule {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.capsule > summary {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.cap-head {
+  display: grid;
+  min-width: 0;
+}
+
+.cap-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cap-meta {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.capsule .reopen {
+  padding: 4px 10px;
+  font-size: 12.5px;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.cap-comment {
+  margin: 0 10px 8px;
+  padding: 6px 8px;
+  border-left: 3px solid #7c3aed;
+  background: var(--surface);
+  border-radius: 0 6px 6px 0;
+  font-size: 12.5px;
+  white-space: pre-wrap;
+}
+
+.cap-links {
+  margin: 0 10px 8px;
+  padding-left: 22px;
+  font-size: 12.5px;
+  display: grid;
+  gap: 3px;
+}
+
+.cap-links li {
+  min-width: 0;
+}
+
+.cap-links a {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.cap-links a:hover {
+  text-decoration: underline;
+}
+
+.cap-links small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.cap-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px 10px;
+}
+
+.save-form {
+  margin-top: 0;
+}
+
+.save-form .hint {
+  margin: 0 0 10px;
+}
+
+.save-form textarea {
+  width: 100%;
+  font-size: 14px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.field small {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}

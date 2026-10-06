@@ -390,6 +390,7 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
     specific: draft.specific,
   });
   if (!res.ok && chrome.sidePanel && chrome.sidePanel.open) {
+    chrome.storage.session.set({ panelTool: 'insigth' }); // ouvrir directement Insigth, pas l'accueil
     chrome.sidePanel.open({ windowId: target.windowId }).catch(() => {});
   }
 });

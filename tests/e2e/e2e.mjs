@@ -418,7 +418,57 @@ try {
   assert.ok(pagesNow.includes('Détail client') && !pagesNow.includes('Fiche client'), 'page renommée');
   console.log('  Référentiel :', JSON.stringify(pagesNow));
 
-  // 11. Démo à l'échelle : 150 clients × 20 pages (captures pour le README)
+  // 11. Accueil « Quels outils ? » puis Capsule : sauvegarde des onglets ouverts, réouverture, suppression
+  const tools = await context.newPage();
+  await tools.setViewportSize({ width: 380, height: 640 });
+  await storage(() => chrome.storage.session.set({ panelTool: 'insigth' })); // raccourci clavier : Insigth direct
+  await tools.goto(`chrome-extension://${extId}/panel/home.html`);
+  await tools.waitForURL(/\/panel\/panel\.html$/);
+  await tools.click('.back');
+  await tools.waitForURL(/\/panel\/home\.html\?choose$/);
+  assert.deepEqual(await tools.locator('.tool strong').allTextContents(), ['Capsule', 'Insigth']);
+  await tools.screenshot({ path: join(out, 'panel-outils.png') });
+  await tools.click('#toolCapsule');
+  await tools.waitForSelector('#saveOpen');
+  assert.equal(await tools.getAttribute('#saved', 'open'), null, 'sessions repliées au départ');
+  const webUrls = context
+    .pages()
+    .map((p) => p.url())
+    .filter((u) => u.startsWith('http'));
+  await tools.click('#saveOpen');
+  assert.equal(await tools.textContent('#saveWhat'), `Onglets ouverts à enregistrer : ${webUrls.length} onglets.`);
+  await tools.click('#saveGo');
+  assert.match(await tools.textContent('#saveError'), /titre/, 'titre obligatoire');
+  await tools.fill('#saveTitle', 'Recette Appli 1');
+  await tools.fill('#saveComment', 'Reprendre les mesures Ethernet');
+  await tools.click('#saveGo');
+  await tools.waitForSelector('#saveForm', { state: 'hidden' });
+  const caps = await storage(async () => (await chrome.storage.local.get('capsules')).capsules);
+  assert.equal(caps.length, 1);
+  assert.equal(caps[0].title, 'Recette Appli 1');
+  assert.equal(caps[0].comment, 'Reprendre les mesures Ethernet');
+  assert.deepEqual(caps[0].tabs.map((t) => t.url).sort(), [...webUrls].sort(), 'tous les onglets web enregistrés');
+  await tools.waitForFunction(() => document.querySelector('#savedCount').textContent === '(1)');
+  await tools.click('#saved > summary');
+  await tools.click('.capsule .cap-title');
+  await tools.waitForSelector('.cap-links li');
+  await tools.screenshot({ path: join(out, 'capsule.png') });
+  const pagesBefore = context.pages().length;
+  await tools.click('.cap-actions [data-open]');
+  for (let i = 0; i < 100; i++) {
+    if (webUrls.every((u) => context.pages().filter((p) => p.url() === u).length === 2)) break;
+    await sleep(100);
+  }
+  const reopened = context.pages().slice(pagesBefore);
+  assert.deepEqual(reopened.map((p) => p.url()).sort(), [...webUrls].sort(), 'onglets rouverts');
+  console.log(`  Capsule : ${webUrls.length} onglets sauvegardés puis rouverts`);
+  for (const p of reopened) await p.close();
+  tools.once('dialog', (d) => d.accept());
+  await tools.click('.cap-actions .danger');
+  await tools.waitForSelector('#savedEmpty:not([hidden])');
+  await tools.close();
+
+  // 12. Démo à l'échelle : 150 clients × 20 pages (captures pour le README)
   const demo = await storage(async () => {
     const PAGES = [
       'Accueil',
