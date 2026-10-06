@@ -45,10 +45,19 @@
             <input id="version" type="text" list="versionList" placeholder="ex. 5.3.2" spellcheck="false" />
           </label>
         </div>
-        <label class="field">
-          <span>Page</span>
-          <input id="page" type="text" list="pageList" placeholder="ex. Salarié" spellcheck="false" />
-        </label>
+        <div class="field">
+          <span id="pageTitle">Page</span>
+          <select id="pagePick" aria-labelledby="pageTitle"></select>
+          <input
+            id="page"
+            type="text"
+            list="pageList"
+            placeholder="Nom de la page"
+            aria-label="Page (saisie libre)"
+            spellcheck="false"
+            hidden
+          />
+        </div>
         <label class="check-line">
           <input id="specific" type="checkbox" />
           <span>Page spécifique ?</span>

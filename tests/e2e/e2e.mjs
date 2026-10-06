@@ -28,6 +28,11 @@ const API_DELAY = 500; // appel de données après chargement
 const SPA_API_DELAY = 400;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** Champ « Page » : « Saisie libre » dans la liste, puis le nom dans le champ texte. */
+async function freePage(panel, name) {
+  await panel.selectOption('#pagePick', '__free__');
+  await panel.fill('#page', name);
+}
 
 function mpaPage(app, path) {
   const nav = ['', 'clients', 'clients/42', 'factures']
@@ -176,7 +181,13 @@ try {
   await panel.fill('#app', 'Appli 1');
   await panel.fill('#sid', 'PRD');
   await panel.fill('#version', '5.3');
-  await panel.fill('#page', 'Clients');
+  // Liste des pages : menu par rubrique, champ texte masqué tant qu'on n'a pas choisi « Saisie libre »
+  assert.equal(await panel.locator('#pagePick optgroup').count(), 7, 'rubriques du menu');
+  assert.equal(await panel.locator('#pagePick option').count(), 47, '45 pages + choix vide + saisie libre');
+  assert.ok(await panel.isHidden('#page'), 'champ texte masqué');
+  await panel.selectOption('#pagePick', 'Liste Mensuelle');
+  assert.equal(await panel.inputValue('#page'), 'Liste Mensuelle', 'page reprise de la liste');
+  await freePage(panel, 'Clients');
   await panel.click('#arm');
   await waitSession((s) => s && s.state === 'armed', 'armé');
   await panel.waitForSelector('#viewLive:not([hidden])');
@@ -241,7 +252,9 @@ try {
   assert.equal(await panel.inputValue('#sid'), 'PRD', 'SID conservé');
   assert.equal(await panel.inputValue('#version'), '5.3', 'version conservée');
   assert.equal(await panel.isChecked('#specific'), false);
-  await panel.fill('#page', 'Fiche client');
+  assert.equal(await panel.inputValue('#pagePick'), 'Fiche Salarié', 'page suivante : 1re page du menu');
+  assert.ok(await panel.isHidden('#page'));
+  await freePage(panel, 'Fiche client');
   await panel.check('#specific'); // « Page spécifique ? »
   await panel.press('#page', 'Enter');
   await waitSession(
@@ -265,7 +278,7 @@ try {
   await panel.waitForSelector('#viewForm:not([hidden])');
   assert.equal(await panel.isChecked('#specific'), false, 'page suivante : case décochée');
   await panel.click('[data-network="wifi"]');
-  await panel.fill('#page', 'Factures');
+  await freePage(panel, 'Factures');
   await panel.click('#arm');
   await waitSession((s) => s && s.state === 'armed' && s.page === 'Factures', 'armé SPA');
   await page.click('#noop');
@@ -284,9 +297,9 @@ try {
 
   // 7. Annuler
   await panel.click('#next');
-  await panel.fill('#page', 'Annulée');
+  await panel.selectOption('#pagePick', 'Turn-Over');
   await panel.click('#arm');
-  await waitSession((s) => s && s.state === 'armed', 'armé');
+  await waitSession((s) => s && s.state === 'armed' && s.page === 'Turn-Over', 'armé (page du menu)');
   await panel.click('#cancel');
   await waitSession((s) => s === null, 'annulé');
   await page.click('#spa-clients');
@@ -308,7 +321,7 @@ try {
   assert.match(await panel2.textContent('#appSuggestName'), /Appli 2/);
   await panel2.click('#appSuggestUse');
   assert.equal(await panel2.inputValue('#app'), 'Appli 2');
-  await panel2.fill('#page', 'Clients');
+  await panel2.selectOption('#pagePick', 'Clients'); // page déjà mesurée : groupe « Autres pages »
   await panel2.click('#arm');
   await waitSession((s) => s && s.state === 'armed' && s.app === 'Appli 2', 'armé Appli 2');
   await page2.click('#nav-clients');

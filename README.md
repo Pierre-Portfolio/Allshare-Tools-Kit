@@ -21,9 +21,12 @@ de pages.
 1. Cliquez sur l'icône Insigth : le **panneau latéral** s'ouvre. Il reste ouvert pendant que vous
    cliquez dans l'application.
 2. Choisissez le réseau (**WiFi** / **Ethernet**) et remplissez **Client**, **SID**,
-   **Version application** et **Page**. Cochez **Page spécifique ?** si la page est propre à ce
-   client (hors pages standard). Cliquez ensuite sur **Lancer l'enregistrement** (ou appuyez sur
-   Entrée).
+   **Version application** et **Page**. La page se choisit dans la liste du menu de l'application,
+   rangée par rubrique (Fiche Salarié, Listes Collaborateurs, RH Suivi Effectifs, Masse Salariale,
+   Hyp. Budgétaires, Index Egalité HF, Absentéisme, Publisher, Finance), ou parmi les autres pages
+   déjà enregistrées. Pour une autre page, choisissez **✎ Saisie libre** et tapez son nom. Cochez
+   **Page spécifique ?** si la page est propre à ce client (hors pages standard). Cliquez ensuite
+   sur **Lancer l'enregistrement** (ou appuyez sur Entrée).
 3. Dans la page, cliquez sur le lien ou le menu qui ouvre la page à mesurer. Le chrono part **au
    clic** et s'arrête quand la page est **complètement affichée**.
 4. Le temps s'affiche et la mesure est enregistrée. Trois choix s'offrent à vous :
@@ -32,7 +35,7 @@ de pages.
      sur le même lien ;
    - **↻ Refaire en WiFi** : une mesure de plus sur le même réseau (pour une médiane fiable) ;
    - **Page suivante →** : retour au formulaire. Client, SID et version sont conservés, et la page
-     suivante de la liste qui n'a pas encore été mesurée est proposée.
+     suivante qui n'a pas encore été mesurée est proposée : pages des réglages, puis pages du menu.
 
 Un petit indicateur en bas à droite de la page affiche l'état : prêt, mesure en cours, puis
 résultat.
@@ -61,8 +64,8 @@ retrouve uniquement dans l'export **Détail des temps — une page**.
 
 ### Pour aller plus vite
 
-- **Auto-complétion** des clients, SID, versions et pages. « client a » est automatiquement rattaché
-  à « Client A ».
+- **Auto-complétion** des clients, SID, versions et pages (en saisie libre aussi). « client a » est
+  automatiquement rattaché à « Client A », « liste mensuelle » à « Liste Mensuelle ».
 - **Client proposé d'après l'onglet** ouvert, à partir des mesures déjà faites sur ce site ou de
   l'URL déclarée dans les réglages. Quand vous choisissez un client, son SID et sa version sont
   repris de sa dernière mesure.
@@ -241,6 +244,7 @@ extension/
     xlsx.js              générateur .xlsx sans dépendance (cases colorées)
     storage.js           stockage, renommage, suppression, sauvegarde / import, migration
     names.js             noms (normalisation, suggestion du client, page suivante)
+    menu.js              pages du menu de l'application, par rubrique (liste du champ « Page »)
     apps.js              import en masse des clients et des pages
     urls.js, export.js, format.js
 tests/

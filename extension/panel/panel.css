@@ -92,10 +92,19 @@ kbd {
   color: var(--muted);
 }
 
-.field input {
+.field input,
+.field select {
   width: 100%;
   font-size: 15px;
   padding: 9px 10px;
+}
+
+.field select optgroup {
+  font-weight: 700;
+}
+
+.field select option {
+  font-weight: 400;
 }
 
 .suggest {

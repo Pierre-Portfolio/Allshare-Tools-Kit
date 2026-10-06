@@ -9,7 +9,8 @@ import {
   isMeasureKey,
 } from '../lib/storage.js';
 import { buildModel, cellStat, rate, coverage, missingPages, lineKey, lineLabel } from '../lib/report.js';
-import { nameKey, normName, suggestApp, nextPage, compareNames } from '../lib/names.js';
+import { nameKey, normName, canonical, suggestApp, nextPage, compareNames } from '../lib/names.js';
+import { MENU, MENU_PAGES } from '../lib/menu.js';
 import { phases } from '../lib/timing.js';
 import { urlEnd } from '../lib/urls.js';
 import { NETWORKS, NETWORK_LABELS, STATS, fmtMs, fmtDate } from '../lib/format.js';
@@ -18,6 +19,7 @@ const $ = (id) => document.getElementById(id);
 const nf = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
 const params = new URLSearchParams(location.search);
 const fixedTabId = params.has('tabId') ? Number(params.get('tabId')) : null; // ouverture dans un onglet (tests)
+const FREE = '__free__'; // choix « Saisie libre » de la liste des pages
 
 const state = {
   config: null,
@@ -47,6 +49,15 @@ function setSpecific(value) {
   $('specific').checked = !!value;
   saveDraft({ specific: !!value });
 }
+
+/** Pages du menu, puis pages connues hors menu (référentiel et mesures). */
+function pageNames() {
+  const names = [...MENU_PAGES];
+  const keys = new Set(names.map(nameKey));
+  for (const p of state.model.allPages) if (!keys.has(nameKey(p.name))) names.push(p.name);
+  return names;
+}
+
 const formLine = () => lineKey($('app').value, $('sid').value, $('version').value);
 const sessionLine = (s) => lineKey(s.app, s.sid, s.version);
 
@@ -138,8 +149,9 @@ function renderNetHint(settings) {
 function renderForm() {
   const { model, config } = state;
   $('appList').replaceChildren(...model.clients.map((name) => el('option', { value: name })));
-  $('pageList').replaceChildren(...model.allPages.map((p) => el('option', { value: p.name })));
-  if (!state.formFilled) {
+  $('pageList').replaceChildren(...pageNames().map((name) => el('option', { value: name })));
+  const refill = !state.formFilled;
+  if (refill) {
     state.formFilled = true;
     $('app').value = config.draft.app || '';
     $('sid').value = config.draft.sid || '';
@@ -147,8 +159,52 @@ function renderForm() {
     $('page').value = config.draft.page || '';
     $('specific').checked = !!config.draft.specific;
   }
+  renderPagePick(refill);
   renderLineLists();
   updateSuggestion();
+}
+
+/**
+ * Liste des pages : menu par rubrique, puis pages connues hors menu, et « Saisie libre »
+ * qui affiche le champ texte. Le champ texte (#page) garde toujours la page choisie.
+ */
+function renderPagePick(refill) {
+  const pick = $('pagePick');
+  const free = !refill && pick.value === FREE; // saisie libre en cours : on la laisse ouverte
+  const option = (value, text = value) => el('option', { value, textContent: text });
+  const menuKeys = new Set(MENU_PAGES.map(nameKey));
+  const others = state.model.allPages.filter((p) => !menuKeys.has(nameKey(p.name)));
+  pick.replaceChildren(
+    option('', '— Choisir une page —'),
+    option(FREE, '✎ Saisie libre (autre page)…'),
+    ...MENU.map((r) =>
+      r.pages ? el('optgroup', { label: r.title }, ...r.pages.map((p) => option(p.name, p.label))) : option(r.title),
+    ),
+    others.length ? el('optgroup', { label: 'Autres pages' }, ...others.map((p) => option(p.name))) : null,
+  );
+  syncPagePick(free);
+}
+
+/** Positionne la liste sur la page du champ texte (saisie libre si elle n'y est pas). */
+function syncPagePick(free = false) {
+  const pick = $('pagePick');
+  const input = $('page');
+  const value = normName(input.value);
+  const match =
+    !free && value && [...pick.options].find((o) => o.value && o.value !== FREE && nameKey(o.value) === nameKey(value));
+  if (match) {
+    pick.value = match.value;
+    input.value = match.value;
+  } else {
+    pick.value = free || value ? FREE : '';
+  }
+  input.hidden = pick.value !== FREE;
+}
+
+function focusPage() {
+  if ($('page').hidden) return $('pagePick').focus();
+  $('page').focus();
+  $('page').select();
 }
 
 /** SID et versions proposés : ceux déjà vus pour ce client d'abord. */
@@ -462,10 +518,10 @@ async function arm() {
   const app = normName($('app').value);
   const sid = normName($('sid').value);
   const version = normName($('version').value);
-  const page = normName($('page').value);
+  const page = canonical($('page').value, pageNames());
   $('formError').textContent = '';
   if (!app) return showError('Indiquez le client.', 'app');
-  if (!page) return showError('Indiquez le nom de la page.', 'page');
+  if (!page) return showError('Choisissez la page.', $('page').hidden ? 'pagePick' : 'page');
   const tab = await targetTab();
   if (!tab) return showError('Aucun onglet actif.');
   const specific = $('specific').checked;
@@ -493,16 +549,15 @@ function showError(text, focusId) {
 async function goNext() {
   const s = state.session;
   if (!s) return;
+  // Ordre des pages du référentiel, puis pages du menu qui n'y sont pas encore.
+  const known = new Set(state.model.allPages.map((p) => nameKey(p.name)));
+  const order = [...state.model.pages.map((p) => p.name), ...MENU_PAGES.filter((name) => !known.has(nameKey(name)))];
   const done = new Set(
-    state.model.pages
-      .filter((p) => cellStat(state.model, sessionLine(s), p.name, s.network, 'avg').status !== 'missing')
-      .map((p) => nameKey(p.name)),
+    order
+      .filter((name) => cellStat(state.model, sessionLine(s), name, s.network, 'avg').status !== 'missing')
+      .map(nameKey),
   );
-  const next = nextPage(
-    state.model.pages.map((p) => p.name),
-    s.page,
-    done,
-  );
+  const next = nextPage(order, s.page, done);
   await saveDraft({
     app: s.app,
     sid: s.sid || '',
@@ -513,8 +568,7 @@ async function goNext() {
   state.formFilled = false; // reprendre les valeurs du brouillon
   await send({ type: 'finish' });
   await load();
-  $('page').focus();
-  $('page').select();
+  focusPage();
 }
 
 async function relaunch(network) {
@@ -553,6 +607,14 @@ for (const id of ['app', 'sid', 'version', 'page']) {
 }
 $('app').addEventListener('change', prefillLine);
 $('page').addEventListener('change', () => setSpecific(knownSpecific($('app').value, $('page').value)));
+$('pagePick').addEventListener('change', () => {
+  const pick = $('pagePick').value;
+  $('page').hidden = pick !== FREE;
+  if (pick === FREE) return focusPage(); // champ pré-rempli avec la page en cours, prêt à être remplacé
+  $('page').value = pick;
+  saveDraft({ page: pick });
+  setSpecific(knownSpecific($('app').value, pick));
+});
 $('specific').addEventListener('change', (e) => saveDraft({ specific: e.target.checked }));
 $('appSuggestUse').addEventListener('click', () => {
   $('app').value = state.suggestion || '';
@@ -564,6 +626,7 @@ $('progress').addEventListener('click', (e) => {
   const chip = e.target.closest('[data-page]');
   if (!chip) return;
   $('page').value = chip.dataset.page;
+  syncPagePick();
   saveDraft({ page: chip.dataset.page });
   setSpecific(knownSpecific($('app').value, chip.dataset.page));
   $('arm').focus();
