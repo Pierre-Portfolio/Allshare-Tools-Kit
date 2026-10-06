@@ -427,6 +427,10 @@ try {
   await tools.click('.back');
   await tools.waitForURL(/\/panel\/home\.html\?choose$/);
   assert.deepEqual(await tools.locator('.tool strong').allTextContents(), ['Capsule', 'Insigth']);
+  await tools.waitForFunction(() => document.querySelector('#insigthCount').textContent !== '');
+  const insigthCount = await tools.textContent('#insigthCount');
+  assert.match(insigthCount, /^\d+ clients? et \d+ pages? sauvegardés$/, 'clients et pages d’Insigth');
+  console.log(`  Accueil : Insigth « ${insigthCount} »`);
   await tools.screenshot({ path: join(out, 'panel-outils.png') });
   await tools.click('#toolCapsule');
   await tools.waitForSelector('#saveOpen');

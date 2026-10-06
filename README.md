@@ -23,6 +23,9 @@ de pages.
 - **Capsule** : sauvegarde les onglets de la fenêtre Chrome en cours et les rouvre d'un clic.
 - **Insigth** : mesure du temps de réponse des pages (tout le reste de ce document).
 
+Sous chaque outil, un compteur résume ce qui est enregistré : sessions de Capsule, et clients et pages
+d'Insigth (référentiel des réglages et pages mesurées, par exemple « 3 clients et 10 pages sauvegardés »).
+
 La flèche **‹** en haut à gauche ramène au choix de l'outil. Si une mesure Insigth est en cours, le
 panneau s'ouvre directement sur Insigth pour afficher le chrono.
 

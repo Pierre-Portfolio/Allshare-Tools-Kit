@@ -47,3 +47,17 @@ export function fmtDate(ts) {
 export function fileStamp(date = new Date()) {
   return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}`;
 }
+
+/**
+ * Compteur de l'accueil sous Insigth : « 3 clients et 10 pages sauvegardés »,
+ * « 1 page sauvegardée », chaîne vide s'il n'y a rien.
+ */
+export function savedText(clients, pages) {
+  const parts = [];
+  if (clients) parts.push(`${nf.format(clients)} client${clients > 1 ? 's' : ''}`);
+  if (pages) parts.push(`${nf.format(pages)} page${pages > 1 ? 's' : ''}`);
+  if (!parts.length) return '';
+  const plural = clients + pages > 1 ? 's' : '';
+  const feminine = clients ? '' : 'e'; // accord au masculin dès qu'il y a un client
+  return `${parts.join(' et ')} sauvegardé${feminine}${plural}`;
+}

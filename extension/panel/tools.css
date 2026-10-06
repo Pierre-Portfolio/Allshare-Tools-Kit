@@ -69,6 +69,10 @@
   font-weight: 600;
 }
 
+.tool-text .tool-count.insigth {
+  color: var(--accent);
+}
+
 .tool-text .tool-count:empty {
   display: none;
 }

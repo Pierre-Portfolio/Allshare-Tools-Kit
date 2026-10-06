@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Insigth – Temps de réponse des pages",
   "short_name": "Insigth",
-  "version": "3.4.1",
+  "version": "3.4.2",
   "description": "Insigth : temps entre le clic et l'affichage complet d'une page, par client, SID, version, page et réseau (WiFi / Ethernet), avec exports Excel / CSV. Capsule : sauvegarde et réouverture des onglets d'une fenêtre.",
   "minimum_chrome_version": "116",
   "permissions": ["storage", "scripting", "sidePanel", "unlimitedStorage"],
