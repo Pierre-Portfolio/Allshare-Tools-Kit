@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Prisme · Tableau de bord</title>
+    <link rel="stylesheet" href="../common.css" />
+    <link rel="stylesheet" href="prisme.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="brand">
+        <img src="../icons/prisme.svg" alt="" width="28" height="28" />
+        <div>
+          <h1>Prisme</h1>
+          <p>Inspecteur CSV · encodage, séparateurs, anomalies</p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <select id="recentPick" aria-label="Fichiers récents" hidden></select>
+        <button id="btnDemo" type="button">Exemple</button>
+        <button id="btnOpen" type="button" class="primary">Ouvrir un CSV…</button>
+        <input id="fileInput" type="file" accept=".csv,.txt,.tsv,text/csv,text/plain" hidden />
+      </div>
+    </header>
+
+    <main class="wrap">
+      <!-- Aucun fichier : zone de dépôt -->
+      <section id="drop" class="drop">
+        <div class="big">Déposez un fichier CSV ici</div>
+        <p>
+          La ligne 1 est lue comme l'en-tête, les suivantes comme les données.<br />
+          Le fichier est analysé localement dans le navigateur (rien n'est envoyé).<br />
+          Encodage, séparateurs en trop, colonnes décalées, accents cassés, espaces invisibles… tout est listé.
+        </p>
+        <div id="dropError" class="drop-error" role="alert" hidden></div>
+        <div class="actions">
+          <button id="btnOpen2" type="button" class="primary">Choisir un fichier…</button>
+          <button id="btnDemo2" type="button">Charger un exemple avec erreurs</button>
+        </div>
+      </section>
+
+      <section id="view" hidden>
+        <!-- Résumé -->
+        <div id="cards" class="cards"></div>
+
+        <!-- Lecture et conversion : une seule ligne -->
+        <section class="export" aria-label="Lecture et conversion">
+          <label class="fld">
+            <span>Encodage attendu</span>
+            <select id="selExpected">
+              <option value="ansi">ANSI (Windows-1252)</option>
+              <option value="utf8">UTF-8</option>
+            </select>
+          </label>
+          <label class="fld">
+            <span>Lire comme</span>
+            <select id="selEnc">
+              <option value="auto">Auto</option>
+              <option value="windows-1252">ANSI (Windows-1252)</option>
+              <option value="utf-8">UTF-8</option>
+              <option value="utf-16le">UTF-16 LE</option>
+              <option value="utf-16be">UTF-16 BE</option>
+            </select>
+          </label>
+          <label class="fld">
+            <span>Séparateur</span>
+            <select id="selDelim">
+              <option value="auto">Auto</option>
+              <option value=";">; point-virgule</option>
+              <option value=",">, virgule</option>
+              <option value="\t">⇥ tabulation</option>
+              <option value="|">| barre</option>
+            </select>
+          </label>
+          <div class="fld">
+            <span>Export</span>
+            <div class="checks">
+              <label title="Convertit toutes les fins de ligne en CRLF (Windows) lors de l'export">
+                <input id="chkCrlf" type="checkbox" /> CRLF à l'export
+              </label>
+            </div>
+          </div>
+          <div class="go">
+            <button id="btnExpAnsi" type="button" title="Ré-encode le fichier en Windows-1252">Exporter en ANSI</button>
+            <button id="btnExpUtf8" type="button" class="primary" title="Ré-encode le fichier en UTF-8 avec BOM">
+              Exporter en UTF-8
+            </button>
+          </div>
+        </section>
+
+        <!-- Vues -->
+        <div class="toolbar">
+          <div id="views" class="segmented small" role="radiogroup" aria-label="Vue">
+            <button type="button" role="radio" data-view="details">Détails</button>
+            <button type="button" role="radio" data-view="raw">Données brutes</button>
+            <button type="button" role="radio" data-view="excel">Visuel d'Excel</button>
+            <button type="button" role="radio" data-view="text">CSV brut</button>
+          </div>
+          <span id="detailTools" class="view-tools">
+            <input id="search" type="search" placeholder="Rechercher dans les données…" aria-label="Rechercher" />
+            <label class="toggle"><input id="chkIssues" type="checkbox" /> Lignes en anomalie</label>
+            <label class="toggle"><input id="chkInvis" type="checkbox" /> Espaces visibles</label>
+          </span>
+          <button id="btnCopyTxt" type="button" hidden>Copier le texte</button>
+        </div>
+        <p id="viewHelp" class="help"></p>
+
+        <div id="paneDetails" class="pane">
+          <details id="issuesBox" class="issues">
+            <summary id="issuesSummary">Anomalies</summary>
+            <div id="issues"></div>
+          </details>
+          <div id="gridWrap" class="grid-wrap"></div>
+        </div>
+        <div id="paneRaw" class="pane" hidden><div id="rawWrap" class="rawdata-wrap"></div></div>
+        <div id="paneExcel" class="pane" hidden><div id="xlWrap" class="xl"></div></div>
+        <div id="paneText" class="pane" hidden><div id="txtWrap" class="txt-wrap"></div></div>
+      </section>
+    </main>
+
+    <!-- Inspecteur de cellule -->
+    <aside id="insp" class="insp" aria-labelledby="inspTitle">
+      <div class="ih">
+        <h2 id="inspTitle">Détail</h2>
+        <button id="inspClose" type="button">Fermer <kbd>Échap</kbd></button>
+      </div>
+      <div id="inspBody" class="ib"></div>
+    </aside>
+
+    <div id="dragOverlay" class="drag-overlay" hidden><div>Déposez le fichier pour l'analyser</div></div>
+    <style id="colHlStyle"></style>
+    <div id="toast" class="toast" role="status"></div>
+    <script type="module" src="prisme.js"></script>
+  </body>
+</html>

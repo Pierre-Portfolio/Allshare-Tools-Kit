@@ -426,12 +426,11 @@ try {
   await tools.waitForURL(/\/panel\/panel\.html$/);
   await tools.click('.back');
   await tools.waitForURL(/\/panel\/home\.html\?choose$/);
-  assert.deepEqual(await tools.locator('.tool strong').allTextContents(), ['Capsule', 'Insigth']);
+  assert.deepEqual(await tools.locator('.tool strong').allTextContents(), ['Capsule', 'Insigth', 'Prisme']);
   await tools.waitForFunction(() => document.querySelector('#insigthCount').textContent !== '');
   const insigthCount = await tools.textContent('#insigthCount');
   assert.match(insigthCount, /^\d+ clients? et \d+ pages? sauvegardés$/, 'clients et pages d’Insigth');
   console.log(`  Accueil : Insigth « ${insigthCount} »`);
-  await tools.screenshot({ path: join(out, 'panel-outils.png') });
   await tools.click('#toolCapsule');
   await tools.waitForSelector('#saveOpen');
   assert.equal(await tools.getAttribute('#saved', 'open'), null, 'sessions repliées au départ');
@@ -485,9 +484,115 @@ try {
   tools.once('dialog', (d) => d.accept());
   await tools.click('.cap-actions .danger');
   await tools.waitForSelector('#savedEmpty:not([hidden])');
+
+  // 12. Prisme : CSV refusé, fichier propre, exemple avec erreurs, export, tableau de bord
+  await tools.setViewportSize({ width: 380, height: 1000 });
+  await tools.goto(`chrome-extension://${extId}/panel/home.html?choose`);
+  await tools.click('#toolPrisme');
+  await tools.waitForSelector('#drop');
+  assert.ok(await tools.isHidden('#result'), 'aucun fichier au départ');
+  await tools.setInputFiles('#fileInput', {
+    name: 'classeur.xlsx',
+    mimeType: 'application/octet-stream',
+    buffer: Buffer.from([0x50, 0x4b, 3, 4, 0, 0, 0, 0]),
+  });
+  await tools.waitForSelector('#dropError:not([hidden])');
+  assert.match(await tools.textContent('#dropError'), /n'est pas un fichier CSV : c'est un classeur Excel/);
+  const salaries =
+    'Matricule;Nom;Prénom;Salaire\r\nE1;MARTIN;Zoé;27410,00\r\nE2;PETIT;Hélène;31200,50\r\nE3;DURAND;Noël;29800,00\r\n';
+  await tools.setInputFiles('#fileInput', {
+    name: 'salaries.csv',
+    mimeType: 'text/csv',
+    buffer: Buffer.from(salaries, 'latin1'),
+  });
+  await tools.waitForSelector('#result:not([hidden])');
+  assert.ok(await tools.isHidden('#dropError'));
+  assert.equal(await tools.getAttribute('#resVerdict', 'class'), 'v-verdict ok');
+  assert.match(await tools.textContent('#resVerdict'), /Aucune erreur ni alerte/);
+  assert.match(await tools.textContent('#resFacts'), /ANSI \(Windows-1252\).*point-virgule.*CRLF/);
+  await tools.click('#demo');
+  await tools.waitForFunction(() => document.querySelector('#resName').textContent === 'exemple_avec_erreurs.csv');
+  assert.equal(await tools.getAttribute('#resVerdict', 'class'), 'v-verdict error');
+  assert.match(await tools.textContent('#resVerdict'), /10 erreurs · 15 alertes/);
+  assert.equal(await tools.locator('#resIssues .v-issue').count(), 5);
+  // Encodage attendu partagé avec le tableau de bord
+  await tools.click('[data-expected="utf8"]');
+  await tools.waitForFunction(() => document.querySelector('[data-expected="utf8"]').ariaChecked === 'true');
+  assert.equal((await storage(() => chrome.storage.local.get('prismeSettings'))).prismeSettings.expected, 'utf8');
+  await tools.click('[data-expected="ansi"]');
+  // Export ANSI, fins de ligne Windows
+  const [exp] = await Promise.all([tools.waitForEvent('download'), tools.click('#expAnsi')]);
+  assert.equal(exp.suggestedFilename(), 'exemple_avec_erreurs_ANSI.csv');
+  await exp.saveAs(join(out, 'prisme-export-ansi.csv'));
+  const exported = readFileSync(join(out, 'prisme-export-ansi.csv'));
+  assert.ok(exported.toString('latin1').startsWith('Code;Libellé;'), 'export en ANSI');
+  assert.ok(!/[^\r]\n/.test(exported.toString('latin1')), 'fins de ligne CRLF');
+  console.log(`  Prisme : export ${exp.suggestedFilename()} (${exported.length} octets)`);
+  await tools.click('#recent > summary');
+  assert.equal(await tools.textContent('#recentCount'), '(2)');
+  await tools.waitForFunction(() => !document.querySelector('#toast').classList.contains('show'));
+  await sleep(300);
+  await tools.screenshot({ path: join(out, 'prisme.png'), fullPage: true });
+
+  // Tableau de bord : résumé, anomalies, inspecteur de cellule, 4 vues
+  const [dash] = await Promise.all([context.waitForEvent('page'), tools.click('#dash')]);
+  await dash.setViewportSize({ width: 1360, height: 900 });
+  await dash.waitForSelector('#cards .card >> nth=6');
+  assert.match(dash.url(), /\/prisme\/prisme\.html\?id=/);
+  assert.equal(await dash.title(), 'exemple_avec_erreurs.csv · Prisme');
+  assert.equal(await dash.getAttribute('#issuesBox', 'open'), null, 'anomalies repliées au départ');
+  await dash.screenshot({ path: join(out, 'prisme-dashboard.png') });
+  await dash.click('#issuesSummary');
+  await dash.click('.issue[data-code="mojibake"] .loc >> nth=0');
+  await dash.waitForSelector('#insp.open');
+  assert.match(await dash.textContent('#inspTitle'), /^Ligne \d+ · /);
+  assert.match(await dash.textContent('#inspBody'), /Caractères/);
+  await sleep(400);
+  await dash.screenshot({ path: join(out, 'prisme-inspecteur.png') });
+  await dash.keyboard.press('Escape');
+  await sleep(400);
+  await dash.click('[data-view="excel"]');
+  await dash.waitForSelector('#xlWrap .xlgrid');
+  assert.match(await dash.textContent('#viewHelp'), /Simulation d'un double-clic/);
+  await dash.click('#xlWrap td[data-xr="1"][data-xc="2"]');
+  assert.equal(await dash.textContent('#xlName'), 'C2');
+  assert.equal(await dash.textContent('#xlFormula'), '12,5');
+  await dash.screenshot({ path: join(out, 'prisme-excel.png') });
+  await dash.click('[data-view="raw"]');
+  await dash.waitForSelector('#rawWrap table.rawdata');
+  await dash.click('[data-view="text"]');
+  assert.match(await dash.textContent('#txtWrap .txt-body'), /^Code;Libellé;Montant/);
+  await dash.click('[data-view="details"]');
+  await dash.selectOption('#selDelim', ',');
+  await dash.waitForFunction(() => /virgule/.test(document.querySelector('#cards').textContent));
+  await dash.selectOption('#selDelim', 'auto');
+  // Une anomalie cliquée dans le panneau : le même onglet du tableau de bord s'ouvre dessus
+  const pagesBeforeIssue = context.pages().length;
+  await tools.click('#resIssues .v-issue >> nth=0');
+  await dash.waitForURL(/[?&]issue=/);
+  await dash.waitForSelector('#issuesBox[open] .issue.flash');
+  assert.equal(context.pages().length, pagesBeforeIssue, 'onglet du tableau de bord réutilisé');
+  await sleep(1800);
+  await dash.emulateMedia({ colorScheme: 'dark' });
+  await dash.screenshot({ path: join(out, 'prisme-dashboard-sombre.png') });
+  await dash.close();
+  console.log('  Prisme : panneau, tableau de bord et onglet réutilisé');
+  // Accueil : compteurs sous chaque outil
+  await tools.setViewportSize({ width: 380, height: 640 });
+  await tools.goto(`chrome-extension://${extId}/panel/home.html?choose`);
+  await tools.waitForFunction(() => document.querySelector('#prismeCount').textContent === '2 fichiers récents');
+  await tools.mouse.move(370, 630);
+  await tools.screenshot({ path: join(out, 'panel-outils.png') });
+  // Retrait d'un fichier récent
+  await tools.click('#toolPrisme');
+  await tools.waitForSelector('#result:not([hidden])');
+  await tools.click('#recent > summary');
+  tools.once('dialog', (d) => d.accept());
+  await tools.click('.pfile >> nth=1 >> .pf-del');
+  await tools.waitForFunction(() => document.querySelector('#recentCount').textContent === '(1)');
   await tools.close();
 
-  // 12. Démo à l'échelle : 150 clients × 20 pages (captures pour le README)
+  // 13. Démo à l'échelle : 150 clients × 20 pages (captures pour le README)
   const demo = await storage(async () => {
     const PAGES = [
       'Accueil',

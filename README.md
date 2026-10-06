@@ -16,15 +16,18 @@ de pages.
 
 À chaque ouverture, le panneau latéral demande **Quels outils ?** :
 
-| Quels outils ? | Capsule |
-| :-: | :-: |
-| ![Quels outils ?](docs/panel-outils.png) | ![Capsule](docs/capsule.png) |
+| Quels outils ? | Capsule | Prisme |
+| :-: | :-: | :-: |
+| ![Quels outils ?](docs/panel-outils.png) | ![Capsule](docs/capsule.png) | ![Prisme](docs/prisme.png) |
 
 - **Capsule** : sauvegarde les onglets de la fenêtre Chrome en cours et les rouvre d'un clic.
-- **Insigth** : mesure du temps de réponse des pages (tout le reste de ce document).
+- **Insigth** : mesure du temps de réponse des pages (le cœur de ce document).
+- **Prisme** : passe un fichier CSV au crible (encodage, séparateurs, colonnes décalées, accents
+  cassés…) et le convertit en ANSI ou en UTF-8.
 
-Sous chaque outil, un compteur résume ce qui est enregistré : sessions de Capsule, et clients et pages
-d'Insigth (référentiel des réglages et pages mesurées, par exemple « 3 clients et 10 pages sauvegardés »).
+Sous chaque outil, un compteur résume ce qui est enregistré : sessions de Capsule, clients et pages
+d'Insigth (référentiel des réglages et pages mesurées, par exemple « 3 clients et 10 pages sauvegardés »),
+fichiers récents de Prisme.
 
 La flèche **‹** en haut à gauche ramène au choix de l'outil. Si une mesure Insigth est en cours, le
 panneau s'ouvre directement sur Insigth pour afficher le chrono.
@@ -45,6 +48,66 @@ panneau s'ouvre directement sur Insigth pour afficher le chrono.
 Seules les pages web sont enregistrées (http, https, fichiers locaux) : pas les pages internes de
 Chrome (`chrome://…`) ni la navigation privée. Les sessions restent dans le navigateur ; elles ne font
 pas partie de la sauvegarde JSON des mesures.
+
+### Prisme : inspection et conversion de CSV
+
+Prisme reprend l'inspecteur CSV [ConvertMvt](https://github.com/Pierre-Portfolio/ConvertMvt) dans le
+design de l'extension. On dépose un fichier de mouvements ou d'import, et Prisme dit **tout ce qui
+cloche** avant qu'il parte dans un logiciel métier ou qu'il soit ouvert dans Excel. Le fichier est
+analysé dans le navigateur : rien n'est envoyé.
+
+**Dans le panneau :**
+
+1. Choisissez l'**encodage attendu** : **ANSI** (Windows-1252, celui d'un export Excel français) ou
+   **UTF-8**. Tout écart est signalé.
+2. **Déposez un CSV** sur le panneau, ou **Choisir un fichier…**, ou **Exemple avec erreurs**. Les
+   classeurs (`.xlsx`, `.xls`, `.ods`), archives, PDF et images sont refusés, avec la marche à suivre
+   pour enregistrer le fichier en CSV depuis Excel.
+3. Le **verdict** s'affiche : erreurs et alertes, encodage, séparateur, fins de ligne, lignes, colonnes,
+   puis les 5 principales anomalies. Un clic sur une anomalie ouvre le tableau de bord dessus.
+4. **Exporter en ANSI** (les caractères non convertibles sont comptés et remplacés par « ? ») ou
+   **Exporter en UTF-8** (avec BOM). **CRLF à l'export** met toutes les fins de ligne au format Windows.
+5. **Fichiers récents** (replié au départ) garde les 10 derniers fichiers : un clic les réaffiche, ✕ les
+   retire.
+
+**Le tableau de bord** s'ouvre avec **Ouvrir le tableau de bord ↗** (ou **Tableau de bord** en haut du
+panneau). S'il est déjà ouvert, son onglet est réutilisé.
+
+![Tableau de bord Prisme](docs/prisme-dashboard.png)
+
+- **Résumé** : fichier, encodage, séparateur (et confiance de la détection), fins de ligne, lignes,
+  colonnes, anomalies.
+- **Lecture et conversion** : encodage attendu, et au besoin encodage de lecture et séparateur forcés
+  (l'analyse est recalculée aussitôt) ; exports ANSI / UTF-8.
+- **4 vues** :
+  - **Détails** : anomalies groupées par type et par gravité (repliées au départ), puis la grille des
+    données surlignée. Recherche, filtres « Lignes en anomalie » et « Espaces visibles ». Un clic sur un
+    emplacement (`L12 · Montant`) saute à la cellule ;
+  - **Données brutes** : les valeurs telles qu'elles sont dans le fichier, colonnes de largeur identique ;
+  - **Visuel d'Excel** : ce que voit l'utilisateur qui double-clique sur le fichier dans un Excel
+    français (lecture ANSI sauf BOM, découpe sur `;`, nombres et dates convertis, notation scientifique) ;
+  - **CSV brut** : le texte ligne par ligne, comme dans le Bloc-notes, avec **Copier le texte**.
+- **Inspecteur de cellule** : un clic sur une cellule affiche ses anomalies et celles de sa ligne, sa
+  valeur, son type, la ligne brute avec ses séparateurs, et ses caractères un par un (code Unicode,
+  octets ANSI et UTF-8). <kbd>Échap</kbd> pour fermer.
+
+| Inspecteur de cellule | Visuel d'Excel |
+| :-: | :-: |
+| ![Inspecteur de cellule](docs/prisme-inspecteur.png) | ![Visuel d'Excel](docs/prisme-excel.png) |
+
+**53 contrôles**, classés en **erreur**, **alerte** ou **info**, chacun avec une piste de correction :
+
+| Famille | Contrôles |
+| --- | --- |
+| Encodage | UTF-8 au lieu d'ANSI (et inversement), BOM, UTF-16, encodage mixte, octets non définis en Windows-1252 |
+| Structure | en-tête vide, en double ou avec espaces, colonnes en trop ou manquantes, séparateur final, lignes vides ou en double, colonnes entièrement vides |
+| Guillemets | guillemet jamais refermé, guillemet isolé, texte après un guillemet fermant |
+| Contenu | accents cassés (« Ã© »), caractère `�`, « ? » au milieu d'un mot, espaces insécables, caractères invisibles ou de contrôle, formules (`=` `+` `-` `@`, risque d'injection CSV), notation scientifique, valeurs de plus de 255 caractères |
+| Colonnes | type atypique, séparateur décimal incohérent (`12,50` / `12.50`), formats de date mélangés, dates invalides (31/02, mois 13) |
+| Fins de ligne | mixtes (CRLF / LF / CR), Unix ou Mac classique, pas de retour final |
+
+Les fichiers récents restent dans le navigateur ; ils ne font pas partie de la sauvegarde JSON des
+mesures.
 
 ## Le parcours
 
@@ -253,7 +316,8 @@ Données**, faites « Sauvegarder » sur le premier poste puis « Importer / fus
 
 ## Confidentialité et permissions
 
-- `storage`, `unlimitedStorage` : mesures et réglages stockés localement dans Chrome.
+- `storage`, `unlimitedStorage` : mesures, réglages et fichiers récents de Prisme stockés localement
+  dans Chrome.
 - `sidePanel` : le panneau de mesure.
 - `scripting` + accès aux sites : injection des scripts de mesure dans l'onglet mesuré,
   uniquement pendant une mesure.
@@ -270,8 +334,9 @@ extension/
     page-hook.js         contexte de la page : suivi des requêtes fetch / XHR
     content.js           mesure clic → affichage complet, détail du chargement, indicateur
   panel/                 panneau latéral : choix de l'outil (home), Insigth (panel : formulaire, chrono,
-                         résultat, détail), Capsule (capsule)
+                         résultat, détail), Capsule (capsule), Prisme (prisme : dépôt, verdict, export)
   report/                tableau de bord : export, grille clients × pages, mesures
+  prisme/                tableau de bord de Prisme : résumé, 4 vues, inspecteur de cellule
   options/               référentiel clients / pages, réglages, anomalies, données
   lib/
     report.js            agrégation (lignes client · SID · version), anomalies, exports Excel / CSV
@@ -281,6 +346,8 @@ extension/
     names.js             noms (normalisation, suggestion du client, page suivante)
     menu.js              pages du menu de l'application, par rubrique (liste du champ « Page »)
     capsule.js           Capsule : onglets de la fenêtre, sessions sauvegardées, réouverture
+    prisme.js            Prisme : encodage, séparateur, lecture CSV, 53 contrôles, visuel d'Excel, conversion
+    prisme-files.js      Prisme : fichiers récents (contenu dans IndexedDB), réglages, tableau de bord
     apps.js              import en masse des clients et des pages
     urls.js, export.js, format.js
 tests/
@@ -300,7 +367,8 @@ npm run zip            # crée insigth-extension.zip (dossier extension/)
 Le test de bout en bout lance deux applications de démonstration dont les délais sont connus :
 serveur 300 / 600 ms, appel de données 500 ms, navigation sans rechargement 400 ms. Il déroule tout
 le parcours du panneau : client / SID / version, relance en Ethernet, page suivante, application
-sans rechargement, annulation, suggestion, puis l'accueil « Quels outils ? » et Capsule (sauvegarde,
-réouverture, suppression). Il vérifie le détail des temps (attente serveur, appel
+sans rechargement, annulation, suggestion, puis l'accueil « Quels outils ? », Capsule (sauvegarde,
+réouverture, suppression) et Prisme (fichier refusé, fichier propre, exemple avec erreurs, export ANSI,
+tableau de bord et ses 4 vues, inspecteur, onglet réutilisé). Il vérifie le détail des temps (attente serveur, appel
 AJAX), les 4 exports, le CSV avec les URL et les suppressions, puis génère une démo de 150 clients ×
 20 pages. Captures et fichiers dans `tests/e2e/out/`.

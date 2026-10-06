@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Prisme</title>
+    <link rel="stylesheet" href="../common.css" />
+    <link rel="stylesheet" href="panel.css" />
+    <link rel="stylesheet" href="tools.css" />
+  </head>
+  <body>
+    <header class="top">
+      <a class="back" href="home.html?choose" title="Changer d'outil" aria-label="Changer d'outil">‹</a>
+      <img src="../icons/prisme.svg" alt="" width="22" height="22" />
+      <h1>Prisme</h1>
+      <button id="openDash" type="button" class="ghost">Tableau de bord</button>
+    </header>
+    <p class="hint tagline">Passez un CSV au crible : encodage, séparateurs, colonnes décalées, accents cassés…</p>
+
+    <section>
+      <h2>Encodage attendu</h2>
+      <div id="expected" class="segmented" role="radiogroup" aria-label="Encodage attendu">
+        <button type="button" role="radio" data-expected="ansi">ANSI</button>
+        <button type="button" role="radio" data-expected="utf8">UTF-8</button>
+      </div>
+    </section>
+
+    <!-- Fichier en cours -->
+    <section id="result" class="card verdict" hidden>
+      <div class="v-head">
+        <strong id="resName" class="v-name"></strong>
+        <span id="resMeta" class="v-meta"></span>
+      </div>
+      <div id="resVerdict" class="v-verdict"></div>
+      <dl id="resFacts" class="v-facts"></dl>
+      <h3 id="resIssuesTitle" class="v-title">Principales anomalies</h3>
+      <ul id="resIssues" class="v-issues"></ul>
+      <button id="dash" type="button" class="big primary">Ouvrir le tableau de bord ↗</button>
+      <div class="row">
+        <button id="expAnsi" type="button" title="Ré-encode le fichier en Windows-1252">Exporter en ANSI</button>
+        <button id="expUtf8" type="button" title="Ré-encode le fichier en UTF-8 avec BOM">Exporter en UTF-8</button>
+      </div>
+      <label class="check-line">
+        <input id="crlf" type="checkbox" />
+        <span>CRLF à l'export</span>
+        <small>toutes les fins de ligne au format Windows</small>
+      </label>
+    </section>
+
+    <!-- Dépôt d'un fichier -->
+    <div id="drop" class="drop">
+      <strong id="dropTitle">Déposez un fichier CSV ici</strong>
+      <span class="hint">.csv, .txt, .tsv · analysé dans le navigateur, rien n'est envoyé</span>
+      <div class="row">
+        <button id="pick" type="button" class="primary">Choisir un fichier…</button>
+        <button id="demo" type="button">Exemple avec erreurs</button>
+      </div>
+      <input id="fileInput" type="file" accept=".csv,.txt,.tsv,text/csv,text/plain" hidden />
+    </div>
+    <div id="dropError" class="drop-error" role="alert" hidden></div>
+
+    <!-- Fichiers récents (repliés au départ) -->
+    <details id="recent" class="saved card">
+      <summary>
+        <span>Fichiers récents</span>
+        <span id="recentCount" class="muted"></span>
+      </summary>
+      <ul id="files" class="pfiles"></ul>
+      <p id="recentEmpty" class="hint" hidden>Aucun fichier pour le moment : déposez un CSV ci-dessus.</p>
+    </details>
+
+    <div id="toast" class="toast" role="status"></div>
+    <script type="module" src="prisme.js"></script>
+  </body>
+</html>
