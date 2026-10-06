@@ -1,6 +1,7 @@
 // Test de bout en bout d'Allshare Tools Kit : charge l'extension dans Chromium (Playwright), sert deux
 // applications de démonstration avec des délais connus, navigue, puis vérifie
-// les mesures d'Insight, le rapport (cases rouges) et les exports, puis Capsule, Prisme et Training.
+// les mesures d'Insight, le rapport (cases rouges) et les exports, puis Capsule, Prisme, Training
+// et la sauvegarde de toutes les données (export et import depuis l'accueil).
 //
 //   npm install && npm run test:e2e
 //
@@ -803,9 +804,71 @@ try {
   await tools.goto(`chrome-extension://${extId}/panel/home.html?choose`);
   await tools.waitForFunction(() => document.querySelector('#trainingCount').textContent === '3 exercices faits · 3 %');
   console.log('  Training : 3 exercices faits, progression enregistrée, rechargée, exportée et réimportée');
+
+  // 14. Mes données : export de toutes les données depuis l'accueil, extension vidée, réimport
+  await tools.setViewportSize({ width: 380, height: 900 });
+  await tools.evaluate(() => localStorage.setItem('training.theme', 'dark'));
+  const kitBefore = await storage(() => chrome.storage.local.get(null));
+  const kitFileId = kitBefore.prismeFiles[0].id;
+  const [kitFile] = await Promise.all([tools.waitForEvent('download'), tools.click('#exportAll')]);
+  assert.match(kitFile.suggestedFilename(), /^allshare-tools-kit-donnees-\d{8}-\d{4}\.json$/);
+  const kitPath = join(out, 'allshare-tools-kit-donnees.json');
+  await kitFile.saveAs(kitPath);
+  const kit = JSON.parse(readFileSync(kitPath, 'utf8'));
+  assert.equal(kit.format, 'allshare-tools-kit');
+  assert.deepEqual(kit.storage, kitBefore, 'tout chrome.storage.local');
+  assert.ok(kit.prismeContents[kitFileId], 'contenu du fichier récent de Prisme');
+  assert.equal(kit.localStorage['training.theme'], 'dark');
+  await tools.waitForFunction(() => document.querySelector('#dataStatus').textContent !== '');
+  assert.match(
+    await tools.textContent('#dataStatus'),
+    /^Fichier téléchargé : \d+ mesures Insight, 1 fichier Prisme, \d+ réponses Training et les réglages\.$/,
+  );
+  await tools.screenshot({ path: join(out, 'panel-donnees.png'), fullPage: true });
+  // Extension supprimée puis réinstallée : plus aucune donnée
+  await tools.evaluate(async (id) => (await import('../lib/prisme-files.js')).deleteFileBytes(id), kitFileId);
+  await tools.evaluate(() => localStorage.clear());
+  await storage(() => chrome.storage.local.clear());
+  await tools.reload();
+  await tools.waitForSelector('#importAll');
+  await tools.setInputFiles('#importAllFile', {
+    name: 'autre.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from('{}'),
+  });
+  await tools.waitForFunction(() => document.querySelector('#dataStatus').classList.contains('error'));
+  assert.equal(await tools.textContent('#dataStatus'), "Ce fichier n'est pas une sauvegarde Allshare Tools Kit.");
+  await tools.setInputFiles('#importAllFile', kitPath);
+  await tools.waitForFunction(() => /^Données importées : /.test(document.querySelector('#dataStatus').textContent));
+  // Identifiants des clients et des pages recréés, listes vides absentes : sans importance
+  const comparable = (s) =>
+    Object.fromEntries(
+      Object.entries(s)
+        .filter(([, v]) => !(Array.isArray(v) && !v.length))
+        .map(([k, v]) => [k, k === 'apps' || k === 'pages' ? v.map(({ id, ...rest }) => rest) : v]),
+    );
+  const kitAfter = await storage(() => chrome.storage.local.get(null));
+  assert.deepEqual(comparable(kitAfter), comparable(kitBefore), 'données restaurées');
+  const restoredBytes = await tools.evaluate(
+    async (id) => [...(await (await import('../lib/prisme-files.js')).getFileBytes(id))],
+    kitFileId,
+  );
+  assert.equal(
+    Buffer.from(restoredBytes).toString('base64'),
+    kit.prismeContents[kitFileId],
+    'fichier Prisme rouvrable',
+  );
+  assert.equal(await tools.evaluate(() => localStorage.getItem('training.theme')), 'dark');
+  await tools.waitForFunction(() => document.querySelector('#trainingCount').textContent === '3 exercices faits · 3 %');
+  assert.equal(await tools.textContent('#prismeCount'), '1 fichier récent');
+  // Le même fichier une seconde fois : rien n'est doublé
+  await tools.setInputFiles('#importAllFile', kitPath);
+  await tools.waitForFunction(() => /^Rien de nouveau/.test(document.querySelector('#dataStatus').textContent));
+  assert.equal(Object.keys(await storage(() => chrome.storage.local.get(null))).length, Object.keys(kitAfter).length);
+  console.log(`  Mes données : ${Object.keys(kit.storage).length} clés exportées, restaurées après effacement`);
   await tools.close();
 
-  // 14. Démo à l'échelle : 150 clients × 20 pages (captures pour le README)
+  // 15. Démo à l'échelle : 150 clients × 20 pages (captures pour le README)
   const demo = await storage(async () => {
     const PAGES = [
       'Accueil',

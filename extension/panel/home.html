@@ -56,6 +56,21 @@
       </a>
     </nav>
 
+    <section class="data" aria-labelledby="dataTitle">
+      <h2 id="dataTitle">Mes données</h2>
+      <div class="data-actions">
+        <button id="exportAll" type="button" class="primary">⬇ Exporter mes données Tools Kit</button>
+        <button id="importAll" type="button">⬆ Importer mes données Tools Kit</button>
+        <input id="importAllFile" type="file" accept="application/json,.json" hidden />
+      </div>
+      <p class="hint">
+        Avant de mettre à jour ou de supprimer l'extension, ou pour passer sur un autre poste : un seul fichier avec
+        toutes vos données (mesures, sessions, fichiers Prisme, progression et réglages). L'import les ajoute à celles
+        de ce poste, sans rien effacer.
+      </p>
+      <p id="dataStatus" class="data-status" role="status"></p>
+    </section>
+
     <script type="module" src="home.js"></script>
   </body>
 </html>

@@ -55,6 +55,10 @@ export async function getFileBytes(id) {
   return row ? new Uint8Array(row.bytes) : null;
 }
 
+/** Enregistre ou oublie les octets d'un fichier (sauvegarde complète d'Allshare Tools Kit). */
+export const putFileBytes = (id, bytes) => tx('readwrite', (s) => s.put({ id, bytes }));
+export const deleteFileBytes = (id) => tx('readwrite', (s) => s.delete(id));
+
 // ---------------------------------------------------------------- Fichiers récents
 
 export async function getFiles() {

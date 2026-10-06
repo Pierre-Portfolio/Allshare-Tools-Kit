@@ -105,6 +105,38 @@
   font-size: 22px;
 }
 
+/* Mes données : sauvegarde complète de l'extension */
+.data {
+  margin: 18px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.data-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.data-actions button {
+  width: 100%;
+  padding: 9px 12px;
+}
+
+.data-status {
+  margin: 8px 0 0;
+  color: var(--ok);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.data-status.error {
+  color: #dc2626;
+}
+
+.data-status:empty {
+  display: none;
+}
+
 /* ---------- Capsule */
 .tagline {
   margin: -6px 0 12px;

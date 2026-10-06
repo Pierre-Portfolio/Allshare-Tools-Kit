@@ -37,7 +37,7 @@ export const DEFAULT_SETTINGS = {
   exportUrlEnd: false, // ajouter la fin d'URL
 };
 
-const MEASURE_PREFIX = 'm_';
+export const MEASURE_PREFIX = 'm_';
 
 export function newId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -309,6 +309,22 @@ export async function importBackup(data) {
   if (data.version === 1) incoming = { ...incoming, ...convertV1(incoming.apps, incoming.pages, incoming.measures) };
 
   const { apps, pages } = await getConfig();
+  const merged = mergeInsight({ apps, pages, measures: await getMeasures() }, incoming);
+  await chrome.storage.local.set({
+    apps: merged.apps,
+    pages: merged.pages,
+    ...Object.fromEntries(merged.measures.map((m) => [MEASURE_PREFIX + m.id, m])),
+  });
+  return { added: merged.measures.length, skipped: incoming.measures.length - merged.measures.length };
+}
+
+/**
+ * Fusionne les clients, pages et mesures d'une sauvegarde avec ceux du poste. Fonction pure.
+ * Clients et pages reconnus par leur nom (URL des clients réunies), mesures par leur identifiant :
+ * une mesure déjà présente ou invalide est ignorée, les autres prennent les noms du poste.
+ * @returns {{apps: object[], pages: object[], measures: object[]}} référentiels complets, mesures ajoutées
+ */
+export function mergeInsight({ apps, pages, measures }, incoming) {
   const nextApps = apps.map((a) => ({ ...a, baseUrls: [...(a.baseUrls || [])] }));
   for (const a of incoming.apps) {
     if (!a || !a.name) continue;
@@ -325,9 +341,8 @@ export async function importBackup(data) {
   const appNames = nextApps.map((a) => a.name);
   const pageNames = nextPages.map((p) => p.name);
 
-  const existing = new Set((await getMeasures()).map((m) => m.id));
-  const toSet = {};
-  let added = 0;
+  const existing = new Set(measures.map((m) => m.id));
+  const added = [];
   for (const m of incoming.measures) {
     if (!m || !m.id || existing.has(m.id) || typeof m.duration !== 'number' || !m.app || !m.page) continue;
     for (const [list, name] of [
@@ -336,14 +351,12 @@ export async function importBackup(data) {
     ]) {
       if (!list.some((n) => nameKey(n) === nameKey(name))) list.push(normName(name));
     }
-    toSet[MEASURE_PREFIX + m.id] = { ...m, app: canonical(m.app, appNames), page: canonical(m.page, pageNames) };
+    added.push({ ...m, app: canonical(m.app, appNames), page: canonical(m.page, pageNames) });
     existing.add(m.id);
-    added++;
   }
   for (const n of appNames)
     if (!nextApps.some((a) => a.name === n)) nextApps.push({ id: newId(), name: n, baseUrls: [] });
   for (const n of pageNames)
     if (!nextPages.some((p) => p.name === n)) nextPages.push({ id: newId(), name: n, hidden: false });
-  await chrome.storage.local.set({ apps: nextApps, pages: nextPages, ...toSet });
-  return { added, skipped: incoming.measures.length - added };
+  return { apps: nextApps, pages: nextPages, measures: added };
 }
