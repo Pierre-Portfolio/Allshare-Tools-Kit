@@ -1,10 +1,11 @@
-// Accueil du panneau latéral : « Quels outils ? » (Capsule, Insight, Prisme).
+// Accueil du panneau latéral d'Allshare Tools Tips : « Quels outils ? » (Training, Capsule, Insight, Prisme).
 // Affiché à chaque ouverture du panneau, sauf pendant une mesure Insight en cours.
 import { getCapsules } from '../lib/capsule.js';
 import { getFiles } from '../lib/prisme-files.js';
 import { getConfig, getMeasures } from '../lib/storage.js';
 import { buildModel } from '../lib/report.js';
 import { savedText } from '../lib/format.js';
+import { getProgress, trainingCountText } from '../lib/training.js';
 
 const ACTIVE = ['armed', 'measuring', 'rearming'];
 const chosen = new URLSearchParams(location.search).has('choose'); // retour volontaire depuis un outil
@@ -18,12 +19,14 @@ async function init() {
     return location.replace('panel.html');
   }
   if (!chosen && isActive(session)) return location.replace('panel.html');
-  const [capsules, { apps, pages }, measures, files] = await Promise.all([
+  const [capsules, { apps, pages }, measures, files, progress] = await Promise.all([
     getCapsules(),
     getConfig(),
     getMeasures(),
     getFiles(),
+    getProgress(),
   ]);
+  document.getElementById('trainingCount').textContent = trainingCountText(progress);
   const n = capsules.length;
   document.getElementById('capsuleCount').textContent = n
     ? `${n} session${n > 1 ? 's' : ''} sauvegardée${n > 1 ? 's' : ''}`

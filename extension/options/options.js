@@ -129,7 +129,7 @@ function renderApps() {
   empty.hidden = rows.length > 0;
   empty.textContent = state.apps.length
     ? 'Aucun client ne correspond à la recherche.'
-    : 'Aucun client : ils s’ajoutent à chaque mesure, ou collez votre liste avec « Import en masse ».';
+    : "Aucun client : ils s'ajoutent à chaque mesure, ou collez votre liste avec « Import en masse ».";
   $('navApps').textContent = state.apps.length ? nf.format(state.apps.length) : '';
 }
 
@@ -501,9 +501,9 @@ function bindSettings() {
 
 function renderData() {
   const measures = state.measures;
-  const wifi = measures.filter((m) => m.network === 'wifi').length;
+  const ethernet = measures.filter((m) => m.network === 'ethernet').length;
   $('dataSummary').textContent = measures.length
-    ? `${nf.format(measures.length)} mesure(s) enregistrée(s) : ${nf.format(wifi)} en WiFi, ${nf.format(measures.length - wifi)} en Ethernet.`
+    ? `${nf.format(measures.length)} mesure(s) enregistrée(s) : ${nf.format(ethernet)} en Ethernet, ${nf.format(measures.length - ethernet)} en WiFi.`
     : 'Aucune mesure enregistrée.';
 }
 

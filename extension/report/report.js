@@ -10,7 +10,7 @@ const nf = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
 const pf = new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFractionDigits: 0, signDisplay: 'exceptZero' });
 const pct = new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFractionDigits: 0 });
 const xf = (r) => r.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
-const VIEWS = ['both', 'wifi', 'ethernet', 'diff'];
+const VIEWS = ['both', 'ethernet', 'wifi', 'diff'];
 const RAW_PAGE = 100;
 
 const state = {
@@ -49,8 +49,8 @@ function toast(text) {
 // ---------------------------------------------------------------- Export
 
 const EXPORT_HELP = {
-  all: 'Excel : feuilles WiFi + Ethernet, WiFi, Ethernet, Écart, Référence par page, Pages spécifiques et Mesures. CSV : une ligne par mesure.',
-  page: 'Une ligne par client (SID, version) : WiFi, Ethernet, écart et comparaison à la médiane. CSV : les mesures de la page.',
+  all: 'Excel : feuilles Ethernet + WiFi, Ethernet, WiFi, Écart, Référence par page, Pages spécifiques et Mesures. CSV : une ligne par mesure.',
+  page: 'Une ligne par client (SID, version) : Ethernet, WiFi, écart et comparaison à la médiane. CSV : les mesures de la page.',
   client:
     'Une feuille par SID / version du client : chaque page comparée à la médiane des clients. CSV : les mesures du client.',
   detail:
@@ -118,7 +118,7 @@ async function setSetting(patch) {
 
 // ---------------------------------------------------------------- Grille
 
-const viewNetworks = (view) => (view === 'wifi' || view === 'ethernet' ? [view] : ['wifi', 'ethernet']);
+const viewNetworks = (view) => (view === 'wifi' || view === 'ethernet' ? [view] : NETWORKS.map((n) => n.id));
 
 function columns(model, view) {
   if (view === 'both') {
@@ -177,7 +177,7 @@ function cellHtml(line, col, v) {
   let title;
   if (col.net === 'diff') {
     text = v.pct === null ? `${v.value > 0 ? '+' : ''}${nf.format(v.value)}` : pf.format(v.pct);
-    title = `${where} : WiFi ${fmtMs(v.w.value)} · Ethernet ${fmtMs(v.e.value)}`;
+    title = `${where} : Ethernet ${fmtMs(v.e.value)} · WiFi ${fmtMs(v.w.value)}`;
   } else {
     text = nf.format(v.value);
     const vs = v.ratio !== null ? ` · ${xf(v.ratio)} × la médiane des clients (${fmtMs(v.ref.median)})` : '';
@@ -272,15 +272,15 @@ function renderSummary({ shown, anomalies }) {
   const total = model.lines.length * model.pages.length;
   const done = (net) => model.lines.reduce((sum, l) => sum + coverage(model, l.key, [net]).done, 0);
   const cov = (net) => (total ? pct.format(done(net) / total) : '—');
-  const wifi = measures.filter((m) => m.network === 'wifi').length;
+  const ethernet = measures.filter((m) => m.network === 'ethernet').length;
   const sep = '<span class="sep">·</span>';
   $('summary').innerHTML =
     `<b>${nf.format(model.clients.length)}</b> client(s)` +
     (model.lines.length !== model.clients.length ? ` (${nf.format(model.lines.length)} lignes SID / version)` : '') +
     (shown !== model.lines.length ? `, ${nf.format(shown)} affichée(s)` : '') +
     `${sep}<b>${nf.format(model.pages.length)}</b> page(s)` +
-    `${sep}<b>${nf.format(measures.length)}</b> mesure(s) — WiFi ${nf.format(wifi)}, Ethernet ${nf.format(measures.length - wifi)}` +
-    `${sep}couverture WiFi <b>${cov('wifi')}</b>, Ethernet <b>${cov('ethernet')}</b>` +
+    `${sep}<b>${nf.format(measures.length)}</b> mesure(s) — Ethernet ${nf.format(ethernet)}, WiFi ${nf.format(measures.length - ethernet)}` +
+    `${sep}couverture Ethernet <b>${cov('ethernet')}</b>, WiFi <b>${cov('wifi')}</b>` +
     `${sep}<b class="${anomalies ? 'warn' : ''}">${nf.format(anomalies)}</b> anomalie(s)`;
 }
 
@@ -363,28 +363,28 @@ function renderDetail() {
   };
   const rows = model.pages
     .map((p) => {
-      const w = rate(model, line.key, p.name, 'wifi', state.stat, settings);
       const e = rate(model, line.key, p.name, 'ethernet', state.stat, settings);
+      const w = rate(model, line.key, p.name, 'wifi', state.stat, settings);
       const d = diffStat(model, line.key, p.name, state.stat);
       const gap =
         d.status === 'ok' && d.pct !== null
           ? `<td class="n">${Math.abs(d.pct) * 100 >= settings.gapPct ? `<span class="pill warn">${pf.format(d.pct)}</span>` : pf.format(d.pct)}</td>`
           : '<td></td>';
       const spec = isSpecific(model, line.key, p.name) ? ' <span class="tag">spécifique</span>' : '';
-      return `<tr><td>${esc(p.name)}${spec}</td>${cell(w)}${cell(e)}${gap}<td class="n muted">${w.count} / ${e.count}</td></tr>`;
+      return `<tr><td>${esc(p.name)}${spec}</td>${cell(e)}${cell(w)}${gap}<td class="n muted">${e.count} / ${w.count}</td></tr>`;
     })
     .join('');
   const measures = model.rows.filter((m) => m.line === line.key).reverse();
   dlg.innerHTML =
     '<div class="dlg-head"><div>' +
     `<h2 id="detailTitle">${esc(lineLabel(line))}</h2>` +
-    `<p>Couverture : WiFi ${cov('wifi').done}/${cov('wifi').total} · Ethernet ${cov('ethernet').done}/${cov('ethernet').total} · ${measures.length} mesure(s)</p>` +
+    `<p>Couverture : Ethernet ${cov('ethernet').done}/${cov('ethernet').total} · WiFi ${cov('wifi').done}/${cov('wifi').total} · ${measures.length} mesure(s)</p>` +
     '</div>' +
     `<button type="button" class="primary" data-export-client="${esc(line.client)}">Exporter le client</button>` +
     '<button type="button" data-close>Fermer</button></div>' +
     '<div class="dlg-body">' +
     `<div><h3>Pages — ${STATS[state.stat].toLowerCase()} en ms (« 1,8× » = 1,8 fois la médiane des clients)</h3>` +
-    '<table class="list"><thead><tr><th>Page</th><th class="n">WiFi</th><th class="n">Ethernet</th><th class="n">Écart</th><th class="n">Mesures (W / E)</th></tr></thead>' +
+    '<table class="list"><thead><tr><th>Page</th><th class="n">Ethernet</th><th class="n">WiFi</th><th class="n">Écart</th><th class="n">Mesures (E / W)</th></tr></thead>' +
     `<tbody>${rows}</tbody></table></div>` +
     `<div><h3>Mesures</h3>${measures.length ? measuresTable(measures.slice(0, 200), false) : '<p class="muted">Aucune mesure.</p>'}</div>` +
     '</div>';

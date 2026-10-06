@@ -1,11 +1,11 @@
 // Libellés et formats d'affichage partagés.
 
 export const NETWORKS = [
-  { id: 'wifi', label: 'WiFi' },
   { id: 'ethernet', label: 'Ethernet' },
+  { id: 'wifi', label: 'WiFi' },
 ];
 
-export const NETWORK_LABELS = { wifi: 'WiFi', ethernet: 'Ethernet' };
+export const NETWORK_LABELS = { ethernet: 'Ethernet', wifi: 'WiFi' };
 
 export const STATS = {
   avg: 'Moyenne',

@@ -1,4 +1,4 @@
-/* Accueil « Quels outils ? » et outil Capsule (panneau latéral). */
+/* Accueil « Quels outils ? » et outils Training, Capsule et Prisme (panneau latéral). */
 
 .back {
   display: inline-grid;
@@ -18,6 +18,21 @@
 }
 
 /* ---------- Accueil */
+.brandline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -2px 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.brandline img {
+  border-radius: 5px;
+}
+
 .tools {
   display: grid;
   gap: 10px;
@@ -75,6 +90,10 @@
 
 .tool-text .tool-count.prisme {
   color: #0d9488;
+}
+
+.tool-text .tool-count.training {
+  color: #db2777;
 }
 
 .tool-text .tool-count:empty {
@@ -526,4 +545,217 @@
 
 .pf-del:hover {
   color: #dc2626;
+}
+
+/* ---------- Training */
+.t-overall {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.t-overall-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.t-overall .hint {
+  margin: 0;
+}
+
+.t-track {
+  display: block;
+  height: 8px;
+  border-radius: 99px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.t-track i {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  background: var(--t-color, #db2777);
+  transition: width 0.3s;
+}
+
+.t-modules {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.t-module {
+  --t-color: #b4235f;
+  --t-soft: rgba(180, 35, 95, 0.12);
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--t-color);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.t-module.olap {
+  --t-color: #2e49cf;
+  --t-soft: rgba(46, 73, 207, 0.12);
+}
+
+.t-module.apex {
+  --t-color: #bf3f28;
+  --t-soft: rgba(191, 63, 40, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  .t-module {
+    --t-color: #ff7aa8;
+  }
+
+  .t-module.olap {
+    --t-color: #8398ff;
+  }
+
+  .t-module.apex {
+    --t-color: #ff8266;
+  }
+
+  /* Couleurs claires en thème sombre : texte foncé pour garder le contraste */
+  button.t-resume.primary {
+    color: #0f1115;
+  }
+}
+
+.t-open {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: none;
+  background: none;
+  text-align: left;
+}
+
+.t-open:hover strong {
+  color: var(--t-color);
+}
+
+.t-badge {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  background: var(--t-soft);
+  color: var(--t-color);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.t-text {
+  display: grid;
+  gap: 1px;
+}
+
+.t-text strong {
+  font-size: 15px;
+}
+
+.t-text small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.t-stats {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.t-count {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.t-sub {
+  margin: -4px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+button.t-resume {
+  width: 100%;
+  padding: 8px 10px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.t-resume.primary {
+  background: var(--t-color);
+  border-color: var(--t-color);
+}
+
+.t-notions > summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.t-notions ol {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.t-notions li button {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 6px;
+  border: none;
+  background: none;
+  text-align: left;
+  font-size: 13px;
+}
+
+.t-notions li button:hover {
+  background: var(--t-soft);
+}
+
+.t-num {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid var(--t-color);
+  color: var(--t-color);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.t-num.done {
+  background: var(--t-color);
+  color: var(--surface);
+}
+
+.t-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

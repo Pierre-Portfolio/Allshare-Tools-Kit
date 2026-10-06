@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Insight – Temps de réponse des pages",
-  "short_name": "Insight",
-  "version": "3.5.2",
-  "description": "Insight : temps entre le clic et l'affichage complet d'une page, par client, SID, version, page et réseau (WiFi / Ethernet), avec exports Excel / CSV. Capsule : sauvegarde et réouverture des onglets d'une fenêtre. Prisme : inspection d'un CSV (encodage, séparateurs, anomalies) et conversion ANSI / UTF-8.",
+  "name": "Allshare Tools Tips",
+  "short_name": "Allshare",
+  "version": "3.6.0",
+  "description": "Allshare Tools Tips : Training (formations Métier RH, OLAP et Oracle APEX avec exercices et progression), Capsule (sauvegarde des onglets), Insight (temps de réponse des pages par client, page et réseau Ethernet / WiFi, exports Excel / CSV) et Prisme (inspection et conversion de CSV).",
   "minimum_chrome_version": "116",
   "permissions": ["storage", "scripting", "sidePanel", "unlimitedStorage"],
   "host_permissions": ["<all_urls>"],
@@ -15,7 +15,7 @@
     "default_path": "panel/home.html"
   },
   "action": {
-    "default_title": "Ouvrir les outils (Capsule, Insight, Prisme)",
+    "default_title": "Allshare Tools Tips : Training, Capsule, Insight, Prisme",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -26,7 +26,7 @@
   "commands": {
     "arm-measure": {
       "suggested_key": { "default": "Alt+Shift+M" },
-      "description": "Lancer l'enregistrement avec les valeurs du formulaire"
+      "description": "Insight : lancer l'enregistrement avec les valeurs du formulaire"
     }
   },
   "options_ui": {

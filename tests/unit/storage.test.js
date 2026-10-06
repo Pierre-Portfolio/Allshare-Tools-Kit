@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { convertV1 } from '../../extension/lib/storage.js';
+import { convertV1, isOlderVersion, DEFAULT_SETTINGS } from '../../extension/lib/storage.js';
 
 test('convertV1 : mesures de la version 1 (appli par URL, page par chemin) -> noms', () => {
   const apps = [{ id: 'x1', name: 'Client A', baseUrls: ['https://a.fr/'] }];
@@ -31,4 +31,16 @@ test('convertV1 : mesures de la version 1 (appli par URL, page par chemin) -> no
     ],
   );
   assert.equal(out.measures[0].startUrl, 'https://a.fr/clients/3');
+});
+
+test('isOlderVersion : comparaison de versions à points', () => {
+  assert.equal(isOlderVersion('3.5.2', '3.6.0'), true);
+  assert.equal(isOlderVersion('3.6.0', '3.6.0'), false);
+  assert.equal(isOlderVersion('3.10.0', '3.6.0'), false);
+  assert.equal(isOlderVersion('3.6', '3.6.1'), true);
+  assert.equal(isOlderVersion(undefined, '3.6.0'), true);
+});
+
+test('réseau par défaut : Ethernet', () => {
+  assert.equal(DEFAULT_SETTINGS.network, 'ethernet');
 });

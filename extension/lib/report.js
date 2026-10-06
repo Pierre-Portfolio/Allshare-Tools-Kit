@@ -360,7 +360,7 @@ export function buildGlobalSheets(model, stat, settings, date = new Date(), opti
   });
   return [
     {
-      name: 'WiFi + Ethernet',
+      name: 'Ethernet + WiFi',
       rows: [
         [{ v: 'Insight — Temps de réponse par client et par page (ms)', s: 'title' }],
         [{ v: sub, s: 'muted' }],
@@ -430,21 +430,21 @@ export function buildGlobalSheets(model, stat, settings, date = new Date(), opti
       rows: [
         header([
           'Page',
-          'Lignes mesurées WiFi',
-          'Médiane WiFi (ms)',
           'Lignes mesurées Ethernet',
           'Médiane Ethernet (ms)',
+          'Lignes mesurées WiFi',
+          'Médiane WiFi (ms)',
           'Spécifique pour (lignes client)',
         ]),
         ...pages.map((p) => {
-          const w = pageRef(model, p.name, 'wifi', stat);
           const e = pageRef(model, p.name, 'ethernet', stat);
+          const w = pageRef(model, p.name, 'wifi', stat);
           return [
             { v: p.name, s: 'textBold' },
-            { v: w ? w.count : 0, s: 'num' },
-            { v: w ? w.median : '', s: 'num' },
             { v: e ? e.count : 0, s: 'num' },
             { v: e ? e.median : '', s: 'num' },
+            { v: w ? w.count : 0, s: 'num' },
+            { v: w ? w.median : '', s: 'num' },
             { v: lines.filter((l) => isSpecific(model, l.key, p.name)).length, s: 'num' },
           ];
         }),
@@ -497,13 +497,13 @@ export function buildPageSheets(model, pageName, stat, settings, date = new Date
       'SID',
       'Version',
       'Page spécifique',
-      'WiFi (ms)',
       'Ethernet (ms)',
+      'WiFi (ms)',
       'Écart WiFi / Eth.',
-      'WiFi vs médiane',
       'Ethernet vs médiane',
-      'Nb mesures WiFi',
+      'WiFi vs médiane',
       'Nb mesures Ethernet',
+      'Nb mesures WiFi',
       'Dernière mesure',
     ]),
   ];
@@ -515,13 +515,13 @@ export function buildPageSheets(model, pageName, stat, settings, date = new Date
     rows.push([
       ...lineCells(l),
       { v: measured ? yesNo(isSpecific(model, l.key, page)) : '', s: 'text' },
-      valueCell(w),
       valueCell(e),
+      valueCell(w),
       gapCell(diffStat(model, l.key, page, stat), settings),
-      vsMedianCell(w, settings),
       vsMedianCell(e, settings),
-      { v: w.count, s: 'num' },
+      vsMedianCell(w, settings),
       { v: e.count, s: 'num' },
+      { v: w.count, s: 'num' },
       { v: lastTs ? fmtDate(lastTs) : '', s: 'text' },
     ]);
   }
@@ -557,13 +557,13 @@ export function buildPageSheets(model, pageName, stat, settings, date = new Date
         10,
         10,
         11,
-        12,
         13,
-        14,
+        12,
         14,
         16,
-        13,
+        14,
         15,
+        13,
         19,
       ],
       heights: { 4: 32 },
@@ -590,15 +590,15 @@ export function buildClientSheets(model, clientName, stat, settings, date = new 
       header([
         'Page',
         'Page spécifique',
-        'WiFi (ms)',
         'Ethernet (ms)',
+        'WiFi (ms)',
         'Écart WiFi / Eth.',
-        'Médiane clients WiFi (ms)',
-        'WiFi vs médiane',
         'Médiane clients Ethernet (ms)',
         'Ethernet vs médiane',
-        'Nb mesures WiFi',
+        'Médiane clients WiFi (ms)',
+        'WiFi vs médiane',
         'Nb mesures Ethernet',
+        'Nb mesures WiFi',
       ]),
     ];
     for (const p of model.pages) {
@@ -608,15 +608,15 @@ export function buildClientSheets(model, clientName, stat, settings, date = new 
       rows.push([
         { v: p.name, s: 'textBold' },
         { v: measured ? yesNo(isSpecific(model, l.key, p.name)) : '', s: 'text' },
-        valueCell(w),
         valueCell(e),
+        valueCell(w),
         gapCell(diffStat(model, l.key, p.name, stat), settings),
-        { v: w.ref ? w.ref.median : '', s: 'num' },
-        vsMedianCell(w, settings),
         { v: e.ref ? e.ref.median : '', s: 'num' },
         vsMedianCell(e, settings),
-        { v: w.count, s: 'num' },
+        { v: w.ref ? w.ref.median : '', s: 'num' },
+        vsMedianCell(w, settings),
         { v: e.count, s: 'num' },
+        { v: w.count, s: 'num' },
       ]);
     }
     return {
@@ -628,15 +628,15 @@ export function buildClientSheets(model, clientName, stat, settings, date = new 
           18,
         ),
         11,
-        12,
         13,
-        14,
-        16,
+        12,
         14,
         18,
         16,
-        13,
+        16,
+        14,
         15,
+        13,
       ],
       heights: { 4: 32 },
       freeze: { rows: 4, cols: 1 },

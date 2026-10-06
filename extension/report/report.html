@@ -10,7 +10,7 @@
   <body>
     <header class="top">
       <div class="brand">
-        <img src="../icons/icon48.png" alt="" width="28" height="28" />
+        <img src="../icons/insight.svg" alt="" width="28" height="28" />
         <div>
           <h1>Insight</h1>
           <p>Temps de réponse · du clic à l'affichage complet</p>
@@ -61,9 +61,9 @@
 
       <div class="toolbar">
         <div class="segmented small" role="radiogroup" aria-label="Vue" id="views">
-          <button type="button" role="radio" data-view="both">WiFi + Ethernet</button>
-          <button type="button" role="radio" data-view="wifi">WiFi</button>
+          <button type="button" role="radio" data-view="both">Ethernet + WiFi</button>
           <button type="button" role="radio" data-view="ethernet">Ethernet</button>
+          <button type="button" role="radio" data-view="wifi">WiFi</button>
           <button type="button" role="radio" data-view="diff">Écart</button>
         </div>
         <input id="search" type="search" placeholder="Rechercher un client, un SID…" aria-label="Rechercher" />
@@ -83,8 +83,8 @@
           <h2>Mesures</h2>
           <select id="filterNet" aria-label="Filtrer par réseau">
             <option value="">Tous les réseaux</option>
-            <option value="wifi">WiFi</option>
             <option value="ethernet">Ethernet</option>
+            <option value="wifi">WiFi</option>
           </select>
           <span id="rawCount" class="muted"></span>
         </div>

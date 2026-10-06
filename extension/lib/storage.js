@@ -16,13 +16,13 @@
 import { normName, nameKey, canonical } from './names.js';
 
 export const DEFAULT_SETTINGS = {
-  network: 'wifi', // réseau des prochaines mesures : 'wifi' | 'ethernet'
+  network: 'ethernet', // réseau des prochaines mesures : 'ethernet' | 'wifi'
   quietMs: 1000, // calme (ni requête ni modification de la page) qui marque l'affichage complet
   maxWaitMs: 120000, // au-delà, la mesure est enregistrée en « timeout »
   showOverlay: true, // indicateur en bas à droite de la page mesurée
   ignoreSelectors: '', // zones qui bougent en permanence (horloge, carrousel…)
   stat: 'median', // statistique des exports : avg | median | min | max | last
-  reportView: 'both', // vue de l'aperçu : both | wifi | ethernet | diff
+  reportView: 'both', // vue de l'aperçu : both | ethernet | wifi | diff
   // Anomalies (couleurs des exports) : comparaison à la médiane des autres clients pour la même page
   warnRatio: 1.5, // jaune à partir de 1,5 × la médiane
   critRatio: 2, // orange à partir de 2 × la médiane
@@ -50,6 +50,31 @@ export async function getConfig() {
     draft = {},
   } = await chrome.storage.local.get(['apps', 'pages', 'settings', 'draft']);
   return { apps, pages, draft, settings: { ...DEFAULT_SETTINGS, ...settings } };
+}
+
+/** « 3.5.2 » est antérieure à « 3.6.0 » ? (versions numériques à points) */
+export function isOlderVersion(version, than) {
+  const a = String(version || '0')
+    .split('.')
+    .map(Number);
+  const b = String(than).split('.').map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const d = (a[i] || 0) - (b[i] || 0);
+    if (d) return d < 0;
+  }
+  return false;
+}
+
+/**
+ * Version 3.6 : Ethernet devient le réseau par défaut. Les réglages enregistrés avant contiennent
+ * « wifi » (l'ancienne valeur par défaut) : on bascule une seule fois sur Ethernet à la mise à jour.
+ */
+export async function migrateNetworkDefault(previousVersion) {
+  if (!isOlderVersion(previousVersion, '3.6.0')) return false;
+  const { settings } = await chrome.storage.local.get('settings');
+  if (!settings || settings.network !== 'wifi') return false;
+  await chrome.storage.local.set({ settings: { ...settings, network: 'ethernet' } });
+  return true;
 }
 
 export async function saveSettings(patch) {

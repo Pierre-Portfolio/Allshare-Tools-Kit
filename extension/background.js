@@ -1,4 +1,4 @@
-// Insight — service worker.
+// Allshare Tools Tips — service worker : mesures Insight, badge de l'icône, raccourci clavier.
 //
 // Une mesure se déroule ainsi (état « session » dans chrome.storage.session) :
 //   armed      le formulaire a été validé : les scripts de mesure sont injectés
@@ -17,6 +17,7 @@ import {
   saveSettings,
   newId,
   migrateV1,
+  migrateNetworkDefault,
 } from './lib/storage.js';
 import { canonical, normName } from './lib/names.js';
 import { urlEnd } from './lib/urls.js';
@@ -407,8 +408,11 @@ async function boot() {
   await updateBadge();
 }
 
-chrome.runtime.onInstalled.addListener(async () => {
+chrome.runtime.onInstalled.addListener(async (details) => {
   await migrateV1().catch((e) => console.error('[Insight] migration', e));
+  if (details && details.reason === 'update') {
+    await migrateNetworkDefault(details.previousVersion).catch((e) => console.error('[Insight] réseau', e));
+  }
   await boot();
 });
 chrome.runtime.onStartup.addListener(boot);

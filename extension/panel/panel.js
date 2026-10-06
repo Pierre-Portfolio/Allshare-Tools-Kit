@@ -573,7 +573,10 @@ async function goNext() {
   state.formFilled = false; // reprendre les valeurs du brouillon
   await send({ type: 'finish' });
   await load();
-  focusPage();
+  // Page suivante trouvée : l'enregistrement est relancé aussitôt, il ne reste qu'à cliquer
+  // sur cette page dans l'application (« Annuler » ramène au formulaire pour la changer).
+  if (next) await arm();
+  else focusPage();
 }
 
 async function relaunch(network) {

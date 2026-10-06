@@ -11,7 +11,7 @@
   <body>
     <header class="top">
       <a class="back" href="home.html?choose" title="Changer d'outil" aria-label="Changer d'outil">‹</a>
-      <img src="../icons/icon32.png" alt="" width="22" height="22" />
+      <img src="../icons/insight.svg" alt="" width="22" height="22" />
       <h1>Insight</h1>
       <button id="openExports" type="button" class="ghost">Exports</button>
       <button id="openSettings" type="button" class="ghost" title="Réglages" aria-label="Réglages">⚙</button>
@@ -20,8 +20,8 @@
     <section>
       <h2>Réseau de la mesure</h2>
       <div class="segmented" role="radiogroup" aria-label="Réseau">
-        <button type="button" role="radio" data-network="wifi">WiFi</button>
         <button type="button" role="radio" data-network="ethernet">Ethernet</button>
+        <button type="button" role="radio" data-network="wifi">WiFi</button>
       </div>
       <p id="netHint" class="hint"></p>
     </section>
@@ -99,7 +99,14 @@
         <p id="relaunchHint" class="hint"></p>
         <div class="row">
           <button id="relaunchSame" type="button"></button>
-          <button id="next" type="button" class="accent">Page suivante →</button>
+          <button
+            id="next"
+            type="button"
+            class="accent"
+            title="Passe à la page suivante à mesurer et lance aussitôt l'enregistrement"
+          >
+            Page suivante →
+          </button>
         </div>
         <details id="detail" class="detail">
           <summary>Détail du chargement</summary>

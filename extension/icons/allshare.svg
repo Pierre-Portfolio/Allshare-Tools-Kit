@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="#f24e17"/>
+  <path
+    fill="#242b32"
+    fill-rule="evenodd"
+    transform="translate(27 32.6) scale(0.2458) translate(-135 -135)"
+    d="M135 135H436C436 224 301 296 135 296ZM135 135H345C345 335 300 390 135 390Z"
+  />
+</svg>

@@ -114,9 +114,9 @@ test('export « tout » : colonnes Client, SID, Version puis pages', () => {
   assert.deepEqual(
     sheets.map((s) => s.name),
     [
-      'WiFi + Ethernet',
-      'WiFi',
+      'Ethernet + WiFi',
       'Ethernet',
+      'WiFi',
       'Écart WiFi-Ethernet',
       'Référence par page',
       'Pages spécifiques',
@@ -127,12 +127,12 @@ test('export « tout » : colonnes Client, SID, Version puis pages', () => {
   assert.deepEqual(main.merges, ['E4:F4', 'G4:H4', 'I4:J4']);
   assert.deepEqual(
     main.rows[4].slice(0, 6).map((c) => c.v),
-    ['Client', 'SID', 'Version', 'Couverture', 'WiFi', 'Ethernet'],
+    ['Client', 'SID', 'Version', 'Couverture', 'Ethernet', 'WiFi'],
   );
   const row10 = main.rows.find((r) => r[0] && r[0].v === 'Client 10');
   assert.deepEqual(
     row10.slice(4, 8).map((c) => c.s),
-    ['missing', 'timeout', 'crit', 'missing'],
+    ['timeout', 'missing', 'missing', 'crit'],
   );
   const raw = sheets[6];
   assert.equal(raw.rows[0].at(-1).v, "Fin d'URL");
@@ -146,10 +146,10 @@ test('export « une page » : une ligne par client · SID · version', () => {
   const row = sheet.rows.find((r) => r[0] && r[0].v === 'Client 2' && r[2].v === '5.3');
   assert.deepEqual(
     row.slice(1, 6).map((c) => c.v),
-    ['PRD', '5.3', 'Non', 200, 80],
+    ['PRD', '5.3', 'Non', 80, 200], // Ethernet puis WiFi
   );
   const median = sheet.rows.find((r) => r[0] && r[0].v === 'Médiane (tous clients)');
-  assert.equal(median[4].v, 200);
+  assert.equal(median[5].v, 200); // médiane WiFi, sous la colonne WiFi
   assert.deepEqual(
     raw.rows[0].slice(-2).map((c) => c.v),
     ['URL complète', 'Page de départ'],

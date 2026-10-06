@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Training</title>
+    <link rel="icon" href="../icons/training.svg" />
+    <link rel="stylesheet" href="training.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <button
+        class="icon-btn menu-btn"
+        id="menuBtn"
+        type="button"
+        aria-label="Ouvrir le sommaire"
+        aria-controls="rail"
+        aria-expanded="false"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
+      <a class="brand" href="#top">
+        <img src="../icons/training.svg" alt="" width="28" height="28" />
+        <span>Training</span>
+      </a>
+      <nav class="modules" id="modules" aria-label="Modules"></nav>
+      <span class="spacer"></span>
+      <div class="global-progress" id="globalProgress" title="Exercices faits dans ce module">
+        <span class="label">Progression</span>
+        <span class="bar" aria-hidden="true"><span id="bar"></span></span>
+        <span id="progressText">0 / 0</span>
+      </div>
+      <button class="icon-btn" id="themeBtn" type="button" aria-label="Changer de thème"></button>
+    </header>
+
+    <div class="shell" id="top">
+      <nav class="rail" id="rail" aria-label="Sommaire"></nav>
+      <main id="content"></main>
+    </div>
+
+    <div id="toast" class="toast" role="status"></div>
+    <script type="module" src="training.js"></script>
+  </body>
+</html>

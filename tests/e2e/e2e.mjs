@@ -1,6 +1,6 @@
-// Test de bout en bout : charge l'extension dans Chromium (Playwright), sert deux
+// Test de bout en bout d'Allshare Tools Tips : charge l'extension dans Chromium (Playwright), sert deux
 // applications de démonstration avec des délais connus, navigue, puis vérifie
-// les mesures, le rapport (cases rouges) et l'export Excel.
+// les mesures d'Insight, le rapport (cases rouges) et les exports, puis Capsule, Prisme et Training.
 //
 //   npm install && npm run test:e2e
 //
@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { moduleById } from '../../extension/lib/training.js';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -99,7 +100,7 @@ await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${server.address().port}`;
 
 // ---------- Navigateur avec l'extension
-const userDataDir = mkdtempSync(join(tmpdir(), 'insight-e2e-'));
+const userDataDir = mkdtempSync(join(tmpdir(), 'allshare-e2e-'));
 const context = await chromium.launchPersistentContext(userDataDir, {
   channel: 'chromium',
   headless: process.env.HEADED ? false : true,
@@ -177,6 +178,12 @@ try {
   await panel.setViewportSize({ width: 380, height: 860 });
   await panel.goto(`chrome-extension://${extId}/panel/panel.html?tabId=${tabId}`);
   await panel.waitForSelector('#viewForm:not([hidden])');
+  assert.deepEqual(
+    await panel.locator('[data-network]').allTextContents(),
+    ['Ethernet', 'WiFi'],
+    'Ethernet en premier',
+  );
+  assert.equal(await panel.getAttribute('[data-network="ethernet"]', 'aria-checked'), 'true', 'Ethernet par défaut');
   await panel.click('[data-network="wifi"]');
   await panel.fill('#app', 'Appli 1');
   await panel.fill('#sid', 'PRD');
@@ -249,9 +256,18 @@ try {
     'Ethernet · Clients (relance)',
   );
 
-  // 5. « Page suivante » : retour au formulaire, appli conservée
+  // 5. « Page suivante » : la page suivante est proposée et l'enregistrement relancé aussitôt ;
+  //    « Annuler » ramène au formulaire (client, SID, version et page suivante conservés)
   await panel.waitForSelector('#viewResult:not([hidden])');
   await panel.click('#next');
+  await waitSession(
+    (s) => s && s.state === 'armed' && s.page === 'Dashboard' && s.app === 'Appli 1' && s.network === 'ethernet',
+    'réarmé sur la page suivante',
+  );
+  await panel.waitForSelector('#viewLive:not([hidden])');
+  assert.match(await panel.textContent('#liveLabel'), /Appli 1 · PRD · 5\.3 › Dashboard · Ethernet/);
+  await panel.click('#cancel');
+  await waitSession((s) => s === null, 'annulé pour changer de page');
   await panel.waitForSelector('#viewForm:not([hidden])');
   assert.equal(await panel.inputValue('#app'), 'Appli 1');
   assert.equal(await panel.inputValue('#sid'), 'PRD', 'SID conservé');
@@ -280,6 +296,8 @@ try {
   // 6. SPA : un clic sans changement d'URL est ignoré, le clic de navigation est mesuré
   await page.goto(`${base}/appli1/spa/`);
   await panel.click('#next');
+  await waitSession((s) => s && s.state === 'armed' && s.specific === false, 'page suivante armée, non spécifique');
+  await panel.click('#cancel');
   await panel.waitForSelector('#viewForm:not([hidden])');
   assert.equal(await panel.isChecked('#specific'), false, 'page suivante : case décochée');
   await panel.click('[data-network="wifi"]');
@@ -302,6 +320,9 @@ try {
 
   // 7. Annuler
   await panel.click('#next');
+  await waitSession((s) => s && s.state === 'armed', 'page suivante armée');
+  await panel.click('#cancel');
+  await panel.waitForSelector('#viewForm:not([hidden])');
   await panel.selectOption('#pagePick', 'Turn-Over');
   await panel.click('#arm');
   await waitSession((s) => s && s.state === 'armed' && s.page === 'Turn-Over', 'armé (page du menu)');
@@ -431,7 +452,8 @@ try {
   await tools.waitForURL(/\/panel\/panel\.html$/);
   await tools.click('.back');
   await tools.waitForURL(/\/panel\/home\.html\?choose$/);
-  assert.deepEqual(await tools.locator('.tool strong').allTextContents(), ['Capsule', 'Insight', 'Prisme']);
+  assert.deepEqual(await tools.locator('.tool strong').allTextContents(), ['Training', 'Capsule', 'Insight', 'Prisme']);
+  assert.equal((await tools.textContent('.brandline')).trim(), 'Allshare Tools Tips');
   await tools.waitForFunction(() => document.querySelector('#insightCount').textContent !== '');
   const insightCount = await tools.textContent('#insightCount');
   assert.match(insightCount, /^\d+ clients? et \d+ pages? sauvegardés$/, 'clients et pages d’Insight');
@@ -595,9 +617,112 @@ try {
   tools.once('dialog', (d) => d.accept());
   await tools.click('.pfile >> nth=1 >> .pf-del');
   await tools.waitForFunction(() => document.querySelector('#recentCount').textContent === '(1)');
+
+  // 13. Training : modules, page de formation, progression enregistrée dans l'extension
+  const rhModule = moduleById('rh');
+  await tools.setViewportSize({ width: 380, height: 900 });
+  await tools.goto(`chrome-extension://${extId}/panel/home.html?choose`);
+  await tools.click('#toolTraining');
+  await tools.waitForSelector('.t-module');
+  assert.deepEqual(await tools.locator('.t-module .t-text strong').allTextContents(), ['Métier RH', 'OLAP', 'APEX']);
+  assert.equal(await tools.textContent('#overallText'), '0 / 120 exercices · 0 %');
+  const [course] = await Promise.all([context.waitForEvent('page'), tools.click('.t-module.rh .t-resume')]);
+  await course.setViewportSize({ width: 1360, height: 900 });
+  await course.waitForSelector('html[data-ready="1"]');
+  assert.match(course.url(), /\/training\/training\.html\?m=rh$/);
+  assert.equal(await course.title(), 'Le métier RH et ses indicateurs · Training');
+  assert.equal(await course.locator('section.notion[data-notion]').count(), 8, '8 notions');
+  assert.equal(await course.locator('.exo').count(), 50, '40 exercices + 10 questions d’examen');
+  await course.screenshot({ path: join(out, 'training-rh.png') });
+  // QCM juste puis QCM faux (options mélangées : la valeur garde l'index d'origine)
+  const [ex1, ex2] = rhModule.notions[0].exercises;
+  await course.check(`#rh-1-e1-o${ex1.answer}`);
+  await course.click('[data-exo="rh-1-e1"] [data-act="check"]');
+  await course.waitForSelector('[data-exo="rh-1-e1"].is-ok');
+  const wrong = (ex2.answer + 1) % ex2.options.length;
+  await course.check(`#rh-1-e2-o${wrong}`);
+  await course.click('[data-exo="rh-1-e2"] [data-act="check"]');
+  await course.waitForSelector('[data-exo="rh-1-e2"].is-bad');
+  assert.match(await course.textContent('[data-exo="rh-1-e2"] .feedback'), /La bonne réponse est/);
+  // Question ouverte : réponse saisie, correction, auto-évaluation
+  await course.fill('#ta-rh-1-e4', 'DPAE, contrat, DSN, solde de tout compte');
+  await course.click('[data-exo="rh-1-e4"] [data-act="show"]');
+  await course.click('[data-exo="rh-1-e4"] [data-self="ok"]');
+  assert.equal(await course.textContent('[data-tally="rh-1"]'), 'QCM 1/3 justes · 3/5 faits');
+  assert.equal(await course.textContent('#progressText'), '3 / 40');
+  const training = () => storage(async () => (await chrome.storage.local.get('training')).training);
+  let saved = await training();
+  assert.deepEqual(saved.qcm['rh-1-e1'], { pick: ex1.answer }, 'QCM enregistré');
+  assert.equal(saved.qcm['rh-1-e2'].pick, wrong);
+  assert.deepEqual(saved.open['rh-1-e4'], {
+    text: 'DPAE, contrat, DSN, solde de tout compte',
+    shown: true,
+    self: 'ok',
+  });
+  // Rechargement : tout est restauré
+  await course.reload();
+  await course.waitForSelector('html[data-ready="1"]');
+  await course.waitForSelector('[data-exo="rh-1-e1"].is-ok');
+  await course.waitForSelector('[data-exo="rh-1-e2"].is-bad');
+  assert.equal(await course.inputValue('#ta-rh-1-e4'), 'DPAE, contrat, DSN, solde de tout compte');
+  // Panneau mis à jour en direct, puis « Reprendre » sur la dernière notion lue
+  await tools.waitForFunction(() => document.querySelector('#overallText').textContent === '3 / 120 exercices · 3 %');
+  assert.match(await tools.textContent('.t-module.rh .t-count'), /^3\/40 exercices · 8 %$/);
+  await course.evaluate(() => document.getElementById('rh-3').scrollIntoView({ behavior: 'instant' }));
+  await tools.waitForFunction(
+    () => /^Reprendre : 3\. Effectifs/.test(document.querySelector('.t-module.rh .t-resume').textContent),
+    null,
+    { timeout: 10000 },
+  );
+  assert.equal((await training()).last.anchor, 'rh-3');
+  // Un autre module s'ouvre dans le même onglet
+  const pagesBeforeOlap = context.pages().length;
+  await tools.click('.t-module.olap .t-resume');
+  await course.waitForURL(/\?m=olap$/);
+  await course.waitForSelector('html[data-ready="1"]');
+  assert.equal(context.pages().length, pagesBeforeOlap, 'onglet de formation réutilisé');
+  assert.equal(await course.textContent('.modules [aria-current="page"]'), 'OLAP');
+  await course.screenshot({ path: join(out, 'training-olap.png') });
+  // Laboratoire du cube (notion 5) : drill-down de l'année au trimestre
+  await course.evaluate(() =>
+    document.getElementById('cube-lab').scrollIntoView({ behavior: 'instant', block: 'center' }),
+  );
+  await course.selectOption('#lab-level', 'Trimestre');
+  assert.match(await course.textContent('#lab-log'), /Drill-down/);
+  assert.equal(await course.locator('#lab-table thead th').count(), 10, 'Région, 8 trimestres, Total');
+  // Script SQL du projet fil rouge, téléchargeable
+  const [sqlFile] = await Promise.all([course.waitForEvent('download'), course.click('.download')]);
+  assert.equal(sqlFile.suggestedFilename(), 'fil_rouge_ventes.sql');
+  // Sauvegarde de la progression (JSON), réinitialisation d'un module, import par fusion
+  const [backupFile] = await Promise.all([course.waitForEvent('download'), course.click('#exportBtn')]);
+  assert.match(backupFile.suggestedFilename(), /^training-progression-\d{8}\.json$/);
+  const backupPath = join(out, 'training-progression.json');
+  await backupFile.saveAs(backupPath);
+  const backup = JSON.parse(readFileSync(backupPath, 'utf8'));
+  assert.equal(backup.format, 'allshare-training');
+  assert.deepEqual(backup.progress.qcm['rh-1-e1'], { pick: ex1.answer });
+  await course.evaluate(() => document.getElementById('olap-1').scrollIntoView({ behavior: 'instant' }));
+  await course.click('[data-exo="olap-1-e1"] [data-act="reveal"]');
+  await course.waitForSelector('[data-exo="olap-1-e1"] .feedback:not([hidden])');
+  await course.click('#resetBtn');
+  await course.click('#resetYes');
+  await course.waitForSelector('[data-exo="olap-1-e1"] .feedback[hidden]', { state: 'attached' });
+  saved = await training();
+  assert.ok(!('olap-1-e1' in saved.qcm), 'module OLAP réinitialisé');
+  assert.ok('rh-1-e1' in saved.qcm, 'module RH conservé');
+  await storage(() => chrome.storage.local.remove('training'));
+  await course.setInputFiles('#importInput', backupPath);
+  await course.waitForFunction(() => document.querySelector('#toast').textContent === 'Progression importée');
+  assert.equal(Object.keys((await training()).qcm).length, 2, 'progression réimportée');
+  await course.close();
+  // Accueil : compteur sous Training
+  await tools.setViewportSize({ width: 380, height: 640 });
+  await tools.goto(`chrome-extension://${extId}/panel/home.html?choose`);
+  await tools.waitForFunction(() => document.querySelector('#trainingCount').textContent === '3 exercices faits · 3 %');
+  console.log('  Training : 3 exercices faits, progression enregistrée, rechargée, exportée et réimportée');
   await tools.close();
 
-  // 13. Démo à l'échelle : 150 clients × 20 pages (captures pour le README)
+  // 14. Démo à l'échelle : 150 clients × 20 pages (captures pour le README)
   const demo = await storage(async () => {
     const PAGES = [
       'Accueil',
