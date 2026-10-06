@@ -440,18 +440,21 @@ try {
   await tools.click('#saveGo');
   assert.match(await tools.textContent('#saveError'), /titre/, 'titre obligatoire');
   await tools.fill('#saveTitle', 'Recette Appli 1');
+  await tools.fill('#saveClient', 'appli  1'); // rattaché au client « Appli 1 » d'Insigth
   await tools.fill('#saveComment', 'Reprendre les mesures Ethernet');
   await tools.click('#saveGo');
   await tools.waitForSelector('#saveForm', { state: 'hidden' });
   const caps = await storage(async () => (await chrome.storage.local.get('capsules')).capsules);
   assert.equal(caps.length, 1);
   assert.equal(caps[0].title, 'Recette Appli 1');
+  assert.equal(caps[0].client, 'Appli 1', 'client associé');
   assert.equal(caps[0].comment, 'Reprendre les mesures Ethernet');
   assert.deepEqual(caps[0].tabs.map((t) => t.url).sort(), [...webUrls].sort(), 'tous les onglets web enregistrés');
   await tools.waitForFunction(() => document.querySelector('#savedCount').textContent === '(1)');
   await tools.click('#saved > summary');
   await tools.click('.capsule .cap-title');
   await tools.waitForSelector('.cap-links li');
+  assert.equal(await tools.textContent('.cap-client'), 'Appli 1');
   await tools.screenshot({ path: join(out, 'capsule.png') });
   const pagesBefore = context.pages().length;
   await tools.click('.cap-actions [data-open]');

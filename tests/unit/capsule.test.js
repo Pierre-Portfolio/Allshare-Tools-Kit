@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isSavable, snapshot, byWindow, describeTabs, host } from '../../extension/lib/capsule.js';
+import { isSavable, snapshot, byWindow, describeTabs, host, clientNames } from '../../extension/lib/capsule.js';
 
 const tab = (url, title = '', pinned = false) => ({ url, title, pinned });
 
@@ -37,6 +37,12 @@ test('regroupement par fenêtre et résumé', () => {
   );
   assert.equal(describeTabs(tabs), '3 onglets · 2 fenêtres');
   assert.equal(describeTabs(tabs.slice(0, 1)), '1 onglet');
+});
+
+test('clients proposés : référentiel et mesures, sans doublon, triés', () => {
+  const apps = [{ name: 'Client 10' }, { name: 'Client 2' }];
+  const measures = [{ app: 'client  2' }, { app: 'Client A' }, { app: '' }];
+  assert.deepEqual(clientNames(apps, measures), ['Client 2', 'Client 10', 'Client A']);
 });
 
 test('adresses : rouvrables et domaine affiché', () => {

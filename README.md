@@ -29,9 +29,10 @@ panneau s'ouvre directement sur Insigth pour afficher le chrono.
 ### Capsule : sauvegarde des onglets
 
 1. **Mes sessions** (replié au départ) liste les sessions sauvegardées, la plus récente en premier :
-   titre, nombre d'onglets, date. Dépliez une session pour voir son commentaire et ses liens.
-2. **＋ Sauvegarder cette session** demande un **titre** et un **commentaire** facultatif, puis
-   enregistre tous les onglets ouverts, dans toutes les fenêtres.
+   titre, client, nombre d'onglets, date. Dépliez une session pour voir son commentaire et ses liens.
+2. **＋ Sauvegarder cette session** demande un **titre**, le **client associé** (facultatif,
+   auto-complété avec les clients d'Insigth) et un **commentaire** facultatif, puis enregistre tous
+   les onglets ouverts, dans toutes les fenêtres. Le client s'affiche en étiquette sur la session.
 3. **Rouvrir** (ou **↗ Tout rouvrir**) rouvre tous les onglets de la session, dans une nouvelle
    fenêtre par fenêtre d'origine (onglets épinglés compris). Un clic sur un lien n'ouvre que celui-là.
    **Supprimer** retire la session.

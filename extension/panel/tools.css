@@ -159,6 +159,10 @@
   color: var(--muted);
 }
 
+.cap-meta .cap-client {
+  margin: 0 6px 0 0;
+}
+
 .capsule .reopen {
   padding: 4px 10px;
   font-size: 12.5px;

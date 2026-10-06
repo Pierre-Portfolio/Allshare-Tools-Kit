@@ -37,6 +37,11 @@
         <input id="saveTitle" type="text" placeholder="ex. Recette client X" maxlength="120" />
       </label>
       <label class="field">
+        <span>Client associé <small>(facultatif)</small></span>
+        <input id="saveClient" type="text" list="clientList" placeholder="ex. Client A" spellcheck="false" />
+      </label>
+      <datalist id="clientList"></datalist>
+      <label class="field">
         <span>Commentaire <small>(facultatif)</small></span>
         <textarea id="saveComment" rows="3" placeholder="Pourquoi cette session, ce qu'il reste à faire…"></textarea>
       </label>

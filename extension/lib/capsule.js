@@ -2,11 +2,12 @@
 //
 // chrome.storage.local
 //   capsules  sessions sauvegardées, la plus récente en premier :
-//             [{ id, ts, title, comment, tabs: [{ url, title, win, pinned }] }]
+//             [{ id, ts, title, client, comment, tabs: [{ url, title, win, pinned }] }]
+//             (client : facultatif, nom d'un client d'Insigth ou saisi librement)
 //             (win : numéro de la fenêtre d'origine, pour rouvrir fenêtre par fenêtre)
 
 import { newId } from './storage.js';
-import { normName } from './names.js';
+import { normName, nameKey, compareNames } from './names.js';
 
 /** Adresses que Chrome sait rouvrir (les pages internes chrome://, extensions… sont ignorées). */
 export const isSavable = (url) => /^(https?|file):/i.test(String(url || ''));
@@ -47,6 +48,16 @@ export function describeTabs(tabs) {
   return `${n} onglet${n > 1 ? 's' : ''}${w > 1 ? ` · ${w} fenêtres` : ''}`;
 }
 
+/** Clients proposés : ceux d'Insigth (référentiel et mesures), sans doublon, triés. */
+export function clientNames(apps, measures) {
+  const names = new Map();
+  for (const name of [...apps.map((a) => a.name), ...measures.map((m) => m.app)]) {
+    const n = normName(name);
+    if (n && !names.has(nameKey(n))) names.set(nameKey(n), n);
+  }
+  return [...names.values()].sort(compareNames);
+}
+
 /** Nom de domaine affiché sous le titre d'un onglet. */
 export function host(url) {
   try {
@@ -67,12 +78,13 @@ export async function getCapsules() {
   return (await chrome.storage.local.get('capsules')).capsules || [];
 }
 
-/** Enregistre des onglets (par défaut ceux ouverts) sous un titre, commentaire facultatif. */
-export async function saveCapsule(title, comment, tabs) {
+/** Enregistre des onglets (par défaut ceux ouverts) sous un titre ; client et commentaire facultatifs. */
+export async function saveCapsule({ title, client, comment, tabs }) {
   const capsule = {
     id: newId(),
     ts: Date.now(),
     title: normName(title),
+    client: normName(client),
     comment: String(comment || '').trim(),
     tabs: tabs || (await currentTabs()),
   };

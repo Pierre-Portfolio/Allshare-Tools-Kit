@@ -8,11 +8,15 @@ import {
   currentTabs,
   describeTabs,
   host,
+  clientNames,
 } from '../lib/capsule.js';
+import { getConfig, getMeasures } from '../lib/storage.js';
+import { canonical } from '../lib/names.js';
 
 const $ = (id) => document.getElementById(id);
 const fmtWhen = (ts) => new Date(ts).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
 let capsules = [];
+let clients = []; // clients d'Insigth, proposés pour « Client associé »
 
 function el(tag, { dataset, ...props } = {}, ...children) {
   const node = Object.assign(document.createElement(tag), props);
@@ -56,7 +60,14 @@ function item(c) {
           'span',
           { className: 'cap-head' },
           el('strong', { className: 'cap-title', textContent: c.title }),
-          el('span', { className: 'cap-meta', textContent: `${describeTabs(c.tabs)} · ${fmtWhen(c.ts)}` }),
+          el(
+            'span',
+            { className: 'cap-meta' },
+            c.client
+              ? el('span', { className: 'tag cap-client', textContent: c.client, title: 'Client associé' })
+              : null,
+            `${describeTabs(c.tabs)} · ${fmtWhen(c.ts)}`,
+          ),
         ),
         el('button', {
           type: 'button',
@@ -120,6 +131,9 @@ $('capsules').addEventListener('click', async (e) => {
 let pending = []; // onglets qui seront enregistrés
 
 async function openForm() {
+  const [{ apps }, measures] = await Promise.all([getConfig(), getMeasures()]);
+  clients = clientNames(apps, measures);
+  $('clientList').replaceChildren(...clients.map((name) => el('option', { value: name })));
   pending = await currentTabs();
   $('saveWhat').textContent = pending.length
     ? `Onglets ouverts à enregistrer : ${describeTabs(pending)}.`
@@ -134,6 +148,7 @@ function closeForm() {
   $('saveForm').hidden = true;
   $('saveOpen').hidden = false;
   $('saveTitle').value = '';
+  $('saveClient').value = '';
   $('saveComment').value = '';
 }
 
@@ -152,7 +167,12 @@ $('saveForm').addEventListener('submit', async (e) => {
     $('saveError').textContent = 'Aucune page web ouverte à enregistrer.';
     return;
   }
-  const c = await saveCapsule(title, $('saveComment').value, pending);
+  const c = await saveCapsule({
+    title,
+    client: canonical($('saveClient').value, clients), // « client a » -> « Client A »
+    comment: $('saveComment').value,
+    tabs: pending,
+  });
   closeForm();
   toast(`« ${c.title} » sauvegardée : ${describeTabs(c.tabs)}`);
 });
