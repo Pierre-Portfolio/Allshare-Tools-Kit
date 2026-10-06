@@ -119,8 +119,9 @@ mesures.
    choisissez **Insight**. Le panneau reste ouvert pendant que vous cliquez dans l'application.
 2. Choisissez le réseau (**WiFi** / **Ethernet**) et remplissez **Client**, **SID**,
    **Version application** et **Page**. La page se choisit dans la liste du menu de l'application,
-   rangée par rubrique (Fiche Salarié, Listes Collaborateurs, RH Suivi Effectifs, Masse Salariale,
-   Hyp. Budgétaires, Index Egalité HF, Absentéisme, Publisher, Finance), ou parmi les autres pages
+   avec **Dashboard** tout en haut puis les pages rangées par rubrique (Fiche Salarié, Listes
+   Collaborateurs, RH Suivi Effectifs, Masse Salariale, Hyp. Budgétaires, Index Egalité HF,
+   Absentéisme, Publisher, Finance), ou parmi les autres pages
    déjà enregistrées. Pour une autre page, choisissez **✎ Saisie libre** et tapez son nom. Cochez
    **Page spécifique ?** si la page est propre à ce client (hors pages standard). Cliquez ensuite
    sur **Lancer l'enregistrement** (ou appuyez sur Entrée).

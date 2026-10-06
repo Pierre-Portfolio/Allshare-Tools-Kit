@@ -10,7 +10,7 @@ import {
 } from '../lib/storage.js';
 import { buildModel, cellStat, rate, coverage, missingPages, lineKey, lineLabel } from '../lib/report.js';
 import { nameKey, normName, canonical, suggestApp, nextPage, compareNames } from '../lib/names.js';
-import { MENU, MENU_PAGES } from '../lib/menu.js';
+import { MENU, MENU_PAGES, MENU_TOP, fitLabel } from '../lib/menu.js';
 import { phases } from '../lib/timing.js';
 import { urlEnd } from '../lib/urls.js';
 import { NETWORKS, NETWORK_LABELS, STATS, fmtMs, fmtDate } from '../lib/format.js';
@@ -165,21 +165,26 @@ function renderForm() {
 }
 
 /**
- * Liste des pages : menu par rubrique, puis pages connues hors menu, et « Saisie libre »
- * qui affiche le champ texte. Le champ texte (#page) garde toujours la page choisie.
+ * Liste des pages : « Dashboard », « Saisie libre » (qui affiche le champ texte), le menu par
+ * rubrique, puis les pages connues hors menu. Le champ texte (#page) garde toujours la page
+ * choisie. Libellés courts : la liste déroulante ne doit pas déborder du panneau.
  */
 function renderPagePick(refill) {
   const pick = $('pagePick');
   const free = !refill && pick.value === FREE; // saisie libre en cours : on la laisse ouverte
-  const option = (value, text = value) => el('option', { value, textContent: text });
+  const option = (value, text = value, title = '') =>
+    el('option', { value, textContent: fitLabel(text), title: title || (fitLabel(text) !== text ? text : '') });
+  const entry = (r) =>
+    r.pages
+      ? el('optgroup', { label: r.title }, ...r.pages.map((p) => option(p.name, p.label, p.title)))
+      : option(r.title);
   const menuKeys = new Set(MENU_PAGES.map(nameKey));
   const others = state.model.allPages.filter((p) => !menuKeys.has(nameKey(p.name)));
   pick.replaceChildren(
     option('', '— Choisir une page —'),
+    ...MENU_TOP.map(entry),
     option(FREE, '✎ Saisie libre (autre page)…'),
-    ...MENU.map((r) =>
-      r.pages ? el('optgroup', { label: r.title }, ...r.pages.map((p) => option(p.name, p.label))) : option(r.title),
-    ),
+    ...MENU.slice(MENU_TOP.length).map(entry),
     others.length ? el('optgroup', { label: 'Autres pages' }, ...others.map((p) => option(p.name))) : null,
   );
   syncPagePick(free);

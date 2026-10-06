@@ -1,14 +1,27 @@
 // Menu de l'application mesurée : pages standard proposées dans le formulaire
 // (champ « Page »), dans l'ordre du menu, regroupées par rubrique.
 
-/** Page d'une sous-rubrique : affichée « Sous-rubrique › Page », enregistrée sous son seul nom. */
-const sub = (parent, name) => ({ name, label: `${parent} › ${name}` });
+/**
+ * Longueur maximale d'un libellé de la liste : au-delà, la liste déroulante devient plus large
+ * que le panneau latéral et déborde sur la page.
+ */
+export const LABEL_MAX = 34;
+
+/** Libellé raccourci à LABEL_MAX caractères (« … »), pour les pages saisies librement. */
+export const fitLabel = (text) => (text.length > LABEL_MAX ? `${text.slice(0, LABEL_MAX - 1).trimEnd()}…` : text);
+
+/**
+ * Page d'une sous-rubrique : affichée « Abrégé › Page » (nom complet de la sous-rubrique en
+ * info-bulle), enregistrée sous son seul nom.
+ */
+const sub = (parent, name, short = parent) => ({ name, label: `${short} › ${name}`, title: `${parent} › ${name}` });
 
 /**
  * Rubriques du menu, dans l'ordre. Une rubrique sans `pages` est un lien direct
  * (pas de sous-menu) : c'est elle-même la page.
  */
 const RAW = [
+  { title: 'Dashboard' },
   { title: 'Fiche Salarié', pages: ['Fiche Salarié', 'Détail Paye par Salarié'] },
   {
     title: 'Listes Collaborateurs',
@@ -71,18 +84,24 @@ const RAW = [
       'Calcul Estimé',
       'Comptes par Organisation',
       'Suivi Réel Cumulé',
-      sub('Méthode ABC - Synthèse', 'Coûts directs av Répart.'),
+      sub('Méthode ABC - Synthèse', 'Coûts directs av Répart.', 'ABC'),
       'Saisies Budgétaires Finance',
       'Ecriture Budgétaire',
     ],
   },
 ];
 
-/** Rubriques : { title, pages: [{ name, label }] }, `pages` à null pour un lien direct. */
+/** Rubriques : { title, pages: [{ name, label, title? }] }, `pages` à null pour un lien direct. */
 export const MENU = RAW.map((r) => ({
   title: r.title,
   pages: r.pages ? r.pages.map((p) => (typeof p === 'string' ? { name: p, label: p } : p)) : null,
 }));
+
+/** Liens directs en tête du menu (« Dashboard ») : affichés tout en haut de la liste. */
+export const MENU_TOP = MENU.slice(
+  0,
+  MENU.findIndex((r) => r.pages),
+);
 
 /** Noms des pages du menu, dans l'ordre. */
 export const MENU_PAGES = MENU.flatMap((r) => (r.pages ? r.pages.map((p) => p.name) : [r.title]));

@@ -183,7 +183,12 @@ try {
   await panel.fill('#version', '5.3');
   // Liste des pages : menu par rubrique, champ texte masqué tant qu'on n'a pas choisi « Saisie libre »
   assert.equal(await panel.locator('#pagePick optgroup').count(), 7, 'rubriques du menu');
-  assert.equal(await panel.locator('#pagePick option').count(), 47, '45 pages + choix vide + saisie libre');
+  assert.equal(await panel.locator('#pagePick option').count(), 48, '46 pages + choix vide + saisie libre');
+  assert.deepEqual(
+    (await panel.locator('#pagePick option').allTextContents()).slice(0, 3),
+    ['— Choisir une page —', 'Dashboard', '✎ Saisie libre (autre page)…'],
+    '« Dashboard » tout en haut',
+  );
   assert.ok(await panel.isHidden('#page'), 'champ texte masqué');
   await panel.selectOption('#pagePick', 'Liste Mensuelle');
   assert.equal(await panel.inputValue('#page'), 'Liste Mensuelle', 'page reprise de la liste');
@@ -252,7 +257,7 @@ try {
   assert.equal(await panel.inputValue('#sid'), 'PRD', 'SID conservé');
   assert.equal(await panel.inputValue('#version'), '5.3', 'version conservée');
   assert.equal(await panel.isChecked('#specific'), false);
-  assert.equal(await panel.inputValue('#pagePick'), 'Fiche Salarié', 'page suivante : 1re page du menu');
+  assert.equal(await panel.inputValue('#pagePick'), 'Dashboard', 'page suivante : 1re page du menu');
   assert.ok(await panel.isHidden('#page'));
   await freePage(panel, 'Fiche client');
   await panel.check('#specific'); // « Page spécifique ? »
