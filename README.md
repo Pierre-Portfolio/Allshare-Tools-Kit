@@ -40,7 +40,10 @@ Extension Chrome qui réunit, dans un **panneau latéral**, quatre outils pour l
 - **Détail du chargement** : redirection, DNS, connexion, **attente serveur (requêtes SQL comprises)**, téléchargement, DOM, load, appels AJAX, requêtes les plus lentes
 - **Pour aller plus vite** : auto-complétion, client proposé d'après l'onglet, SID et version repris de la dernière mesure, avancement Ethernet / WiFi de la ligne client, raccourci <kbd>Alt</kbd>+<kbd>Maj</kbd>+<kbd>M</kbd>
 - **Tableau de bord et exports** : grille clients × pages (vues Ethernet + WiFi, Ethernet, WiFi, Écart), tri, recherche, filtres « Incomplets » et « Anomalies », détail d'un client, suppressions ; exports **Excel** ou **CSV** en une ligne (tout, une page, un client, détail des temps), avec URL complète et fin d'URL en option
-- **Réglages** : référentiel des clients (import en masse depuis Excel) et des pages (ordre des colonnes), délai de calme, durée maximale, zones à ignorer, seuils des anomalies, sauvegarde / fusion JSON des mesures
+- **Modifier une ligne** (menu ⋯ ou détail du client) : client, SID et version ; toutes les mesures de la ligne suivent (regroupées si la ligne existe déjà, client renommé dans le référentiel s'il n'a pas d'autre ligne)
+- **Relancer une mesure** : **double-clic sur une case** du tableau de bord (ou du détail d'un client) → la page de départ s'ouvre dans un nouvel onglet avec l'enregistrement lancé, il ne reste qu'à cliquer sur la page ; l'ancienne mesure est remplacée quand la nouvelle est enregistrée (case à décocher pour la garder). Sur une case **N/A**, la page est mesurée pour la première fois
+- **Secondes ou millisecondes** : durées en **secondes** par défaut (« 1,23 s »), en millisecondes au choix (bouton **s / ms** du tableau de bord ou Réglages) ; s'applique au panneau, à l'indicateur sur la page et aux exports Excel / CSV
+- **Réglages** : référentiel des clients (import en masse depuis Excel) et des pages (ordre des colonnes), délai de calme, durée maximale, zones à ignorer, unité des durées, seuils des anomalies, sauvegarde / fusion JSON des mesures
 
 ### Prisme : inspection et conversion de CSV (`panel/prisme.html`, `prisme/`)
 - **Dépôt d'un fichier** (ou exemple avec erreurs), **encodage attendu** ANSI ou UTF-8, refus clair des classeurs, archives, PDF et images
@@ -84,7 +87,7 @@ npm run test:e2e       # charge l'extension dans Chromium et déroule le parcour
 npm run zip            # crée allshare-tools-kit.zip (dossier extension/)
 ```
 
-Le test de bout en bout sert deux applications de démonstration aux délais connus et déroule tout : mesures Insight (Ethernet par défaut, relance, page suivante relancée automatiquement, SPA, annulation, suggestion), exports, réglages, Capsule, Prisme et Training (réponses, rechargement, reprise, onglet réutilisé, laboratoire du cube, export / import de la progression). Captures et fichiers dans `tests/e2e/out/`.
+Le test de bout en bout sert deux applications de démonstration aux délais connus et déroule tout : mesures Insight (Ethernet par défaut, relance, page suivante relancée automatiquement, SPA, annulation, suggestion), exports, unité s / ms, modification d'une ligne, relance par double-clic depuis le tableau de bord, réglages, Capsule, Prisme et Training (réponses, rechargement, reprise, onglet réutilisé, laboratoire du cube, export / import de la progression). Captures et fichiers dans `tests/e2e/out/`.
 
 ## Structure du projet
 ```

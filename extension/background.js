@@ -5,7 +5,8 @@
 //              dans l'onglet, on attend le clic de l'utilisateur ;
 //   measuring  un clic a changé l'URL (ou une nouvelle page se charge) : chrono en cours ;
 //   done       page complètement affichée : la mesure est enregistrée ;
-//   rearming   « Relancer » : retour à la page de départ avant de réarmer.
+//   rearming   « Relancer » : retour à la page de départ avant de réarmer (ou, depuis le
+//              tableau de bord, ouverture de la page de départ dans un nouvel onglet).
 // Les scripts ne sont injectés que pendant une mesure, dans l'onglet concerné.
 
 import {
@@ -13,6 +14,7 @@ import {
   getSession,
   setSession,
   addMeasure,
+  deleteMeasures,
   ensureInCatalog,
   saveSettings,
   newId,
@@ -225,6 +227,52 @@ async function relaunch({ network }) {
   return { ok: true, session: next };
 }
 
+/**
+ * Tableau de bord (double-clic sur une case) : ouvre la page de départ dans un nouvel onglet et y
+ * arme la mesure. replace : mesures de la case supprimées quand la nouvelle est enregistrée.
+ */
+async function remeasure({ app, sid, version, page, specific, network, url, replace, windowId, openerTabId }) {
+  app = normName(app);
+  page = normName(page);
+  if (!app || !page) return { ok: false, error: 'Client ou page manquant.' };
+  if (!/^https?:\/\//i.test(url || '')) return { ok: false, error: 'Aucune page de départ connue pour cette mesure.' };
+  const settings = network ? await saveSettings({ network }) : (await getConfig()).settings;
+  const previous = await getSession();
+  if (previous && ACTIVE.includes(previous.state)) await notifyTab(previous.tabId, { type: 'session-end' });
+  // Onglet vide d'abord : la session doit connaître l'onglet avant que la page ne se charge.
+  const tab = await chrome.tabs.create({
+    url: 'about:blank',
+    active: true,
+    ...(Number.isInteger(windowId) ? { windowId } : {}),
+    ...(Number.isInteger(openerTabId) ? { openerTabId } : {}),
+  });
+  const ids = Array.isArray(replace) ? replace.filter((id) => typeof id === 'string') : [];
+  const session = {
+    id: newId(),
+    tabId: tab.id,
+    app,
+    sid: normName(sid),
+    version: normName(version),
+    page,
+    specific: !!specific,
+    network: settings.network,
+    state: 'rearming',
+    armedAt: Date.now(),
+    armUrl: url,
+    replace: ids.length ? { ids, network: settings.network } : null,
+    click: null,
+    leftAt: null,
+    startEpoch: null,
+    result: null,
+  };
+  await updateSession(() => session);
+  await registerScripts();
+  rearmWhenLoaded(tab.id, session.id);
+  await chrome.tabs.update(tab.id, { url });
+  updateBadge();
+  return { ok: true, session };
+}
+
 // ---------------------------------------------------------------- Messages des scripts de mesure
 
 async function hello(msg, tabId) {
@@ -285,10 +333,15 @@ async function saveResult(msg, tabId) {
   };
   await addMeasure(measure);
   await ensureInCatalog(s.app, s.page);
+  // Relance depuis le tableau de bord : les anciennes mesures de la case sont remplacées
+  // (pas si le réseau a été changé entre-temps : la nouvelle mesure est dans une autre case).
+  const replaced = s.replace && s.replace.network === measure.network ? s.replace.ids : [];
+  if (replaced.length) await deleteMeasures(replaced);
   await updateSession((cur) =>
     cur && cur.id === s.id
       ? {
           ...cur,
+          replace: null,
           state: 'done',
           finishedAt: Date.now(),
           result: { measureId: measure.id, duration: measure.duration, timeout: measure.timeout, url: measure.url },
@@ -344,6 +397,8 @@ function onPanelMessage(msg) {
       return stop();
     case 'relaunch':
       return relaunch(msg);
+    case 'remeasure':
+      return remeasure(msg);
     default:
       return Promise.resolve(null);
   }

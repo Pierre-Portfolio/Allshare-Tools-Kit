@@ -244,7 +244,10 @@
       detail: buildDetail(m),
     }).then((res) => {
       if (!res || !res.ok) return;
-      const value = `${new Intl.NumberFormat('fr-FR').format(duration)} ms`;
+      const value =
+        settings && settings.unit === 'ms'
+          ? `${new Intl.NumberFormat('fr-FR').format(duration)} ms`
+          : `${(duration / 1000).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} s`;
       if (timedOut) showOverlay('warn', `⚠ ${res.label} — activité continue, arrêt à ${value}`);
       else showOverlay('ok', `✓ ${res.label} — ${value}`);
       teardown(true);

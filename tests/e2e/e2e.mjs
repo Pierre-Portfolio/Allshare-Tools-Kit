@@ -229,7 +229,7 @@ try {
     `  Détail : attente serveur ${d.marks.responseStart - d.marks.requestStart} ms, /api/data ${apiCall.duration} ms, fin ${d.marks.end} ms`,
   );
   await panel.waitForSelector('#viewResult:not([hidden])');
-  assert.match(await panel.textContent('#resValue'), /ms/);
+  assert.match(await panel.textContent('#resValue'), /^\d+,\d\d s$/, 'résultat en secondes par défaut');
   assert.match(await panel.textContent('#resLabel'), /Appli 1 · PRD · 5\.3 › Clients · WiFi/);
   assert.match(await panel.textContent('#relaunchOther'), /Relancer en Ethernet/);
   await panel.screenshot({ path: join(out, 'panel-resultat.png') });
@@ -403,6 +403,89 @@ try {
   await report.click('#matrix .name >> nth=0');
   await report.waitForSelector('#detail[open] .dlg-body table');
   await report.click('#detail [data-close]');
+
+  // Unité : secondes par défaut, millisecondes au choix (réglage partagé avec le panneau et les exports)
+  const ethClients = '#matrix td[data-redo-page="Clients"][data-redo-net="ethernet"]';
+  assert.match((await report.textContent(`${ethClients} >> nth=0`)).trim(), /^\d+,\d\d$/, 'secondes par défaut');
+  await report.click('#units [data-unit="ms"]');
+  await report.waitForFunction(
+    (sel) => /^[\d\u202f]+$/.test(document.querySelector(sel).textContent.trim()),
+    ethClients,
+  );
+  assert.equal(await storage(async () => (await chrome.storage.local.get('settings')).settings.unit), 'ms');
+  await report.click('#units [data-unit="s"]');
+  await report.waitForFunction((sel) => /,\d\d$/.test(document.querySelector(sel).textContent.trim()), ethClients);
+
+  // Modifier une ligne (menu ⋯) : client, SID et version ; les mesures suivent
+  await report.click('[data-line-menu] >> nth=0'); // Appli 1 · PRD · 5.3
+  await report.click('#menu button:has-text("Modifier")');
+  await report.waitForSelector('#edit[open]');
+  assert.equal(await report.inputValue('#editClient'), 'Appli 1');
+  assert.equal(await report.inputValue('#editSid'), 'PRD');
+  await report.fill('#editSid', 'PROD');
+  await report.fill('#editVersion', '5.3.1');
+  assert.match(await report.textContent('#editNote'), /Les 4 mesure\(s\) de cette ligne seront mises à jour/);
+  await report.screenshot({ path: join(out, 'dashboard-modifier.png') });
+  await report.click('#editSave');
+  await report.waitForFunction(() => !document.querySelector('#edit').open);
+  await report.waitForFunction(() => document.querySelector('#matrix .sub').textContent === 'SID PROD · v. 5.3.1');
+  const edited = (await measures()).filter((x) => x.app === 'Appli 1');
+  assert.ok(edited.length === 4 && edited.every((x) => x.sid === 'PROD' && x.version === '5.3.1'), 'mesures modifiées');
+  console.log('  Ligne modifiée : Appli 1 · PROD · 5.3.1 (4 mesures)');
+
+  // Double-clic sur une case sans mesure : « Mesurer cette page ? » depuis la page de départ connue
+  await report.dblclick('#matrix td[data-redo-page="Fiche client"][data-redo-net="wifi"] >> nth=0');
+  await report.waitForSelector('#redo[open]');
+  assert.equal(await report.textContent('#redoTitle'), 'Mesurer cette page ?');
+  assert.equal(await report.textContent('#redoUrl'), `${base}/appli1/clients`);
+  assert.ok(await report.isHidden('#redoReplaceBox'), 'rien à remplacer');
+  await report.keyboard.press('Escape');
+  await report.waitForFunction(() => !document.querySelector('#redo').open);
+
+  // Double-clic sur une valeur : relancer la mesure dans un nouvel onglet ouvert sur la page de départ,
+  // l'ancienne mesure est remplacée quand la nouvelle est enregistrée
+  const oldCell = (await measures()).filter(
+    (x) => x.app === 'Appli 1' && x.page === 'Clients' && x.network === 'ethernet',
+  );
+  assert.equal(oldCell.length, 1);
+  const total = (await measures()).length;
+  await report.dblclick(`${ethClients} >> nth=0`);
+  await report.waitForSelector('#redo[open]');
+  assert.equal(await report.textContent('#redoTitle'), 'Relancer cette mesure ?');
+  assert.match(await report.textContent('#redoWhat'), /Appli 1 · PROD · 5\.3\.1 › Clients · Ethernet/);
+  assert.equal(await report.textContent('#redoUrl'), `${base}/appli1/`);
+  assert.ok(await report.isChecked('#redoReplace'), 'remplacement proposé par défaut');
+  await report.screenshot({ path: join(out, 'dashboard-relancer.png') });
+  const known = new Set(context.pages());
+  await report.click('#redoGo');
+  const armed = await waitSession(
+    (s) => s && s.state === 'armed' && s.page === 'Clients' && s.network === 'ethernet' && s.tabId !== tabId,
+    'relance armée depuis le tableau de bord',
+  );
+  assert.deepEqual([armed.app, armed.sid, armed.version], ['Appli 1', 'PROD', '5.3.1']);
+  let redoPage;
+  for (let i = 0; i < 50 && !redoPage; i++, await sleep(100)) {
+    redoPage = context.pages().find((p) => !known.has(p) && p.url() === `${base}/appli1/`);
+  }
+  assert.ok(redoPage, 'page de départ ouverte dans un nouvel onglet');
+  await redoPage.waitForSelector('#nav-clients');
+  await redoPage.click('#nav-clients');
+  let newCell = [];
+  for (let end = Date.now() + 15000; ; await sleep(200)) {
+    newCell = (await measures()).filter((x) => x.app === 'Appli 1' && x.page === 'Clients' && x.network === 'ethernet');
+    if (newCell.length === 1 && newCell[0].id !== oldCell[0].id) break;
+    if (Date.now() > end) throw new Error('relance : nouvelle mesure attendue à la place de l’ancienne');
+  }
+  check(
+    newCell[0],
+    { sid: 'PROD', version: '5.3.1', trigger: 'click', startUrl: `${base}/appli1/` },
+    800,
+    3000,
+    'Ethernet · Clients (relance, tableau de bord)',
+  );
+  assert.equal((await measures()).length, total, 'ancienne mesure remplacée');
+  await redoPage.close();
+  await report.bringToFront();
   // Supprimer une page (menu ⋯ de l'en-tête) puis un client (menu ⋯ de la ligne)
   const before = (await measures()).length;
   await report.click('[data-page-menu="Factures"]');

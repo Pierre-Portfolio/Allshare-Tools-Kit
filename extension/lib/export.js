@@ -12,7 +12,7 @@ import {
   scopeRows,
 } from './report.js';
 import { buildXlsx } from './xlsx.js';
-import { fileStamp } from './format.js';
+import { fileStamp, unitOf } from './format.js';
 
 export function downloadBlob(data, filename, type) {
   const url = URL.createObjectURL(new Blob([data], { type }));
@@ -43,12 +43,13 @@ const slug = (s) =>
 /**
  * Export à la demande.
  * @param {{type: 'all'|'page'|'client'|'detail', page?: string, client?: string,
- *          format: 'xlsx'|'csv', fullUrl?: boolean, urlEnd?: boolean, stat?: string}} req
+ *          format: 'xlsx'|'csv', fullUrl?: boolean, urlEnd?: boolean, stat?: string,
+ *          unit?: 's'|'ms'}} req  unité des durées : celle des réglages par défaut
  */
 export async function exportData(req) {
   const { model, settings } = await loadModel();
   const stat = req.stat || settings.stat;
-  const options = { fullUrl: !!req.fullUrl, urlEnd: !!req.urlEnd };
+  const options = { fullUrl: !!req.fullUrl, urlEnd: !!req.urlEnd, unit: req.unit || unitOf(settings) };
   const now = new Date();
   const name =
     req.type === 'page'

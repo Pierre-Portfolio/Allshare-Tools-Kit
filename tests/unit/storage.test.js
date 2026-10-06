@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { convertV1, isOlderVersion, DEFAULT_SETTINGS } from '../../extension/lib/storage.js';
+import { convertV1, isOlderVersion, planLineEdit, DEFAULT_SETTINGS } from '../../extension/lib/storage.js';
 
 test('convertV1 : mesures de la version 1 (appli par URL, page par chemin) -> noms', () => {
   const apps = [{ id: 'x1', name: 'Client A', baseUrls: ['https://a.fr/'] }];
@@ -43,4 +43,84 @@ test('isOlderVersion : comparaison de versions à points', () => {
 
 test('réseau par défaut : Ethernet', () => {
   assert.equal(DEFAULT_SETTINGS.network, 'ethernet');
+});
+
+test('planLineEdit : client, SID et version d’une ligne', () => {
+  const apps = [
+    { id: 'a', name: 'Ca-Immo', baseUrls: ['https://ca/'] },
+    { id: 'b', name: 'Demo Pierre', baseUrls: [] },
+  ];
+  const mk = (id, app, sid, version) => ({
+    id,
+    app,
+    sid,
+    version,
+    page: 'Dashboard',
+    network: 'ethernet',
+    duration: 1,
+  });
+  const measures = [
+    mk('1', 'Ca-Immo', 'Broude', '3.2'),
+    mk('2', 'ca-immo', 'broude', '3.2'),
+    mk('3', 'Demo Pierre', 'Broude', '3.2.6'),
+    mk('4', 'Demo Pierre', 'PRD', '3.2.6'),
+  ];
+  const line = { client: 'Ca-Immo', sid: 'Broude', version: '3.2' };
+
+  // Version seulement : les 2 mesures de la ligne changent, le référentiel non
+  let plan = planLineEdit(apps, measures, line, { client: 'Ca-Immo', sid: 'Broude', version: ' 3.3 ' });
+  assert.deepEqual(plan.line, { client: 'Ca-Immo', sid: 'Broude', version: '3.3' });
+  assert.deepEqual(
+    plan.measures.map((m) => [m.id, m.app, m.sid, m.version]),
+    [
+      ['1', 'Ca-Immo', 'Broude', '3.3'],
+      ['2', 'Ca-Immo', 'Broude', '3.3'],
+    ],
+  );
+  assert.equal(plan.apps, apps);
+  assert.equal(plan.count, 2);
+  assert.equal(plan.merged, false);
+
+  // Nouveau nom, sans autre ligne : le client est renommé dans le référentiel (URL conservées)
+  plan = planLineEdit(apps, measures, line, { client: 'CA Immobilier', sid: 'Broude', version: '3.2' });
+  assert.deepEqual(
+    plan.apps.map((a) => [a.id, a.name, a.baseUrls]),
+    [
+      ['a', 'CA Immobilier', ['https://ca/']],
+      ['b', 'Demo Pierre', []],
+    ],
+  );
+  assert.ok(plan.measures.every((m) => m.app === 'CA Immobilier'));
+
+  // Casse corrigée : toutes les mesures du client suivent
+  plan = planLineEdit(apps, measures, line, { client: 'CA-IMMO', sid: 'Broude', version: '3.2' });
+  assert.equal(plan.apps[0].name, 'CA-IMMO');
+  assert.deepEqual(
+    plan.measures.map((m) => m.app),
+    ['CA-IMMO', 'CA-IMMO'],
+  );
+
+  // Vers une ligne existante d’un client qui garde d’autres lignes : regroupement, orthographe reprise
+  plan = planLineEdit(apps, measures, line, { client: 'demo pierre', sid: 'PRD', version: '3.2.6' });
+  assert.equal(plan.merged, true);
+  assert.deepEqual(plan.line, { client: 'Demo Pierre', sid: 'PRD', version: '3.2.6' });
+  assert.deepEqual(
+    plan.apps.map((a) => a.name),
+    ['Demo Pierre'],
+    'Ca-Immo n’a plus de mesure : fusionné dans Demo Pierre',
+  );
+  assert.deepEqual(plan.apps[0].baseUrls, ['https://ca/']);
+
+  // Une ligne parmi plusieurs vers un nouveau client : l’ancien reste, le nouveau est ajouté
+  plan = planLineEdit(apps, measures, { client: 'Demo Pierre', sid: 'PRD', version: '3.2.6' }, { client: 'Demo 2' });
+  assert.deepEqual(
+    plan.apps.map((a) => a.name),
+    ['Ca-Immo', 'Demo Pierre', 'Demo 2'],
+  );
+  assert.deepEqual(
+    plan.measures.map((m) => [m.id, m.app, m.sid, m.version]),
+    [['4', 'Demo 2', '', '']],
+  );
+
+  assert.throws(() => planLineEdit(apps, measures, line, { client: '  ' }), /client/);
 });

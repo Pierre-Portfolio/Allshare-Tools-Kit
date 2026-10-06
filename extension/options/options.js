@@ -17,7 +17,7 @@ import { parseAppList, parsePageList, mergeApps, appsToCsv, urlConflicts } from 
 import { buildModel } from '../lib/report.js';
 import { normName, nameKey, compareNames } from '../lib/names.js';
 import { downloadBlob } from '../lib/export.js';
-import { fileStamp } from '../lib/format.js';
+import { fileStamp, unitOf } from '../lib/format.js';
 
 const $ = (id) => document.getElementById(id);
 const nf = new Intl.NumberFormat('fr-FR');
@@ -463,6 +463,7 @@ const numbers = {
 function renderSettings(settings) {
   for (const [id, n] of Object.entries(numbers)) $(id).value = n.show(settings);
   $('ignoreSelectors').value = settings.ignoreSelectors;
+  $('unit').value = unitOf(settings);
   for (const id of checkboxes) $(id).checked = !!settings[id];
 }
 
@@ -487,6 +488,10 @@ function bindSettings() {
       }
     }
     state.settings = await saveSettings({ ignoreSelectors: sel });
+    toast('Réglage enregistré');
+  });
+  $('unit').addEventListener('change', async (e) => {
+    state.settings = await saveSettings({ unit: e.target.value });
     toast('Réglage enregistré');
   });
   for (const id of checkboxes) {

@@ -200,6 +200,42 @@ export function coverage(model, line, networks = NETWORKS.map((n) => n.id)) {
   return { done, total: model.pages.length * networks.length };
 }
 
+/**
+ * Page où (re)lancer la mesure d'une case : la page de départ (celle où l'on a cliqué) de la
+ * dernière mesure de la case, sinon de la même page sur l'autre réseau, puis pour une autre
+ * ligne du client ; à défaut, une page de l'application déjà mesurée pour ce client, ou
+ * l'URL déclarée dans le référentiel. Chaîne vide si aucune n'est connue.
+ */
+export function startUrlFor(model, line, page, network, catalogClients = []) {
+  const found = model.lines.find((l) => l.key === line);
+  if (!found) return '';
+  const http = (u) => /^https?:\/\//i.test(u || '');
+  const pick = (pred, get = (m) => m.startUrl || m.url) => {
+    for (let i = model.rows.length - 1; i >= 0; i--) {
+      const m = model.rows[i];
+      if (pred(m) && http(get(m))) return get(m);
+    }
+    return '';
+  };
+  const samePage = (m) => nameKey(m.page) === nameKey(page);
+  const sameClient = (m) => nameKey(m.app) === nameKey(found.client);
+  const declared = catalogClients.find((c) => c && nameKey(c.name) === nameKey(found.client));
+  return (
+    pick((m) => m.line === line && samePage(m) && m.network === network) ||
+    pick((m) => m.line === line && samePage(m)) ||
+    pick((m) => sameClient(m) && samePage(m)) ||
+    pick((m) => m.line === line) ||
+    pick(sameClient) ||
+    ((declared && declared.baseUrls) || []).find(http) ||
+    ''
+  );
+}
+
+/** Mesures d'une case (ligne, page, réseau), de la plus ancienne à la plus récente. */
+export function cellRows(model, line, page, network) {
+  return model.rows.filter((m) => m.line === line && nameKey(m.page) === nameKey(page) && m.network === network);
+}
+
 /** Pages visibles pas encore mesurées pour une ligne et un réseau. */
 export function missingPages(model, line, network) {
   return model.pages.filter((p) => !model.cells.has(cellKey(line, p.name, network)));
@@ -218,8 +254,24 @@ export function legendText(settings) {
   );
 }
 
-function valueCell(r) {
-  if (r.status === 'ok') return { v: r.value, s: r.level || 'num' };
+/**
+ * Unité des durées d'un export (options.unit) : 'ms' (valeurs brutes, par défaut) ou 's'.
+ * En secondes, Excel reçoit la valeur exacte (1,234) affichée avec 2 décimales (3 pour le
+ * détail des temps) et le CSV la valeur au millième, avec une virgule.
+ */
+export function durationUnit(options = {}) {
+  const ms = options.unit !== 's';
+  return {
+    label: ms ? 'ms' : 's',
+    long: ms ? 'millisecondes' : 'secondes',
+    value: (x) => (typeof x === 'number' && !ms ? x / 1000 : x),
+    style: (level) => (ms ? level || 'num' : { warn: 'secWarn', crit: 'secCrit' }[level] || 'sec'),
+    fine: ms ? 'num' : 'sec3',
+  };
+}
+
+function valueCell(r, u = durationUnit()) {
+  if (r.status === 'ok') return { v: u.value(r.value), s: u.style(r.level) };
   if (r.status === 'timeout') return { v: TIMEOUT_TEXT, s: 'timeout' };
   return { v: MISSING_TEXT, s: 'missing' };
 }
@@ -244,9 +296,9 @@ const lineCells = (l) => [
   { v: l.version, s: 'text' },
 ];
 
-function subtitle(model, stat, date) {
+function subtitle(model, stat, date, u) {
   return (
-    `Statistique : ${STATS[stat] || STATS.avg} · millisecondes entre le clic et l'affichage complet · ` +
+    `Statistique : ${STATS[stat] || STATS.avg} · ${u.long} entre le clic et l'affichage complet · ` +
     `${model.lines.length} ligne(s) client, ${model.pages.length} page(s) · généré le ${fmtDate(date)}`
   );
 }
@@ -259,7 +311,7 @@ export function isSpecific(model, line, page) {
 const yesNo = (b) => (b ? 'Oui' : 'Non');
 
 /** Colonnes communes des mesures (Excel et CSV). */
-const MEASURE_COLUMNS = [
+const baseColumns = (u) => [
   ['Date', (m) => fmtDate(m.ts), 20],
   ['Client', (m) => m.app, 24],
   ['SID', (m) => m.sid || '', 10],
@@ -267,7 +319,7 @@ const MEASURE_COLUMNS = [
   ['Page', (m) => m.page, 24],
   ['Page spécifique', (m) => yesNo(m.specific), 11],
   ['Réseau', (m) => NETWORK_LABELS[m.network] || m.network, 10],
-  ['Durée (ms)', (m) => m.duration, 11, 'num'],
+  [`Durée (${u.label})`, (m) => u.value(m.duration), 11, u.style()],
   ['Timeout', (m) => yesNo(m.timeout), 9],
   ['Type', (m) => KIND_LABELS[m.kind] || m.kind || '', 24],
   ['Déclencheur', (m) => TRIGGER_LABELS[m.trigger] || m.trigger || '', 22],
@@ -283,7 +335,7 @@ function urlColumns({ fullUrl = false, urlEnd: withEnd = false } = {}) {
 
 /** Colonnes des mesures brutes, URL en option. */
 function measureColumns(options = {}) {
-  return [...MEASURE_COLUMNS, ...urlColumns(options)];
+  return [...baseColumns(durationUnit(options)), ...urlColumns(options)];
 }
 
 /** Feuille des mesures brutes (filtrable). */
@@ -304,13 +356,13 @@ export function rawSheet(rows, options = {}, name = 'Mesures') {
 
 // ---------------------------------------------------------------- Export 1 : tout
 
-function networkSheet(model, stat, settings, network, sub) {
+function networkSheet(model, stat, settings, network, sub, u) {
   const { lines, pages } = model;
   const last = Math.max(5, 4 + lines.length);
   return {
     name: NETWORK_LABELS[network],
     rows: [
-      [{ v: `Temps de réponse — ${NETWORK_LABELS[network]} (ms)`, s: 'title' }],
+      [{ v: `Temps de réponse — ${NETWORK_LABELS[network]} (${u.label})`, s: 'title' }],
       [{ v: sub, s: 'muted' }],
       [{ v: legendText(settings), s: 'muted' }],
       header(['Client', 'SID', 'Version', 'Couverture', ...pages.map((p) => p.name)]),
@@ -319,7 +371,7 @@ function networkSheet(model, stat, settings, network, sub) {
         return [
           ...lineCells(l),
           { v: cov.total ? cov.done / cov.total : 0, s: 'pct' },
-          ...pages.map((p) => valueCell(rate(model, l.key, p.name, network, stat, settings))),
+          ...pages.map((p) => valueCell(rate(model, l.key, p.name, network, stat, settings), u)),
         ];
       }),
     ],
@@ -341,7 +393,8 @@ function networkSheet(model, stat, settings, network, sub) {
 
 export function buildGlobalSheets(model, stat, settings, date = new Date(), options = {}) {
   const { lines, pages } = model;
-  const sub = subtitle(model, stat, date);
+  const u = durationUnit(options);
+  const sub = subtitle(model, stat, date, u);
   const first = 6;
   const last = Math.max(first, first + lines.length - 1);
   const pageHead = [
@@ -362,7 +415,7 @@ export function buildGlobalSheets(model, stat, settings, date = new Date(), opti
     {
       name: 'Ethernet + WiFi',
       rows: [
-        [{ v: 'Insight — Temps de réponse par client et par page (ms)', s: 'title' }],
+        [{ v: `Insight — Temps de réponse par client et par page (${u.label})`, s: 'title' }],
         [{ v: sub, s: 'muted' }],
         [{ v: legendText(settings), s: 'muted' }],
         pageHead,
@@ -372,7 +425,9 @@ export function buildGlobalSheets(model, stat, settings, date = new Date(), opti
           return [
             ...lineCells(l),
             { v: cov.total ? cov.done / cov.total : 0, s: 'pct' },
-            ...pages.flatMap((p) => NETWORKS.map((n) => valueCell(rate(model, l.key, p.name, n.id, stat, settings)))),
+            ...pages.flatMap((p) =>
+              NETWORKS.map((n) => valueCell(rate(model, l.key, p.name, n.id, stat, settings), u)),
+            ),
           ];
         }),
       ],
@@ -394,7 +449,7 @@ export function buildGlobalSheets(model, stat, settings, date = new Date(), opti
       freeze: { rows: 5, cols: 3 },
       autoFilter: `A5:${colName(3 + pages.length * 2)}${last}`,
     },
-    ...NETWORKS.map((n) => networkSheet(model, stat, settings, n.id, sub)),
+    ...NETWORKS.map((n) => networkSheet(model, stat, settings, n.id, sub, u)),
     {
       name: 'Écart WiFi-Ethernet',
       rows: [
@@ -431,9 +486,9 @@ export function buildGlobalSheets(model, stat, settings, date = new Date(), opti
         header([
           'Page',
           'Lignes mesurées Ethernet',
-          'Médiane Ethernet (ms)',
+          `Médiane Ethernet (${u.label})`,
           'Lignes mesurées WiFi',
-          'Médiane WiFi (ms)',
+          `Médiane WiFi (${u.label})`,
           'Spécifique pour (lignes client)',
         ]),
         ...pages.map((p) => {
@@ -442,9 +497,9 @@ export function buildGlobalSheets(model, stat, settings, date = new Date(), opti
           return [
             { v: p.name, s: 'textBold' },
             { v: e ? e.count : 0, s: 'num' },
-            { v: e ? e.median : '', s: 'num' },
+            { v: e ? u.value(e.median) : '', s: u.style() },
             { v: w ? w.count : 0, s: 'num' },
-            { v: w ? w.median : '', s: 'num' },
+            { v: w ? u.value(w.median) : '', s: u.style() },
             { v: lines.filter((l) => isSpecific(model, l.key, p.name)).length, s: 'num' },
           ];
         }),
@@ -488,17 +543,18 @@ const findPage = (model, name) =>
 export function buildPageSheets(model, pageName, stat, settings, date = new Date(), options = {}) {
   const page = findPage(model, pageName);
   const { lines } = model;
+  const u = durationUnit(options);
   const rows = [
     [{ v: `Page « ${page} » — tous les clients`, s: 'title' }],
-    [{ v: subtitle(model, stat, date), s: 'muted' }],
+    [{ v: subtitle(model, stat, date, u), s: 'muted' }],
     [{ v: legendText(settings), s: 'muted' }],
     header([
       'Client',
       'SID',
       'Version',
       'Page spécifique',
-      'Ethernet (ms)',
-      'WiFi (ms)',
+      `Ethernet (${u.label})`,
+      `WiFi (${u.label})`,
       'Écart WiFi / Eth.',
       'Ethernet vs médiane',
       'WiFi vs médiane',
@@ -515,8 +571,8 @@ export function buildPageSheets(model, pageName, stat, settings, date = new Date
     rows.push([
       ...lineCells(l),
       { v: measured ? yesNo(isSpecific(model, l.key, page)) : '', s: 'text' },
-      valueCell(e),
-      valueCell(w),
+      valueCell(e, u),
+      valueCell(w, u),
       gapCell(diffStat(model, l.key, page, stat), settings),
       vsMedianCell(e, settings),
       vsMedianCell(w, settings),
@@ -542,7 +598,9 @@ export function buildPageSheets(model, pageName, stat, settings, date = new Date
     ].map(([label, k]) => [
       { v: label, s: 'headerLeft' },
       ...pad,
-      ...refs.map((r) => ({ v: r ? r[k] : '', s: 'num' })),
+      ...refs.map((r) =>
+        k === 'count' ? { v: r ? r[k] : '', s: 'num' } : { v: r ? u.value(r[k]) : '', s: u.style() },
+      ),
     ]),
   );
   return [
@@ -582,20 +640,21 @@ export function buildPageSheets(model, pageName, stat, settings, date = new Date
 /** Une feuille par ligne du client (SID / version), puis ses mesures. */
 export function buildClientSheets(model, clientName, stat, settings, date = new Date(), options = {}) {
   const lines = model.lines.filter((l) => nameKey(l.client) === nameKey(clientName));
+  const u = durationUnit(options);
   const sheets = lines.map((l) => {
     const rows = [
       [{ v: `${lineLabel(l)} — toutes les pages`, s: 'title' }],
-      [{ v: subtitle(model, stat, date), s: 'muted' }],
+      [{ v: subtitle(model, stat, date, u), s: 'muted' }],
       [{ v: legendText(settings), s: 'muted' }],
       header([
         'Page',
         'Page spécifique',
-        'Ethernet (ms)',
-        'WiFi (ms)',
+        `Ethernet (${u.label})`,
+        `WiFi (${u.label})`,
         'Écart WiFi / Eth.',
-        'Médiane clients Ethernet (ms)',
+        `Médiane clients Ethernet (${u.label})`,
         'Ethernet vs médiane',
-        'Médiane clients WiFi (ms)',
+        `Médiane clients WiFi (${u.label})`,
         'WiFi vs médiane',
         'Nb mesures Ethernet',
         'Nb mesures WiFi',
@@ -608,12 +667,12 @@ export function buildClientSheets(model, clientName, stat, settings, date = new 
       rows.push([
         { v: p.name, s: 'textBold' },
         { v: measured ? yesNo(isSpecific(model, l.key, p.name)) : '', s: 'text' },
-        valueCell(e),
-        valueCell(w),
+        valueCell(e, u),
+        valueCell(w, u),
         gapCell(diffStat(model, l.key, p.name, stat), settings),
-        { v: e.ref ? e.ref.median : '', s: 'num' },
+        { v: e.ref ? u.value(e.ref.median) : '', s: u.style() },
         vsMedianCell(e, settings),
-        { v: w.ref ? w.ref.median : '', s: 'num' },
+        { v: w.ref ? u.value(w.ref.median) : '', s: u.style() },
         vsMedianCell(w, settings),
         { v: e.count, s: 'num' },
         { v: w.count, s: 'num' },
@@ -656,11 +715,23 @@ export function buildClientSheets(model, clientName, stat, settings, date = new 
 // ---------------------------------------------------------------- Export 4 : détail des temps d'une page
 
 function detailColumns(options) {
+  const u = durationUnit(options);
+  const base = baseColumns(u);
   return [
-    ...MEASURE_COLUMNS.slice(0, MEASURE_COLUMNS.findIndex(([h]) => h === 'Durée (ms)') + 1), // Date … Durée
-    ...DETAIL_COLUMNS.map(([, label], i) => [`${label} (ms)`, (m) => m._sum.durations[i] ?? '', 12, 'num']),
+    ...base.slice(0, base.findIndex(([h]) => h.startsWith('Durée')) + 1), // Date … Durée
+    ...DETAIL_COLUMNS.map(([, label], i) => [
+      `${label} (${u.label})`,
+      (m) => u.value(m._sum.durations[i] ?? ''),
+      12,
+      u.fine,
+    ]),
     ['Nb requêtes', (m) => m._sum.requestCount ?? '', 11, 'num'],
-    ['Requête la plus lente (ms)', (m) => (m._sum.slowest ? Math.round(m._sum.slowest.duration) : ''), 14, 'num'],
+    [
+      `Requête la plus lente (${u.label})`,
+      (m) => (m._sum.slowest ? u.value(Math.round(m._sum.slowest.duration)) : ''),
+      14,
+      u.fine,
+    ],
     ['URL requête la plus lente', (m) => (m._sum.slowest ? m._sum.slowest.url : ''), 50],
     ...urlColumns(options), // URL en option
   ];
@@ -668,6 +739,7 @@ function detailColumns(options) {
 
 export function buildDetailSheets(model, pageName, date = new Date(), options = {}) {
   const page = findPage(model, pageName);
+  const u = durationUnit(options);
   const measures = model.rows
     .filter((m) => nameKey(m.page) === nameKey(page))
     .map((m) => ({ ...m, _sum: detailSummary(m.detail) }));
@@ -676,7 +748,7 @@ export function buildDetailSheets(model, pageName, date = new Date(), options = 
     [{ v: `Détail des temps — page « ${page} »`, s: 'title' }],
     [
       {
-        v: `Une ligne par mesure · étapes en ms (attente serveur = temps de réponse du serveur, requêtes SQL comprises) · généré le ${fmtDate(date)}`,
+        v: `Une ligne par mesure · étapes en ${u.long} (attente serveur = temps de réponse du serveur, requêtes SQL comprises) · généré le ${fmtDate(date)}`,
         s: 'muted',
       },
     ],
@@ -684,7 +756,17 @@ export function buildDetailSheets(model, pageName, date = new Date(), options = 
     ...measures.map((m) => cols.map(([, get, , style]) => ({ v: get(m), s: style || 'text' }))),
   ];
   const requests = [
-    header(['Date', 'Client', 'SID', 'Version', 'Réseau', 'Début (ms après le clic)', 'Durée (ms)', 'Type', 'URL']),
+    header([
+      'Date',
+      'Client',
+      'SID',
+      'Version',
+      'Réseau',
+      `Début (${u.label} après le clic)`,
+      `Durée (${u.label})`,
+      'Type',
+      'URL',
+    ]),
     ...measures.flatMap((m) =>
       ((m.detail && m.detail.requests) || []).map((r) => [
         { v: fmtDate(m.ts), s: 'text' },
@@ -692,8 +774,8 @@ export function buildDetailSheets(model, pageName, date = new Date(), options = 
         { v: m.sid, s: 'text' },
         { v: m.version, s: 'text' },
         { v: NETWORK_LABELS[m.network], s: 'text' },
-        { v: Math.round(r.start), s: 'num' },
-        { v: Math.round(r.duration), s: 'num' },
+        { v: u.value(Math.round(r.start)), s: u.fine },
+        { v: u.value(Math.round(r.duration)), s: u.fine },
         { v: r.type || '', s: 'text' },
         { v: r.url, s: 'text' },
       ]),
@@ -722,7 +804,7 @@ export function buildDetailSheets(model, pageName, date = new Date(), options = 
 
 function toCsv(cols, rows) {
   const q = (v) => {
-    const s = v === null || v === undefined ? '' : String(v);
+    const s = v === null || v === undefined ? '' : typeof v === 'number' ? String(v).replace('.', ',') : String(v);
     return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   return (

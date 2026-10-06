@@ -13,7 +13,7 @@ import { nameKey, normName, canonical, suggestApp, nextPage, compareNames } from
 import { MENU, MENU_PAGES, MENU_TOP, fitLabel } from '../lib/menu.js';
 import { phases } from '../lib/timing.js';
 import { urlEnd } from '../lib/urls.js';
-import { NETWORKS, NETWORK_LABELS, STATS, fmtMs, fmtDate } from '../lib/format.js';
+import { NETWORKS, NETWORK_LABELS, STATS, unitOf, fmtNum, fmtDuration, fmtDate } from '../lib/format.js';
 
 const $ = (id) => document.getElementById(id);
 const nf = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
@@ -31,6 +31,9 @@ const state = {
   suggestion: null,
   autoFilled: { sid: '', version: '' }, // valeurs SID / version pré-remplies (remplaçables)
 };
+
+/** Durée dans l'unité des réglages : « 1,23 s » ou « 1 234 ms ». */
+const dur = (ms, digits) => fmtDuration(ms, unitOf(state.config && state.config.settings), digits);
 
 const describe = (s) =>
   `${lineLabel({ client: s.app, sid: s.sid, version: s.version })} › ${s.page}${s.specific ? ' (spécifique)' : ''} · ${
@@ -298,11 +301,11 @@ function renderResult(s) {
   if (deleted) {
     value.textContent = 'Mesure supprimée';
   } else if (r.timeout) {
-    value.textContent = `≥ ${fmtMs(r.duration)}`;
+    value.textContent = `≥ ${dur(r.duration)}`;
     value.classList.add('crit');
     facts.push(el('li', { className: 'crit', textContent: 'Timeout : la page bougeait encore à la durée maximale.' }));
   } else {
-    value.textContent = fmtMs(r.duration);
+    value.textContent = dur(r.duration);
     const stat = settings.stat;
     const mine = rate(model, line, s.page, s.network, stat, settings);
     if (mine.ref && mine.ref.count >= 3) {
@@ -312,14 +315,14 @@ function renderResult(s) {
       facts.push(
         el('li', {
           className: level,
-          textContent: `Médiane des ${mine.ref.count} clients : ${fmtMs(mine.ref.median)} (× ${ratio.toLocaleString('fr-FR', { maximumFractionDigits: 1 })})`,
+          textContent: `Médiane des ${mine.ref.count} clients : ${dur(mine.ref.median)} (× ${ratio.toLocaleString('fr-FR', { maximumFractionDigits: 1 })})`,
         }),
       );
     }
     if (mine.count > 1)
       facts.push(
         el('li', {
-          textContent: `${mine.count} mesures sur ce réseau · ${STATS[stat].toLowerCase()} ${fmtMs(mine.value)}`,
+          textContent: `${mine.count} mesures sur ce réseau · ${STATS[stat].toLowerCase()} ${dur(mine.value)}`,
         }),
       );
     const o = cellStat(model, line, s.page, other(s.network), stat);
@@ -328,7 +331,7 @@ function renderResult(s) {
       facts.push(
         el('li', {
           className: Math.abs(pct) >= settings.gapPct ? 'warn' : '',
-          textContent: `${NETWORK_LABELS[other(s.network)]} : ${fmtMs(o.value)} (${pct > 0 ? '+' : ''}${pct} % en ${NETWORK_LABELS[s.network]})`,
+          textContent: `${NETWORK_LABELS[other(s.network)]} : ${dur(o.value)} (${pct > 0 ? '+' : ''}${pct} % en ${NETWORK_LABELS[s.network]})`,
         }),
       );
     } else {
@@ -363,7 +366,8 @@ function renderDetail(measure) {
   if (!d) return;
   const rows = phases(d);
   const total = Math.max(1, ...rows.map((p) => p.end));
-  const n = (v) => nf.format(v);
+  const unit = unitOf(state.config.settings);
+  const n = (v) => fmtNum(v, unit, 3);
   const table = el(
     'table',
     { className: 'timings' },
@@ -374,9 +378,9 @@ function renderDetail(measure) {
         'tr',
         {},
         el('th', { textContent: 'Étape' }),
-        el('th', { className: 'n', textContent: 'Début' }),
-        el('th', { className: 'n', textContent: 'Durée' }),
-        el('th', { className: 'n', textContent: 'Fin' }),
+        el('th', { className: 'n', textContent: `Début (${unit})` }),
+        el('th', { className: 'n', textContent: `Durée (${unit})` }),
+        el('th', { className: 'n', textContent: `Fin (${unit})` }),
         el('th'),
       ),
     ),
@@ -422,7 +426,7 @@ function renderDetail(measure) {
               el(
                 'li',
                 {},
-                el('strong', { textContent: `${n(r.duration)} ms` }),
+                el('strong', { textContent: dur(r.duration, 3) }),
                 el('span', { className: 'url', textContent: urlEnd(r.url) || r.url, title: r.url }),
               ),
             ),
@@ -499,7 +503,7 @@ function renderLast() {
               textContent: `${lineLabel({ client: m.app, sid: m.sid, version: m.version })} › ${m.page}`,
               title: m.url,
             }),
-            el('span', { className: 'value', textContent: m.timeout ? `≥ ${fmtMs(m.duration)}` : fmtMs(m.duration) }),
+            el('span', { className: 'value', textContent: m.timeout ? `≥ ${dur(m.duration)}` : dur(m.duration) }),
             el('button', {
               type: 'button',
               className: 'del',

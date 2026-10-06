@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Allshare Tools Kit",
   "short_name": "Allshare",
-  "version": "3.6.1",
+  "version": "3.7.0",
   "description": "Allshare Tools Kit : Training (formations Métier RH, OLAP et Oracle APEX avec exercices et progression), Capsule (sauvegarde des onglets), Insight (temps de réponse des pages par client, page et réseau Ethernet / WiFi, exports Excel / CSV) et Prisme (inspection et conversion de CSV).",
   "minimum_chrome_version": "116",
   "permissions": ["storage", "scripting", "sidePanel", "unlimitedStorage"],

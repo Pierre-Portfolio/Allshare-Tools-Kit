@@ -12,3 +12,16 @@ test('compteur Insight de l’accueil : clients et pages sauvegardés, accords',
   assert.equal(savedText(1500, 20), '1 500 clients et 20 pages sauvegardés');
   assert.equal(savedText(0, 0), '');
 });
+
+test('durées : secondes par défaut (2 décimales, 3 pour le détail) ou millisecondes', async () => {
+  const { fmtNum, fmtDuration, unitOf } = await import('../../extension/lib/format.js');
+  assert.equal(fmtNum(644), '0,64');
+  assert.equal(fmtNum(2266), '2,27');
+  assert.equal(fmtNum(3, 's', 3), '0,003');
+  assert.equal(fmtDuration(1551), '1,55 s');
+  assert.equal(fmtDuration(1551, 'ms'), '1 551 ms');
+  assert.equal(fmtNum(644, 'ms'), '644');
+  assert.equal(unitOf({ unit: 'ms' }), 'ms');
+  assert.equal(unitOf({}), 's');
+  assert.equal(unitOf(null), 's');
+});

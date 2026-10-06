@@ -27,9 +27,22 @@ export const TRIGGER_LABELS = {
 };
 
 const nf = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
+const fixed = (digits) =>
+  new Intl.NumberFormat('fr-FR', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+const SECONDS = { 2: fixed(2), 3: fixed(3) };
 
-export function fmtMs(ms) {
-  return `${nf.format(ms)} ms`;
+/** Unité d'affichage des durées (Réglages et tableau de bord) : secondes par défaut. */
+export const UNITS = { s: 'Secondes', ms: 'Millisecondes' };
+export const unitOf = (settings) => (settings && settings.unit === 'ms' ? 'ms' : 's');
+
+/** Durée sans unité : « 1,23 » en secondes (2 décimales, 3 pour le détail), « 1 234 » en ms. */
+export function fmtNum(ms, unit = 's', digits = 2) {
+  return unit === 'ms' ? nf.format(ms) : (SECONDS[digits] || SECONDS[2]).format(ms / 1000);
+}
+
+/** Durée avec son unité : « 1,23 s » ou « 1 234 ms ». */
+export function fmtDuration(ms, unit = 's', digits = 2) {
+  return `${fmtNum(ms, unit, digits)} ${unit === 'ms' ? 'ms' : 's'}`;
 }
 
 const pad = (n) => String(n).padStart(2, '0');

@@ -19,6 +19,8 @@ import {
   detailCsv,
   scopeRows,
   isSpecific,
+  startUrlFor,
+  cellRows,
 } from '../../extension/lib/report.js';
 import { DEFAULT_SETTINGS } from '../../extension/lib/storage.js';
 
@@ -256,4 +258,67 @@ test('page spécifique : drapeau par ligne client, colonnes et feuille dédiée'
 
   const csv = measuresCsv(scopeRows(model, { type: 'client', client: 'Client 6' }));
   assert.match(csv, /;Portail maison;Oui;WiFi;700;/);
+});
+
+test('exports en secondes : valeurs exactes, styles « sec », en-têtes et CSV à virgule', () => {
+  const model = buildModel(measures, [], catalogPages);
+  const options = { unit: 's' };
+  const [main, , , , ref, , raw] = buildGlobalSheets(model, 'avg', settings, new Date(), options);
+  assert.match(main.rows[0][0].v, /\(s\)$/);
+  assert.match(main.rows[1][0].v, /secondes entre le clic/);
+  const row2 = main.rows.find((r) => r[0] && r[0].v === 'Client 2' && r[2].v === '5.3');
+  assert.deepEqual(
+    row2.slice(6, 8).map((c) => [c.v, c.s]),
+    [
+      [0.08, 'sec'], // Clients · Ethernet : 80 ms
+      [0.2, 'sec'], // Clients · WiFi : 200 ms
+    ],
+  );
+  const row10 = main.rows.find((r) => r[0] && r[0].v === 'Client 10');
+  assert.deepEqual(row10[7], { v: 0.5, s: 'secCrit' }, 'anomalie conservée');
+  assert.equal(ref.rows[0][2].v, 'Médiane Ethernet (s)');
+  assert.equal(raw.rows[0][7].v, 'Durée (s)');
+  assert.equal(raw.rows[1][7].v, 0.1);
+
+  const [page] = buildPageSheets(model, 'Clients', 'avg', settings, new Date(), options);
+  const median = page.rows.find((r) => r[0] && r[0].v === 'Médiane (tous clients)');
+  assert.deepEqual(median[5], { v: 0.2, s: 'sec' });
+  const count = page.rows.find((r) => r[0] && r[0].v === 'Lignes mesurées');
+  assert.deepEqual(count[5], { v: 5, s: 'num' }, 'les nombres de lignes restent des entiers');
+
+  const csv = measuresCsv(scopeRows(model, { type: 'client', client: 'Client 10' }), options);
+  assert.match(csv, /;Durée \(s\);/);
+  assert.match(csv, /;Clients;Non;WiFi;0,5;/);
+  assert.match(csv, /;Factures;Non;Ethernet;0,9;Oui;/);
+});
+
+test('relance d’une case : page de départ et mesures de la case', () => {
+  const list = [
+    m('Client 7', 'PRD', '1', 'Clients', 'wifi', 100, { startUrl: 'https://srv/c7/accueil' }),
+    m('Client 7', 'PRD', '1', 'Clients', 'wifi', 120, { startUrl: 'https://srv/c7/menu' }),
+    m('Client 7', 'PRD', '1', 'Factures', 'ethernet', 300, { startUrl: 'https://srv/c7/factures-depart' }),
+    m('Client 7', 'REC', '1', 'Fiche', 'wifi', 300, { startUrl: 'https://srv/c7rec/' }),
+  ];
+  const catalog = [
+    { name: 'Client 7', baseUrls: ['https://srv/c7/'] },
+    { name: 'Client 8', baseUrls: ['https://srv/c8/'] },
+  ];
+  const model = buildModel(list, catalog, catalogPages);
+  const l7 = lineKey('Client 7', 'PRD', '1');
+  assert.equal(startUrlFor(model, l7, 'Clients', 'wifi'), 'https://srv/c7/menu', 'dernière mesure de la case');
+  assert.equal(startUrlFor(model, l7, 'clients', 'ethernet'), 'https://srv/c7/menu', 'même page, autre réseau');
+  assert.equal(startUrlFor(model, l7, 'Fiche', 'wifi'), 'https://srv/c7rec/', 'même page, autre ligne du client');
+  assert.equal(
+    startUrlFor(model, l7, 'Masquée', 'wifi'),
+    'https://srv/c7/factures-depart',
+    'page jamais mesurée : dernière page de départ de la ligne',
+  );
+  assert.equal(startUrlFor(model, lineKey('Client 7', 'PRD', '2'), 'Clients', 'wifi'), '', 'ligne inconnue');
+  assert.equal(startUrlFor(model, lineKey('Client 8'), 'Clients', 'wifi', catalog), 'https://srv/c8/');
+  assert.equal(startUrlFor(model, lineKey('Client 8'), 'Clients', 'wifi'), '');
+  assert.deepEqual(
+    cellRows(model, l7, 'Clients', 'wifi').map((x) => x.duration),
+    [100, 120],
+  );
+  assert.equal(cellRows(model, l7, 'Clients', 'ethernet').length, 0);
 });

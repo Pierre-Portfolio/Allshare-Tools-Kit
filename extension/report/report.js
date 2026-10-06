@@ -1,9 +1,20 @@
 // Tableau de bord : export en une ligne, grille clients × pages, mesures.
-import { saveSettings, deleteMeasures, deleteClient, deletePage, isMeasureKey } from '../lib/storage.js';
-import { rate, diffStat, coverage, lineLabel, legendText, isSpecific, MISSING_TEXT } from '../lib/report.js';
+import { saveSettings, deleteMeasures, deleteClient, deletePage, editLine, isMeasureKey } from '../lib/storage.js';
+import {
+  rate,
+  diffStat,
+  coverage,
+  lineLabel,
+  lineKey,
+  legendText,
+  isSpecific,
+  startUrlFor,
+  cellRows,
+  MISSING_TEXT,
+} from '../lib/report.js';
 import { loadModel, exportData } from '../lib/export.js';
-import { nameKey, compareNames } from '../lib/names.js';
-import { NETWORKS, NETWORK_LABELS, STATS, fmtMs, fmtDate } from '../lib/format.js';
+import { nameKey, normName, canonical, compareNames } from '../lib/names.js';
+import { NETWORKS, NETWORK_LABELS, STATS, UNITS, unitOf, fmtNum, fmtDuration, fmtDate } from '../lib/format.js';
 
 const $ = (id) => document.getElementById(id);
 const nf = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
@@ -17,7 +28,10 @@ const state = {
   model: null,
   settings: null,
   measures: [],
+  apps: [],
+  tab: null, // onglet du tableau de bord (fenêtre où ouvrir une relance)
   stat: 'median',
+  unit: 's',
   view: 'both',
   query: '',
   incomplete: false,
@@ -25,7 +39,11 @@ const state = {
   sort: { key: 'name', dir: 1 },
   rawLimit: RAW_PAGE,
   detail: null,
+  editing: null, // ligne en cours de modification
+  redo: null, // case à relancer
 };
+
+const dur = (ms) => fmtDuration(ms, state.unit);
 
 const esc = (s) =>
   String(s ?? '').replace(
@@ -164,29 +182,36 @@ function sortLines(lines, cols, grid, model) {
 const sortAttr = (key) =>
   state.sort.key === key ? ` aria-sort="${state.sort.dir > 0 ? 'ascending' : 'descending'}"` : '';
 
+/** Case relançable au double-clic (vues par réseau, pas l'écart). */
+const redoAttrs = (line, page, net) =>
+  ` data-redo="${esc(line)}" data-redo-page="${esc(page)}" data-redo-net="${esc(net)}"`;
+const redoHint = (status) => (status === 'missing' ? ' · double-clic : mesurer' : ' · double-clic : relancer');
+
 function cellHtml(line, col, v) {
   const cls = `v${col.grp ? ' grp' : ''}`;
   const where = `${lineLabel(line)} · ${col.page.name}`;
+  const redo = col.net === 'diff' ? '' : redoAttrs(line.key, col.page.name, col.net);
+  const hint = col.net === 'diff' ? '' : redoHint(v.status);
   if (v.status === 'missing') {
-    return `<td class="${cls}" title="${esc(where)} : aucune mesure"><span class="pill missing">${MISSING_TEXT}</span></td>`;
+    return `<td class="${cls}"${redo} title="${esc(where)} : aucune mesure${hint}"><span class="pill missing">${MISSING_TEXT}</span></td>`;
   }
   if (v.status === 'timeout') {
-    return `<td class="${cls}" title="${esc(where)} : uniquement des timeouts"><span class="pill timeout">T/O</span></td>`;
+    return `<td class="${cls}"${redo} title="${esc(where)} : uniquement des timeouts${hint}"><span class="pill timeout">T/O</span></td>`;
   }
   let text;
   let title;
   if (col.net === 'diff') {
-    text = v.pct === null ? `${v.value > 0 ? '+' : ''}${nf.format(v.value)}` : pf.format(v.pct);
-    title = `${where} : Ethernet ${fmtMs(v.e.value)} · WiFi ${fmtMs(v.w.value)}`;
+    text = v.pct === null ? `${v.value > 0 ? '+' : ''}${fmtNum(v.value, state.unit)}` : pf.format(v.pct);
+    title = `${where} : Ethernet ${dur(v.e.value)} · WiFi ${dur(v.w.value)}`;
   } else {
-    text = nf.format(v.value);
-    const vs = v.ratio !== null ? ` · ${xf(v.ratio)} × la médiane des clients (${fmtMs(v.ref.median)})` : '';
-    title = `${where} · ${NETWORK_LABELS[col.net]} : ${fmtMs(v.value)} — ${v.count} mesure(s), min ${fmtMs(v.min)}, max ${fmtMs(v.max)}${vs}`;
+    text = fmtNum(v.value, state.unit);
+    const vs = v.ratio !== null ? ` · ${xf(v.ratio)} × la médiane des clients (${dur(v.ref.median)})` : '';
+    title = `${where} · ${NETWORK_LABELS[col.net]} : ${dur(v.value)} — ${v.count} mesure(s), min ${dur(v.min)}, max ${dur(v.max)}${vs}`;
   }
   const spec = isSpecific(state.model, line.key, col.page.name);
   if (spec) title += ' · page spécifique pour ce client';
   const inner = (spec ? SPEC_MARK : '') + (v.level ? `<span class="pill ${v.level}">${text}</span>` : text);
-  return `<td class="${cls}" title="${esc(title)}">${inner}</td>`;
+  return `<td class="${cls}"${redo} title="${esc(title + hint)}">${inner}</td>`;
 }
 
 const SPEC_MARK = '<span class="spec" aria-label="page spécifique">◆</span>';
@@ -295,7 +320,7 @@ function renderLegend() {
     `<span><span class="pill missing">${MISSING_TEXT}</span> pas de mesure</span>` +
     '<span><span class="pill timeout">T/O</span> timeout</span>' +
     `<span>${SPEC_MARK} page spécifique</span>` +
-    `<span>${STATS[state.stat]} en ms · clic sur un en-tête pour trier</span>`;
+    `<span>${STATS[state.stat]} en ${UNITS[state.unit].toLowerCase()} · clic sur un en-tête pour trier · double-clic sur une case pour relancer la mesure</span>`;
   $('legend').title = legendText(s);
 }
 
@@ -317,8 +342,8 @@ function measuresTable(rows, withClient = true) {
         `<td>${esc(m.page)}${m.specific ? ' <span class="tag">spécifique</span>' : ''}</td>` +
         `<td class="muted">${NETWORK_LABELS[m.network] || esc(m.network)}</td>` +
         (m.timeout
-          ? `<td class="n"><span class="pill timeout" title="Timeout : exclue des calculs">≥ ${nf.format(m.duration)}</span></td>`
-          : `<td class="n">${fmtMs(m.duration)}</td>`) +
+          ? `<td class="n"><span class="pill timeout" title="Timeout : exclue des calculs">≥ ${dur(m.duration)}</span></td>`
+          : `<td class="n">${dur(m.duration)}</td>`) +
         `<td class="n"><button type="button" class="del" data-del="${esc(m.id)}" title="Supprimer cette mesure" aria-label="Supprimer cette mesure">✕</button></td>` +
         '</tr>',
     )
@@ -354,12 +379,17 @@ function renderDetail() {
     return;
   }
   const cov = (n) => coverage(model, line.key, [n]);
-  const cell = (r) => {
-    if (r.status === 'missing') return `<td class="n"><span class="pill missing">${MISSING_TEXT}</span></td>`;
-    if (r.status === 'timeout') return '<td class="n"><span class="pill timeout">T/O</span></td>';
+  const cell = (r, page, net) => {
+    const redo = redoAttrs(line.key, page, net);
+    const hint = redoHint(r.status).replace(' · ', '');
+    if (r.status === 'missing') {
+      return `<td class="n"${redo} title="${hint}"><span class="pill missing">${MISSING_TEXT}</span></td>`;
+    }
+    if (r.status === 'timeout')
+      return `<td class="n"${redo} title="${hint}"><span class="pill timeout">T/O</span></td>`;
     const vs = r.ratio !== null ? `<span class="vs">${xf(r.ratio)}×</span>` : '';
-    const v = nf.format(r.value);
-    return `<td class="n" title="${r.count} mesure(s) · min ${fmtMs(r.min)} · max ${fmtMs(r.max)}">${r.level ? `<span class="pill ${r.level}">${v}</span>` : v}${vs}</td>`;
+    const v = fmtNum(r.value, state.unit);
+    return `<td class="n"${redo} title="${r.count} mesure(s) · min ${dur(r.min)} · max ${dur(r.max)} · ${hint}">${r.level ? `<span class="pill ${r.level}">${v}</span>` : v}${vs}</td>`;
   };
   const rows = model.pages
     .map((p) => {
@@ -371,7 +401,7 @@ function renderDetail() {
           ? `<td class="n">${Math.abs(d.pct) * 100 >= settings.gapPct ? `<span class="pill warn">${pf.format(d.pct)}</span>` : pf.format(d.pct)}</td>`
           : '<td></td>';
       const spec = isSpecific(model, line.key, p.name) ? ' <span class="tag">spécifique</span>' : '';
-      return `<tr><td>${esc(p.name)}${spec}</td>${cell(e)}${cell(w)}${gap}<td class="n muted">${e.count} / ${w.count}</td></tr>`;
+      return `<tr><td>${esc(p.name)}${spec}</td>${cell(e, p.name, 'ethernet')}${cell(w, p.name, 'wifi')}${gap}<td class="n muted">${e.count} / ${w.count}</td></tr>`;
     })
     .join('');
   const measures = model.rows.filter((m) => m.line === line.key).reverse();
@@ -380,10 +410,11 @@ function renderDetail() {
     `<h2 id="detailTitle">${esc(lineLabel(line))}</h2>` +
     `<p>Couverture : Ethernet ${cov('ethernet').done}/${cov('ethernet').total} · WiFi ${cov('wifi').done}/${cov('wifi').total} · ${measures.length} mesure(s)</p>` +
     '</div>' +
+    `<button type="button" data-edit-line="${esc(line.key)}">Modifier</button>` +
     `<button type="button" class="primary" data-export-client="${esc(line.client)}">Exporter le client</button>` +
     '<button type="button" data-close>Fermer</button></div>' +
     '<div class="dlg-body">' +
-    `<div><h3>Pages — ${STATS[state.stat].toLowerCase()} en ms (« 1,8× » = 1,8 fois la médiane des clients)</h3>` +
+    `<div><h3>Pages — ${STATS[state.stat].toLowerCase()} en ${UNITS[state.unit].toLowerCase()} (« 1,8× » = 1,8 fois la médiane des clients) · double-clic sur une valeur pour relancer</h3>` +
     '<table class="list"><thead><tr><th>Page</th><th class="n">Ethernet</th><th class="n">WiFi</th><th class="n">Écart</th><th class="n">Mesures (E / W)</th></tr></thead>' +
     `<tbody>${rows}</tbody></table></div>` +
     `<div><h3>Mesures</h3>${measures.length ? measuresTable(measures.slice(0, 200), false) : '<p class="muted">Aucune mesure.</p>'}</div>` +
@@ -444,6 +475,7 @@ function lineMenu(anchor, key) {
   const items = [
     { title: lineLabel(line) },
     { label: 'Voir le détail', run: () => openDetail(key) },
+    { label: 'Modifier (client, SID, version)…', run: () => openEdit(key) },
     {
       label: 'Exporter ce client (Excel)',
       run: () => runExport({ type: 'client', client: line.client, format: 'xlsx' }),
@@ -501,12 +533,169 @@ function openDetail(key) {
   $('detail').showModal();
 }
 
+// ---------------------------------------------------------------- Modifier une ligne (client, SID, version)
+
+function openEdit(key) {
+  const line = state.model.lines.find((l) => l.key === key);
+  if (!line) return;
+  state.editing = line;
+  const count = state.model.lineCounts.get(key) || 0;
+  const values = (field) => [...new Set(state.model.lines.map((l) => l[field]).filter(Boolean))].sort(compareNames);
+  const options = (id, list) =>
+    $(id).replaceChildren(...list.map((v) => Object.assign(document.createElement('option'), { value: v })));
+  options('editClients', state.model.clients);
+  options('editSids', values('sid'));
+  options('editVersions', values('version'));
+  $('editInfo').textContent = `${lineLabel(line)} · ${count} mesure(s)`;
+  $('editClient').value = line.client;
+  $('editSid').value = line.sid;
+  $('editVersion').value = line.version;
+  // Ligne du référentiel jamais mesurée : SID et version n'existent qu'avec des mesures.
+  $('editSid').disabled = !count;
+  $('editVersion').disabled = !count;
+  $('editError').textContent = '';
+  renderEditNote();
+  $('edit').showModal();
+  $('editClient').focus();
+  $('editClient').select();
+}
+
+/** Ce que l'enregistrement va faire : mise à jour, regroupement avec une ligne existante, renommage. */
+function renderEditNote() {
+  const line = state.editing;
+  if (!line) return;
+  const count = state.model.lineCounts.get(line.key) || 0;
+  const client = canonical($('editClient').value, state.model.clients);
+  const key = lineKey(client, $('editSid').value, $('editVersion').value);
+  const other = state.model.lines.find((l) => l.key === key && l.key !== line.key);
+  const notes = [];
+  if (!count) {
+    notes.push('Aucune mesure sur cette ligne : seul le nom du client est modifié.');
+  } else if (other) {
+    notes.push(`« ${lineLabel(other)} » existe déjà : les ${count} mesure(s) y seront regroupées.`);
+  } else {
+    notes.push(`Les ${count} mesure(s) de cette ligne seront mises à jour.`);
+  }
+  if (nameKey(client) !== nameKey(line.client)) {
+    const others = state.model.lines.filter((l) => l.client === line.client && l.key !== line.key).length;
+    const exists = state.model.clients.some((c) => nameKey(c) === nameKey(client));
+    notes.push(
+      others
+        ? `Les ${others} autre(s) ligne(s) de « ${line.client} » ne changent pas.`
+        : exists
+          ? `Le client « ${line.client} » est regroupé avec « ${client} » (référentiel compris).`
+          : `Le client « ${line.client} » est renommé en « ${normName(client)} » (référentiel compris).`,
+    );
+  }
+  $('editNote').textContent = notes.join(' ');
+}
+
+async function saveEdit() {
+  const line = state.editing;
+  if (!line) return;
+  const next = { client: $('editClient').value, sid: $('editSid').value, version: $('editVersion').value };
+  if (!normName(next.client)) {
+    $('editError').textContent = 'Indiquez le client.';
+    return $('editClient').focus();
+  }
+  $('editSave').disabled = true;
+  try {
+    const plan = await editLine(line, $('editSid').disabled ? { ...next, sid: line.sid, version: line.version } : next);
+    $('edit').close();
+    const label = lineLabel(plan.line);
+    if (state.detail === line.key) state.detail = lineKey(plan.line.client, plan.line.sid, plan.line.version);
+    toast(plan.merged ? `Mesures regroupées dans « ${label} »` : `Ligne modifiée : ${label}`);
+  } catch (e) {
+    $('editError').textContent = e.message;
+  } finally {
+    $('editSave').disabled = false;
+  }
+}
+
+// ---------------------------------------------------------------- Relancer une mesure (double-clic sur une case)
+
+function openRedo(key, page, network) {
+  const { model, settings } = state;
+  const line = model.lines.find((l) => l.key === key);
+  if (!line || !NETWORK_LABELS[network]) return;
+  const v = rate(model, key, page, network, state.stat, settings);
+  const url = startUrlFor(model, key, page, network, state.apps);
+  const ids = cellRows(model, key, page, network).map((m) => m.id);
+  state.redo = {
+    app: line.client,
+    sid: line.sid,
+    version: line.version,
+    page,
+    network,
+    specific: isSpecific(model, key, page),
+    url,
+    ids,
+  };
+  const net = NETWORK_LABELS[network];
+  $('redoTitle').textContent = ids.length ? 'Relancer cette mesure ?' : 'Mesurer cette page ?';
+  $('redoWhat').textContent = `${lineLabel(line)} › ${page} · ${net}`;
+  $('redoValue').textContent =
+    v.status === 'ok'
+      ? `${STATS[state.stat]} actuelle : ${dur(v.value)} (${v.count} mesure(s))`
+      : v.status === 'timeout'
+        ? `Uniquement des timeouts (${v.timeouts} mesure(s))`
+        : 'Pas encore de mesure.';
+  $('redoHow').textContent = url
+    ? `La page de départ s'ouvre dans un nouvel onglet et l'enregistrement est lancé : il ne reste qu'à cliquer sur « ${page} » dans l'application.`
+    : "Aucune page connue pour ce client : ouvrez l'application, puis lancez la mesure depuis le panneau Insight.";
+  $('redoUrl').textContent = url;
+  $('redoReplaceBox').hidden = !ids.length;
+  $('redoReplace').checked = true;
+  $('redoReplaceText').textContent =
+    ids.length > 1
+      ? `Remplacer les ${ids.length} mesures actuelles (supprimées quand la nouvelle est enregistrée)`
+      : 'Remplacer la mesure actuelle (supprimée quand la nouvelle est enregistrée)';
+  $('redoNet').textContent = `Mesure en ${net} : vérifiez que le poste est bien en ${net}.`;
+  $('redoGo').textContent = ids.length ? 'Oui, relancer' : 'Oui, mesurer';
+  $('redoGo').disabled = !url;
+  $('redo').showModal();
+  $('redoGo').focus();
+}
+
+async function runRedo() {
+  const r = state.redo;
+  if (!r || !r.url) return;
+  // Le panneau latéral ne s'ouvre qu'en réponse directe au clic : avant tout await.
+  try {
+    if (chrome.sidePanel && chrome.sidePanel.open && state.tab) {
+      chrome.sidePanel.open({ windowId: state.tab.windowId }).catch(() => {});
+    }
+  } catch {
+    /* panneau latéral indisponible : la mesure est armée quand même */
+  }
+  $('redo').close();
+  const res = await chrome.runtime
+    .sendMessage({
+      type: 'remeasure',
+      app: r.app,
+      sid: r.sid,
+      version: r.version,
+      page: r.page,
+      specific: r.specific,
+      network: r.network,
+      url: r.url,
+      replace: $('redoReplace').checked ? r.ids : [],
+      windowId: state.tab ? state.tab.windowId : undefined,
+      openerTabId: state.tab ? state.tab.id : undefined,
+    })
+    .catch((e) => ({ ok: false, error: e.message }));
+  if (!res || !res.ok) toast((res && res.error) || 'Impossible de relancer la mesure.');
+}
+
 // ---------------------------------------------------------------- Rendu global
 
 function renderAll() {
   if (!state.model) return;
   for (const b of $('views').querySelectorAll('[data-view]')) {
     b.setAttribute('aria-checked', String(b.dataset.view === state.view));
+  }
+  for (const b of $('units').querySelectorAll('[data-unit]')) {
+    b.setAttribute('aria-checked', String(b.dataset.unit === state.unit));
   }
   renderExport();
   renderLegend();
@@ -516,9 +705,10 @@ function renderAll() {
 }
 
 async function load() {
-  const { model, settings, measures } = await loadModel();
-  Object.assign(state, { model, settings, measures });
+  const { model, settings, measures, apps } = await loadModel();
+  Object.assign(state, { model, settings, measures, apps });
   state.stat = STATS[settings.stat] ? settings.stat : 'median';
+  state.unit = unitOf(settings);
   state.view = VIEWS.includes(settings.reportView) ? settings.reportView : 'both';
   $('stat').value = state.stat;
   renderAll();
@@ -548,6 +738,14 @@ $('views').addEventListener('click', (e) => {
   state.view = b.dataset.view;
   renderAll();
   saveSettings({ reportView: state.view });
+});
+$('units').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-unit]');
+  if (!b || b.dataset.unit === state.unit) return;
+  state.unit = b.dataset.unit;
+  state.settings = { ...state.settings, unit: state.unit };
+  renderAll();
+  saveSettings({ unit: state.unit });
 });
 $('search').addEventListener('input', (e) => {
   state.query = e.target.value;
@@ -600,6 +798,19 @@ $('matrix').addEventListener('click', (e) => {
   if (name) openDetail(name.dataset.line);
 });
 
+// Double-clic sur une case : relancer (ou faire) la mesure ; pas de sélection du texte.
+function onRedoDblClick(e) {
+  const td = e.target.closest('td[data-redo]');
+  if (td) openRedo(td.dataset.redo, td.dataset.redoPage, td.dataset.redoNet);
+}
+function noSelectOnDblClick(e) {
+  if (e.detail > 1 && e.target.closest('td[data-redo]')) e.preventDefault();
+}
+for (const box of [$('matrix'), $('detail')]) {
+  box.addEventListener('dblclick', onRedoDblClick);
+  box.addEventListener('mousedown', noSelectOnDblClick);
+}
+
 async function onDelete(e) {
   const del = e.target.closest('[data-del]');
   if (!del) return;
@@ -609,6 +820,7 @@ async function onDelete(e) {
 $('raw').addEventListener('click', onDelete);
 $('detail').addEventListener('click', (e) => {
   if (e.target.closest('[data-close]') || e.target === $('detail')) $('detail').close();
+  else if (e.target.closest('[data-edit-line]')) openEdit(e.target.closest('[data-edit-line]').dataset.editLine);
   else if (e.target.closest('[data-export-client]')) {
     runExport({
       type: 'client',
@@ -617,6 +829,19 @@ $('detail').addEventListener('click', (e) => {
     });
   } else onDelete(e);
 });
+
+$('editForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  saveEdit();
+});
+for (const id of ['editClient', 'editSid', 'editVersion']) $(id).addEventListener('input', renderEditNote);
+$('edit').addEventListener('close', () => (state.editing = null));
+$('redoGo').addEventListener('click', runRedo);
+for (const dlg of [$('edit'), $('redo')]) {
+  dlg.addEventListener('click', (e) => {
+    if (e.target.closest('[data-close]') || e.target === dlg) dlg.close();
+  });
+}
 
 document.addEventListener('click', (e) => {
   if (!$('menu').hidden && !e.target.closest('#menu') && !e.target.closest('.dots')) closeMenu();
@@ -629,4 +854,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (changes.apps || changes.pages || changes.settings || Object.keys(changes).some(isMeasureKey)) scheduleLoad();
 });
 
+chrome.tabs.getCurrent().then(
+  (tab) => (state.tab = tab || null),
+  () => {},
+);
 load();

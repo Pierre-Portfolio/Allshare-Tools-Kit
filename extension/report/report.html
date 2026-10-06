@@ -73,6 +73,10 @@
           >Valeur
           <select id="stat"></select
         ></label>
+        <div class="segmented small" role="radiogroup" aria-label="Unité des durées" id="units">
+          <button type="button" role="radio" data-unit="s" title="Durées en secondes">s</button>
+          <button type="button" role="radio" data-unit="ms" title="Durées en millisecondes">ms</button>
+        </div>
       </div>
       <div id="legend" class="legend"></div>
 
@@ -95,6 +99,66 @@
 
     <div id="menu" class="menu" role="menu" hidden></div>
     <dialog id="detail" aria-labelledby="detailTitle"></dialog>
+
+    <!-- Modifier une ligne : client, SID, version -->
+    <dialog id="edit" class="small" aria-labelledby="editTitle">
+      <form id="editForm" novalidate>
+        <div class="dlg-head">
+          <div>
+            <h2 id="editTitle">Modifier la ligne</h2>
+            <p id="editInfo"></p>
+          </div>
+        </div>
+        <div class="dlg-body">
+          <label class="fld">
+            <span>Client</span>
+            <input id="editClient" type="text" list="editClients" spellcheck="false" />
+          </label>
+          <div class="pair">
+            <label class="fld">
+              <span>SID</span>
+              <input id="editSid" type="text" list="editSids" spellcheck="false" />
+            </label>
+            <label class="fld">
+              <span>Version application</span>
+              <input id="editVersion" type="text" list="editVersions" spellcheck="false" />
+            </label>
+          </div>
+          <p id="editNote" class="help"></p>
+          <p id="editError" class="error" role="alert"></p>
+        </div>
+        <div class="dlg-foot">
+          <button type="button" data-close>Annuler</button>
+          <button id="editSave" type="submit" class="primary">Enregistrer</button>
+        </div>
+      </form>
+      <datalist id="editClients"></datalist>
+      <datalist id="editSids"></datalist>
+      <datalist id="editVersions"></datalist>
+    </dialog>
+
+    <!-- Double-clic sur une case : relancer la mesure -->
+    <dialog id="redo" class="small" aria-labelledby="redoTitle">
+      <div class="dlg-head">
+        <div>
+          <h2 id="redoTitle"></h2>
+          <p id="redoWhat"></p>
+        </div>
+      </div>
+      <div class="dlg-body">
+        <p id="redoValue" class="redo-value"></p>
+        <p id="redoHow" class="help"></p>
+        <p id="redoUrl" class="redo-url"></p>
+        <label id="redoReplaceBox" class="check"
+          ><input id="redoReplace" type="checkbox" checked /> <span id="redoReplaceText"></span
+        ></label>
+        <p id="redoNet" class="help"></p>
+      </div>
+      <div class="dlg-foot">
+        <button type="button" data-close>Annuler</button>
+        <button id="redoGo" type="button" class="primary"></button>
+      </div>
+    </dialog>
     <div id="toast" class="toast" role="status"></div>
     <script type="module" src="report.js"></script>
   </body>

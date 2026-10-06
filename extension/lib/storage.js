@@ -23,6 +23,7 @@ export const DEFAULT_SETTINGS = {
   ignoreSelectors: '', // zones qui bougent en permanence (horloge, carrousel…)
   stat: 'median', // statistique des exports : avg | median | min | max | last
   reportView: 'both', // vue de l'aperçu : both | ethernet | wifi | diff
+  unit: 's', // unité des durées affichées et exportées : 's' (secondes) | 'ms'
   // Anomalies (couleurs des exports) : comparaison à la médiane des autres clients pour la même page
   warnRatio: 1.5, // jaune à partir de 1,5 × la médiane
   critRatio: 2, // orange à partir de 2 × la médiane
@@ -157,6 +158,75 @@ export async function renameEverywhere(kind, oldName, newName) {
   const measures = (await getMeasures()).filter((m) => nameKey(m[field]) === nameKey(oldName));
   await chrome.storage.local.set({ [listKey]: next });
   if (measures.length) await putMeasures(measures.map((m) => ({ ...m, [field]: target })));
+}
+
+/**
+ * Modification d'une ligne client · SID · version (tableau de bord). Fonction pure.
+ *  - les mesures de la ligne prennent le nouveau client, SID et version (regroupées avec la ligne
+ *    qui a déjà ces valeurs, s'il y en a une) ;
+ *  - casse ou espaces du client corrigés : le client est renommé partout ;
+ *  - autre client, sans autre ligne pour l'ancien : son entrée du référentiel est renommée
+ *    (URL conservées), ou fusionnée avec le client existant de ce nom ;
+ *  - autre client, l'ancien garde d'autres lignes : le nouveau est ajouté au référentiel.
+ * @param {{client: string, sid: string, version: string}} line  ligne actuelle
+ * @param {{client: string, sid?: string, version?: string}} next nouvelles valeurs
+ * @returns {{apps: object[], measures: object[], line: object, count: number, merged: boolean}}
+ *          référentiel complet, mesures modifiées, ligne obtenue, nombre de mesures de la ligne
+ */
+export function planLineEdit(apps, measures, line, next) {
+  const same = (a, b) => nameKey(a) === nameKey(b);
+  const inLine = (m) => same(m.app, line.client) && same(m.sid, line.sid) && same(m.version, line.version);
+  if (!normName(next.client)) throw new Error('Indiquez le client.');
+  const known = [...apps.map((a) => a.name), ...measures.map((m) => m.app)];
+  const client = same(next.client, line.client) ? normName(next.client) : canonical(next.client, known);
+  const target = { client, sid: normName(next.sid), version: normName(next.version) };
+  const respelled = same(client, line.client) && client !== line.client;
+  const mine = measures.filter(inLine);
+  const merged = measures.some(
+    (m) => !inLine(m) && same(m.app, client) && same(m.sid, target.sid) && same(m.version, target.version),
+  );
+  const changed = [];
+  for (const m of measures) {
+    if (inLine(m)) {
+      if (m.app !== client || (m.sid || '') !== target.sid || (m.version || '') !== target.version) {
+        changed.push({ ...m, app: client, sid: target.sid, version: target.version });
+      }
+    } else if (respelled && same(m.app, client) && m.app !== client) {
+      changed.push({ ...m, app: client });
+    }
+  }
+  const others = measures.some((m) => same(m.app, line.client) && !inLine(m));
+  let nextApps = apps;
+  if (respelled) {
+    nextApps = apps.map((a) => (same(a.name, client) ? { ...a, name: client } : a));
+  } else if (!same(client, line.client)) {
+    const old = apps.find((a) => same(a.name, line.client));
+    const existing = apps.find((a) => same(a.name, client));
+    if (others || !old) {
+      if (!existing) nextApps = [...apps, { id: newId(), name: client, baseUrls: [] }];
+    } else if (existing) {
+      const urls = [...(existing.baseUrls || [])];
+      for (const u of old.baseUrls || []) if (!urls.includes(u)) urls.push(u);
+      nextApps = apps.filter((a) => a !== old).map((a) => (a === existing ? { ...a, baseUrls: urls } : a));
+    } else {
+      nextApps = apps.map((a) => (a === old ? { ...a, name: client } : a));
+    }
+  }
+  return { apps: nextApps, measures: changed, line: target, count: mine.length, merged };
+}
+
+/** Applique planLineEdit ; le brouillon du panneau suit s'il était sur cette ligne. */
+export async function editLine(line, next) {
+  const { apps, draft } = await getConfig();
+  const plan = planLineEdit(apps, await getMeasures(), line, next);
+  const same = (a, b) => nameKey(a) === nameKey(b);
+  const patch = { apps: plan.apps };
+  if (same(draft.app, line.client) && same(draft.sid, line.sid) && same(draft.version, line.version)) {
+    patch.draft = { ...draft, app: plan.line.client, sid: plan.line.sid, version: plan.line.version };
+  }
+  await chrome.storage.local.set(patch);
+  if (plan.measures.length) await putMeasures(plan.measures);
+  return plan;
 }
 
 /**
