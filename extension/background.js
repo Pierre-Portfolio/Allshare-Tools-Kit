@@ -1,4 +1,4 @@
-// Allshare Tools Tips — service worker : mesures Insight, badge de l'icône, raccourci clavier.
+// Allshare Tools Kit — service worker : mesures Insight, badge de l'icône, raccourci clavier.
 //
 // Une mesure se déroule ainsi (état « session » dans chrome.storage.session) :
 //   armed      le formulaire a été validé : les scripts de mesure sont injectés

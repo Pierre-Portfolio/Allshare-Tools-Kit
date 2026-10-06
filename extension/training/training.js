@@ -620,7 +620,7 @@ async function start() {
   renderModules();
   $('content').innerHTML =
     `<div class="col">${renderHero()}${renderPartHead()}${notions.map(renderNotion).join('')}${renderExtras()}` +
-    '<footer class="site-foot mod-foot"><span>Training · Allshare Tools Tips · progression enregistrée dans l\'extension.</span>' +
+    '<footer class="site-foot mod-foot"><span>Training · Allshare Tools Kit · progression enregistrée dans l\'extension.</span>' +
     '<span>Contenu OLAP et APEX repris de la formation OLAP &amp; APEX Training.</span></footer></div>';
   renderRail();
   renderGlossary('');

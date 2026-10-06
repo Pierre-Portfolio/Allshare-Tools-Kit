@@ -1,11 +1,11 @@
 <h1 align="center">
-  <img src="./assets/images/github/header.png" alt="Allshare Tools Tips" />
+  <img src="./assets/images/github/header.png" alt="Allshare Tools Kit" />
 </h1>
 <img src="./assets/images/github/star.gif" alt="star" />
 
 ---
 
-# Allshare Tools Tips — Boîte à outils Chrome
+# Allshare Tools Kit — Boîte à outils Chrome
 
 ## Aperçu
 Extension Chrome qui réunit, dans un **panneau latéral**, quatre outils pour les consultants qui déploient et font vivre une application de pilotage RH auprès d'un parc de 100 à 200 clients :
@@ -61,8 +61,8 @@ Extension Chrome qui réunit, dans un **panneau latéral**, quatre outils pour l
 Clonez le dépôt :
 
 ```bash
-git clone https://github.com/Pierre-Portfolio/Allshare-Tools-Tips.git
-cd Allshare-Tools-Tips
+git clone https://github.com/Pierre-Portfolio/Allshare-Tools-Kit.git
+cd Allshare-Tools-Kit
 ```
 
 Aucune dépendance n'est requise pour utiliser l'extension.
@@ -71,9 +71,9 @@ Aucune dépendance n'est requise pour utiliser l'extension.
 
 1. Dans Chrome, ouvrez `chrome://extensions` et activez le **Mode développeur**.
 2. Cliquez sur **Charger l'extension non empaquetée** et sélectionnez le dossier **`extension/`**.
-3. Épinglez l'icône Allshare Tools Tips (pièce de puzzle → épingle). Le badge indique le réseau d'Insight (`ETH` / `WiFi`), ou `PRÊT` quand une mesure attend votre clic.
+3. Épinglez l'icône Allshare Tools Kit (pièce de puzzle → épingle). Le badge indique le réseau d'Insight (`ETH` / `WiFi`), ou `PRÊT` quand une mesure attend votre clic.
 
-Chrome 116+ (ou Edge, Brave… récents). Pour mettre à jour : `chrome://extensions` → ↻ sur Allshare Tools Tips. Les mesures, sessions, fichiers récents et la progression des formations sont conservés.
+Chrome 116+ (ou Edge, Brave… récents). Pour mettre à jour : `chrome://extensions` → ↻ sur Allshare Tools Kit. Les mesures, sessions, fichiers récents et la progression des formations sont conservés.
 
 ### Tests
 
@@ -81,14 +81,14 @@ Chrome 116+ (ou Edge, Brave… récents). Pour mettre à jour : `chrome://extens
 npm test               # tests unitaires (Node 18+, aucune dépendance)
 npm install            # installe Playwright pour le test de bout en bout
 npm run test:e2e       # charge l'extension dans Chromium et déroule le parcours complet
-npm run zip            # crée allshare-tools-tips.zip (dossier extension/)
+npm run zip            # crée allshare-tools-kit.zip (dossier extension/)
 ```
 
 Le test de bout en bout sert deux applications de démonstration aux délais connus et déroule tout : mesures Insight (Ethernet par défaut, relance, page suivante relancée automatiquement, SPA, annulation, suggestion), exports, réglages, Capsule, Prisme et Training (réponses, rechargement, reprise, onglet réutilisé, laboratoire du cube, export / import de la progression). Captures et fichiers dans `tests/e2e/out/`.
 
 ## Structure du projet
 ```
-Allshare-Tools-Tips/
+Allshare-Tools-Kit/
   README.md                  → Présentation du projet
   package.json               → Scripts de test et d'empaquetage
   extension/
@@ -106,7 +106,7 @@ Allshare-Tools-Tips/
     prisme/                  → Tableau de bord de Prisme : 4 vues, inspecteur de cellule
     options/                 → Réglages d'Insight : clients, pages, mesure, anomalies, données
     lib/                     → Logique sans interface : training, report, xlsx, storage, prisme, capsule…
-    icons/                   → Logo Allshare et icônes des outils
+    icons/                   → Logo du projet et icônes des outils
   tests/
     unit/                    → Tests Node (node --test)
     e2e/e2e.mjs              → Test de bout en bout avec Chromium + Playwright
@@ -149,7 +149,7 @@ La progression est enregistrée dans `chrome.storage.local` (clé `training`) : 
 - Aucune donnée n'est envoyée sur Internet, à part les fichiers que vous téléchargez vous-même.
 
 ## Aperçu de l'interface
-<img src="./assets/images/github/UI.png" alt="Aperçu Allshare Tools Tips" />
+<img src="./assets/images/github/UI.png" alt="Aperçu Allshare Tools Kit" />
 
 ## Auteur
 - [Pierre-Portfolio](https://github.com/Pierre-Portfolio/)

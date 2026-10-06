@@ -1,4 +1,4 @@
-// Test de bout en bout d'Allshare Tools Tips : charge l'extension dans Chromium (Playwright), sert deux
+// Test de bout en bout d'Allshare Tools Kit : charge l'extension dans Chromium (Playwright), sert deux
 // applications de démonstration avec des délais connus, navigue, puis vérifie
 // les mesures d'Insight, le rapport (cases rouges) et les exports, puis Capsule, Prisme et Training.
 //
@@ -453,7 +453,7 @@ try {
   await tools.click('.back');
   await tools.waitForURL(/\/panel\/home\.html\?choose$/);
   assert.deepEqual(await tools.locator('.tool strong').allTextContents(), ['Training', 'Capsule', 'Insight', 'Prisme']);
-  assert.equal((await tools.textContent('.brandline')).trim(), 'Allshare Tools Tips');
+  assert.equal((await tools.textContent('.brandline')).trim(), 'Allshare Tools Kit');
   await tools.waitForFunction(() => document.querySelector('#insightCount').textContent !== '');
   const insightCount = await tools.textContent('#insightCount');
   assert.match(insightCount, /^\d+ clients? et \d+ pages? sauvegardés$/, 'clients et pages d’Insight');

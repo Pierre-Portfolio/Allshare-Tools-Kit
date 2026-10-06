@@ -1,4 +1,4 @@
-// Accueil du panneau latéral d'Allshare Tools Tips : « Quels outils ? » (Training, Capsule, Insight, Prisme).
+// Accueil du panneau latéral d'Allshare Tools Kit : « Quels outils ? » (Training, Capsule, Insight, Prisme).
 // Affiché à chaque ouverture du panneau, sauf pendant une mesure Insight en cours.
 import { getCapsules } from '../lib/capsule.js';
 import { getFiles } from '../lib/prisme-files.js';

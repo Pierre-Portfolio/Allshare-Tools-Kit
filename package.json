@@ -1,13 +1,13 @@
 {
-  "name": "allshare-tools-tips",
-  "version": "3.6.0",
+  "name": "allshare-tools-kit",
+  "version": "3.6.1",
   "private": true,
-  "description": "Allshare Tools Tips : extension Chrome regroupant Training (Métier RH, OLAP, APEX), Capsule, Insight (temps de réponse clic → affichage complet) et Prisme (inspecteur CSV).",
+  "description": "Allshare Tools Kit : extension Chrome regroupant Training (Métier RH, OLAP, APEX), Capsule, Insight (temps de réponse clic → affichage complet) et Prisme (inspecteur CSV).",
   "type": "module",
   "scripts": {
     "test": "node --test \"tests/unit/*.test.js\"",
     "test:e2e": "node tests/e2e/e2e.mjs",
-    "zip": "cd extension && zip -r ../allshare-tools-tips.zip . -x '*.DS_Store'"
+    "zip": "cd extension && zip -r ../allshare-tools-kit.zip . -x '*.DS_Store'"
   },
   "devDependencies": {
     "playwright": "^1.56.1"
