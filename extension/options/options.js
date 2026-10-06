@@ -251,7 +251,7 @@ $('appSearch').addEventListener('input', (e) => {
 });
 $('exportApps').addEventListener('click', () => {
   const apps = [...state.apps].sort((a, b) => compareNames(a.name, b.name));
-  downloadBlob(appsToCsv(apps), `insigth-clients-${fileStamp()}.csv`, 'text/csv;charset=utf-8');
+  downloadBlob(appsToCsv(apps), `insight-clients-${fileStamp()}.csv`, 'text/csv;charset=utf-8');
 });
 
 // ---------------------------------------------------------------- Import en masse des applications
@@ -510,7 +510,7 @@ function renderData() {
 function bindData() {
   $('exportJson').addEventListener('click', async () => {
     const data = await exportBackup();
-    downloadBlob(JSON.stringify(data, null, 2), `insigth-sauvegarde-${fileStamp()}.json`, 'application/json');
+    downloadBlob(JSON.stringify(data, null, 2), `insight-sauvegarde-${fileStamp()}.json`, 'application/json');
   });
   $('importJson').addEventListener('change', async (e) => {
     const file = e.target.files[0];

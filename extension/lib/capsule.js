@@ -3,7 +3,7 @@
 // chrome.storage.local
 //   capsules  sessions sauvegardées, la plus récente en premier :
 //             [{ id, ts, title, client, comment, tabs: [{ url, title, win, pinned }] }]
-//             (client : facultatif, nom d'un client d'Insigth ou saisi librement)
+//             (client : facultatif, nom d'un client d'Insight ou saisi librement)
 //             (win : numéro de la fenêtre d'origine, pour rouvrir fenêtre par fenêtre)
 
 import { newId } from './storage.js';
@@ -48,7 +48,7 @@ export function describeTabs(tabs) {
   return `${n} onglet${n > 1 ? 's' : ''}${w > 1 ? ` · ${w} fenêtres` : ''}`;
 }
 
-/** Clients proposés : ceux d'Insigth (référentiel et mesures), sans doublon, triés. */
+/** Clients proposés : ceux d'Insight (référentiel et mesures), sans doublon, triés. */
 export function clientNames(apps, measures) {
   const names = new Map();
   for (const name of [...apps.map((a) => a.name), ...measures.map((m) => m.app)]) {

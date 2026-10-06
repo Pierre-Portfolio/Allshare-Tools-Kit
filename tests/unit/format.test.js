@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { savedText } from '../../extension/lib/format.js';
 
-test('compteur Insigth de l’accueil : clients et pages sauvegardés, accords', () => {
+test('compteur Insight de l’accueil : clients et pages sauvegardés, accords', () => {
   assert.equal(savedText(3, 10), '3 clients et 10 pages sauvegardés');
   assert.equal(savedText(1, 1), '1 client et 1 page sauvegardés');
   assert.equal(savedText(2, 0), '2 clients sauvegardés');

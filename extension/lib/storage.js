@@ -166,7 +166,7 @@ export async function deletePage(page) {
 export async function exportBackup() {
   const { apps, pages } = await getConfig();
   return {
-    format: 'insigth-backup',
+    format: 'insight-backup',
     version: 2,
     exportedAt: new Date().toISOString(),
     apps,
@@ -206,8 +206,9 @@ export async function migrateV1() {
 }
 
 export async function importBackup(data) {
-  if (!data || data.format !== 'insigth-backup' || !Array.isArray(data.measures)) {
-    throw new Error("Ce fichier n'est pas une sauvegarde Insigth.");
+  // « insigth-backup » : sauvegardes faites avant le renommage en Insight
+  if (!data || !['insight-backup', 'insigth-backup'].includes(data.format) || !Array.isArray(data.measures)) {
+    throw new Error("Ce fichier n'est pas une sauvegarde Insight.");
   }
   let incoming = { apps: data.apps || [], pages: data.pages || [], measures: data.measures };
   if (data.version === 1) incoming = { ...incoming, ...convertV1(incoming.apps, incoming.pages, incoming.measures) };

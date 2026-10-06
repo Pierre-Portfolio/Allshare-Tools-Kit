@@ -1,29 +1,29 @@
-// Insigth — script injecté dans le contexte de la page (monde « MAIN »).
+// Insight — script injecté dans le contexte de la page (monde « MAIN »).
 //
 // Il enveloppe fetch() et XMLHttpRequest pour signaler le début et la fin de
 // chaque requête au script de mesure (content.js) via deux évènements DOM :
-// « insigth:net-start » et « insigth:net-end ». Le comportement de la page
+// « insight:net-start » et « insight:net-end ». Le comportement de la page
 // n'est pas modifié.
 (() => {
-  if (window.__insigthPageHook) return;
-  Object.defineProperty(window, '__insigthPageHook', { value: true });
+  if (window.__insightPageHook) return;
+  Object.defineProperty(window, '__insightPageHook', { value: true });
 
   const emit = (type) => document.dispatchEvent(new Event(type));
 
   const nativeFetch = window.fetch;
   if (typeof nativeFetch === 'function') {
     window.fetch = function fetch(...args) {
-      emit('insigth:net-start');
+      emit('insight:net-start');
       let promise;
       try {
         promise = nativeFetch.apply(window, args);
       } catch (e) {
-        emit('insigth:net-end');
+        emit('insight:net-end');
         throw e;
       }
       promise.then(
-        () => emit('insigth:net-end'),
-        () => emit('insigth:net-end'),
+        () => emit('insight:net-end'),
+        () => emit('insight:net-end'),
       );
       return promise;
     };
@@ -38,10 +38,10 @@
         if (done) return;
         done = true;
         this.removeEventListener('loadend', finish);
-        emit('insigth:net-end');
+        emit('insight:net-end');
       };
       this.addEventListener('loadend', finish);
-      emit('insigth:net-start');
+      emit('insight:net-start');
       try {
         const result = nativeSend.apply(this, args);
         if (this.readyState === 4) finish(); // requête synchrone

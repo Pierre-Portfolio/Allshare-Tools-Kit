@@ -1,4 +1,4 @@
-// Insigth — script de mesure (monde isolé de l'extension).
+// Insight — script de mesure (monde isolé de l'extension).
 //
 // Injecté uniquement pendant une mesure lancée depuis le panneau :
 //  * mode « armed » : la page est affichée, on attend le clic de l'utilisateur.
@@ -12,10 +12,10 @@
 // DERNIÈRE activité (modification du DOM ou réponse réseau) : le délai d'attente
 // du calme n'est pas compté.
 (() => {
-  if (window.__insigthContent) return;
-  window.__insigthContent = true;
-  const injected = !!window.__insigthInjected; // injecté dans une page déjà affichée
-  window.__insigthInjected = false;
+  if (window.__insightContent) return;
+  window.__insightContent = true;
+  const injected = !!window.__insightInjected; // injecté dans une page déjà affichée
+  window.__insightInjected = false;
   const fresh = !injected && document.readyState === 'loading';
 
   const now = () => performance.now();
@@ -91,8 +91,8 @@
     pending = Math.max(0, pending - 1);
     activity(now());
   };
-  document.addEventListener('insigth:net-start', onNetStart);
-  document.addEventListener('insigth:net-end', onNetEnd);
+  document.addEventListener('insight:net-start', onNetStart);
+  document.addEventListener('insight:net-end', onNetEnd);
 
   // Ressources terminées pendant la mesure ; les appels fetch/XHR sont gardés pour le détail.
   const NET_TYPES = new Set(['fetch', 'xmlhttprequest']);
@@ -289,8 +289,8 @@
     active = false;
     observer.disconnect();
     if (resourceObserver) resourceObserver.disconnect();
-    document.removeEventListener('insigth:net-start', onNetStart);
-    document.removeEventListener('insigth:net-end', onNetEnd);
+    document.removeEventListener('insight:net-start', onNetStart);
+    document.removeEventListener('insight:net-end', onNetEnd);
     window.removeEventListener('click', onUserAction, true);
     window.removeEventListener('keydown', onUserAction, true);
     window.removeEventListener('beforeunload', onLeave);
@@ -303,7 +303,7 @@
     clearInterval(timer);
     timer = 0;
     current = null;
-    window.__insigthContent = false; // une nouvelle mesure pourra réinjecter le script
+    window.__insightContent = false; // une nouvelle mesure pourra réinjecter le script
     if (!keepOverlay) hideOverlay();
   }
 
@@ -349,7 +349,7 @@
     }
     queued = null;
     if (!overlayHost || !overlayHost.isConnected) {
-      overlayHost = document.createElement('insigth-indicator');
+      overlayHost = document.createElement('insight-indicator');
       overlayHost.style.cssText =
         'all:initial;position:fixed;right:12px;bottom:12px;z-index:2147483647;pointer-events:none;';
       const root = overlayHost.attachShadow({ mode: 'closed' });

@@ -362,7 +362,7 @@ export function buildGlobalSheets(model, stat, settings, date = new Date(), opti
     {
       name: 'WiFi + Ethernet',
       rows: [
-        [{ v: 'Insigth — Temps de réponse par client et par page (ms)', s: 'title' }],
+        [{ v: 'Insight — Temps de réponse par client et par page (ms)', s: 'title' }],
         [{ v: sub, s: 'muted' }],
         [{ v: legendText(settings), s: 'muted' }],
         pageHead,

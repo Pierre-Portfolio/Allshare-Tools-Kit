@@ -5,7 +5,7 @@
 //                   [{ id, name, size, ts, hash, summary: { encoding, delim, rows, cols, counts } }]
 //   prismeSettings  { expected: 'ansi' | 'utf8', crlf: true, view: 'details' | 'raw' | 'excel' | 'text' }
 // IndexedDB « prisme », magasin « files » : contenu de chaque fichier { id, bytes }
-//   (hors de chrome.storage.local : les mesures d'Insigth y sont relues en entier à chaque affichage)
+//   (hors de chrome.storage.local : les mesures d'Insight y sont relues en entier à chaque affichage)
 
 import { newId } from './storage.js';
 import { fingerprint, summarize } from './prisme.js';

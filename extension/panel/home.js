@@ -1,5 +1,5 @@
-// Accueil du panneau latéral : « Quels outils ? » (Capsule, Insigth, Prisme).
-// Affiché à chaque ouverture du panneau, sauf pendant une mesure Insigth en cours.
+// Accueil du panneau latéral : « Quels outils ? » (Capsule, Insight, Prisme).
+// Affiché à chaque ouverture du panneau, sauf pendant une mesure Insight en cours.
 import { getCapsules } from '../lib/capsule.js';
 import { getFiles } from '../lib/prisme-files.js';
 import { getConfig, getMeasures } from '../lib/storage.js';
@@ -13,7 +13,7 @@ const isActive = (s) => !!(s && ACTIVE.includes(s.state));
 async function init() {
   const { session, panelTool } = await chrome.storage.session.get(['session', 'panelTool']);
   if (panelTool) {
-    // Panneau ouvert par le raccourci clavier d'Insigth (formulaire incomplet)
+    // Panneau ouvert par le raccourci clavier d'Insight (formulaire incomplet)
     await chrome.storage.session.remove('panelTool');
     return location.replace('panel.html');
   }
@@ -28,16 +28,16 @@ async function init() {
   document.getElementById('capsuleCount').textContent = n
     ? `${n} session${n > 1 ? 's' : ''} sauvegardée${n > 1 ? 's' : ''}`
     : '';
-  // Clients et pages d'Insigth : référentiel (Réglages) et mesures, sans doublon
+  // Clients et pages d'Insight : référentiel (Réglages) et mesures, sans doublon
   const model = buildModel(measures, apps, pages);
-  document.getElementById('insigthCount').textContent = savedText(model.clients.length, model.allPages.length);
+  document.getElementById('insightCount').textContent = savedText(model.clients.length, model.allPages.length);
   const f = files.length;
   document.getElementById('prismeCount').textContent = f
     ? `${f} fichier${f > 1 ? 's' : ''} récent${f > 1 ? 's' : ''}`
     : '';
 }
 
-// Mesure lancée au raccourci clavier pendant que l'accueil est affiché : on passe sur Insigth.
+// Mesure lancée au raccourci clavier pendant que l'accueil est affiché : on passe sur Insight.
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'session' && changes.session && !isActive(changes.session.oldValue)) {
     if (isActive(changes.session.newValue)) location.replace('panel.html');

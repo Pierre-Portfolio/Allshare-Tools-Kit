@@ -99,7 +99,7 @@ await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${server.address().port}`;
 
 // ---------- Navigateur avec l'extension
-const userDataDir = mkdtempSync(join(tmpdir(), 'insigth-e2e-'));
+const userDataDir = mkdtempSync(join(tmpdir(), 'insight-e2e-'));
 const context = await chromium.launchPersistentContext(userDataDir, {
   channel: 'chromium',
   headless: process.env.HEADED ? false : true,
@@ -191,7 +191,7 @@ try {
   await panel.click('#arm');
   await waitSession((s) => s && s.state === 'armed', 'armé');
   await panel.waitForSelector('#viewLive:not([hidden])');
-  await page.waitForSelector('insigth-indicator', { state: 'attached' });
+  await page.waitForSelector('insight-indicator', { state: 'attached' });
   await panel.screenshot({ path: join(out, 'panel-pret.png') });
 
   // 3. Clic dans l'appli -> nouvelle page -> mesure
@@ -344,16 +344,16 @@ try {
     return d.suggestedFilename();
   };
   await report.selectOption('#exType', 'all');
-  assert.match(await download('export-tout.xlsx'), /^insigth-tout-.*\.xlsx$/);
+  assert.match(await download('export-tout.xlsx'), /^insight-tout-.*\.xlsx$/);
   await report.selectOption('#exType', 'page');
   await report.selectOption('#exPage', 'Clients');
-  assert.match(await download('export-page.xlsx'), /^insigth-page-clients-/);
+  assert.match(await download('export-page.xlsx'), /^insight-page-clients-/);
   await report.selectOption('#exType', 'client');
   await report.selectOption('#exClient', 'Appli 1');
-  assert.match(await download('export-client.xlsx'), /^insigth-client-appli-1-/);
+  assert.match(await download('export-client.xlsx'), /^insight-client-appli-1-/);
   await report.selectOption('#exType', 'detail');
   await report.selectOption('#exPage', 'Clients');
-  assert.match(await download('export-detail.xlsx'), /^insigth-detail-clients-/);
+  assert.match(await download('export-detail.xlsx'), /^insight-detail-clients-/);
   await report.selectOption('#exType', 'all');
   await report.click('#exFormat [data-format="csv"]');
   await report.check('#exFullUrl');
@@ -421,16 +421,16 @@ try {
   // 11. Accueil « Quels outils ? » puis Capsule : sauvegarde des onglets ouverts, réouverture, suppression
   const tools = await context.newPage();
   await tools.setViewportSize({ width: 380, height: 640 });
-  await storage(() => chrome.storage.session.set({ panelTool: 'insigth' })); // raccourci clavier : Insigth direct
+  await storage(() => chrome.storage.session.set({ panelTool: 'insight' })); // raccourci clavier : Insight direct
   await tools.goto(`chrome-extension://${extId}/panel/home.html`);
   await tools.waitForURL(/\/panel\/panel\.html$/);
   await tools.click('.back');
   await tools.waitForURL(/\/panel\/home\.html\?choose$/);
-  assert.deepEqual(await tools.locator('.tool strong').allTextContents(), ['Capsule', 'Insigth', 'Prisme']);
-  await tools.waitForFunction(() => document.querySelector('#insigthCount').textContent !== '');
-  const insigthCount = await tools.textContent('#insigthCount');
-  assert.match(insigthCount, /^\d+ clients? et \d+ pages? sauvegardés$/, 'clients et pages d’Insigth');
-  console.log(`  Accueil : Insigth « ${insigthCount} »`);
+  assert.deepEqual(await tools.locator('.tool strong').allTextContents(), ['Capsule', 'Insight', 'Prisme']);
+  await tools.waitForFunction(() => document.querySelector('#insightCount').textContent !== '');
+  const insightCount = await tools.textContent('#insightCount');
+  assert.match(insightCount, /^\d+ clients? et \d+ pages? sauvegardés$/, 'clients et pages d’Insight');
+  console.log(`  Accueil : Insight « ${insightCount} »`);
   await tools.click('#toolCapsule');
   await tools.waitForSelector('#saveOpen');
   assert.equal(await tools.getAttribute('#saved', 'open'), null, 'sessions repliées au départ');
@@ -454,7 +454,7 @@ try {
   await tools.click('#saveGo');
   assert.match(await tools.textContent('#saveError'), /titre/, 'titre obligatoire');
   await tools.fill('#saveTitle', 'Recette Appli 1');
-  await tools.fill('#saveClient', 'appli  1'); // rattaché au client « Appli 1 » d'Insigth
+  await tools.fill('#saveClient', 'appli  1'); // rattaché au client « Appli 1 » d'Insight
   await tools.fill('#saveComment', 'Reprendre les mesures Ethernet');
   await tools.click('#saveGo');
   await tools.waitForSelector('#saveForm', { state: 'hidden' });

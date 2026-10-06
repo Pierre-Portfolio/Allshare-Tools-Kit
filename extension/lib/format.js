@@ -49,7 +49,7 @@ export function fileStamp(date = new Date()) {
 }
 
 /**
- * Compteur de l'accueil sous Insigth : « 3 clients et 10 pages sauvegardés »,
+ * Compteur de l'accueil sous Insight : « 3 clients et 10 pages sauvegardés »,
  * « 1 page sauvegardée », chaîne vide s'il n'y a rien.
  */
 export function savedText(clients, pages) {

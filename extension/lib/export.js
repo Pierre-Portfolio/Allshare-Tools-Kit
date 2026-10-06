@@ -62,7 +62,7 @@ export async function exportData(req) {
   if (req.format === 'csv') {
     const csv =
       req.type === 'detail' ? detailCsv(model, req.page, options) : measuresCsv(scopeRows(model, req), options);
-    downloadBlob(csv, `insigth-${name}-${fileStamp(now)}.csv`, 'text/csv;charset=utf-8');
+    downloadBlob(csv, `insight-${name}-${fileStamp(now)}.csv`, 'text/csv;charset=utf-8');
     return;
   }
   const sheets =
@@ -75,7 +75,7 @@ export async function exportData(req) {
           : buildGlobalSheets(model, stat, settings, now, options);
   downloadBlob(
     buildXlsx(sheets, now),
-    `insigth-${name}-${fileStamp(now)}.xlsx`,
+    `insight-${name}-${fileStamp(now)}.xlsx`,
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   );
 }

@@ -196,7 +196,7 @@ function renderMatrix() {
   const box = $('matrix');
   if (!model.lines.length || !model.pages.length) {
     box.innerHTML =
-      '<div class="empty">Aucune mesure pour le moment : lancez une mesure depuis le panneau Insigth.</div>';
+      '<div class="empty">Aucune mesure pour le moment : lancez une mesure depuis le panneau Insight.</div>';
     return { shown: 0, anomalies: 0 };
   }
   const cols = columns(model, state.view);

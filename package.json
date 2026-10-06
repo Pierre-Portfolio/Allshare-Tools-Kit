@@ -1,5 +1,5 @@
 {
-  "name": "insigth",
+  "name": "insight",
   "version": "1.0.0",
   "private": true,
   "description": "Extension Chrome : temps de réponse clic → affichage complet, par page, application et réseau (WiFi / Ethernet).",
@@ -7,7 +7,7 @@
   "scripts": {
     "test": "node --test \"tests/unit/*.test.js\"",
     "test:e2e": "node tests/e2e/e2e.mjs",
-    "zip": "cd extension && zip -r ../insigth-extension.zip . -x '*.DS_Store'"
+    "zip": "cd extension && zip -r ../insight-extension.zip . -x '*.DS_Store'"
   },
   "devDependencies": {
     "playwright": "^1.56.1"

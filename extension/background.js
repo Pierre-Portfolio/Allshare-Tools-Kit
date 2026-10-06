@@ -1,4 +1,4 @@
-// Insigth — service worker.
+// Insight — service worker.
 //
 // Une mesure se déroule ainsi (état « session » dans chrome.storage.session) :
 //   armed      le formulaire a été validé : les scripts de mesure sont injectés
@@ -22,7 +22,8 @@ import { canonical, normName } from './lib/names.js';
 import { urlEnd } from './lib/urls.js';
 import { NETWORK_LABELS } from './lib/format.js';
 
-const SCRIPT_IDS = { content: 'insigth-content', hook: 'insigth-page-hook' };
+const SCRIPT_IDS = { content: 'insight-content', hook: 'insight-page-hook' };
+const OLD_SCRIPT_IDS = ['insigth-content', 'insigth-page-hook']; // avant le renommage en Insight
 const ACTIVE = ['armed', 'measuring', 'rearming'];
 
 const label = (s) =>
@@ -49,8 +50,8 @@ function updateSession(fn) {
 
 async function registerScripts() {
   const ids = Object.values(SCRIPT_IDS);
-  const existing = await chrome.scripting.getRegisteredContentScripts({ ids });
-  if (existing.length === ids.length) return;
+  const existing = await chrome.scripting.getRegisteredContentScripts({ ids: [...ids, ...OLD_SCRIPT_IDS] });
+  if (existing.length === ids.length && existing.every((s) => ids.includes(s.id))) return;
   if (existing.length) await chrome.scripting.unregisterContentScripts({ ids: existing.map((s) => s.id) });
   const common = { matches: ['<all_urls>'], runAt: 'document_start', allFrames: false, persistAcrossSessions: false };
   await chrome.scripting.registerContentScripts([
@@ -60,7 +61,9 @@ async function registerScripts() {
 }
 
 async function unregisterScripts() {
-  const existing = await chrome.scripting.getRegisteredContentScripts({ ids: Object.values(SCRIPT_IDS) });
+  const existing = await chrome.scripting.getRegisteredContentScripts({
+    ids: [...Object.values(SCRIPT_IDS), ...OLD_SCRIPT_IDS],
+  });
   if (existing.length) await chrome.scripting.unregisterContentScripts({ ids: existing.map((s) => s.id) });
 }
 
@@ -70,7 +73,7 @@ async function injectInto(tabId) {
   await chrome.scripting.executeScript({
     target: { tabId },
     func: () => {
-      window.__insigthInjected = true; // page déjà chargée : pas de mesure de son chargement
+      window.__insightInjected = true; // page déjà chargée : pas de mesure de son chargement
     },
   });
   await chrome.scripting.executeScript({ target: { tabId }, files: ['content/content.js'] });
@@ -390,7 +393,7 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
     specific: draft.specific,
   });
   if (!res.ok && chrome.sidePanel && chrome.sidePanel.open) {
-    chrome.storage.session.set({ panelTool: 'insigth' }); // ouvrir directement Insigth, pas l'accueil
+    chrome.storage.session.set({ panelTool: 'insight' }); // ouvrir directement Insight, pas l'accueil
     chrome.sidePanel.open({ windowId: target.windowId }).catch(() => {});
   }
 });
@@ -405,7 +408,7 @@ async function boot() {
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
-  await migrateV1().catch((e) => console.error('[Insigth] migration', e));
+  await migrateV1().catch((e) => console.error('[Insight] migration', e));
   await boot();
 });
 chrome.runtime.onStartup.addListener(boot);

@@ -30,7 +30,7 @@ test('buildXlsx produit une archive ZIP valide', () => {
     { name: 'comparatif', rows: [] },
   ]);
   assert.equal(String.fromCharCode(bytes[0], bytes[1]), 'PK');
-  const dir = mkdtempSync(join(tmpdir(), 'insigth-'));
+  const dir = mkdtempSync(join(tmpdir(), 'insight-'));
   const file = join(dir, 't.xlsx');
   writeFileSync(file, bytes);
   let listing;

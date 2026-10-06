@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Insigth – Temps de réponse des pages",
-  "short_name": "Insigth",
-  "version": "3.5.0",
-  "description": "Insigth : temps entre le clic et l'affichage complet d'une page, par client, SID, version, page et réseau (WiFi / Ethernet), avec exports Excel / CSV. Capsule : sauvegarde et réouverture des onglets d'une fenêtre. Prisme : inspection d'un CSV (encodage, séparateurs, anomalies) et conversion ANSI / UTF-8.",
+  "name": "Insight – Temps de réponse des pages",
+  "short_name": "Insight",
+  "version": "3.5.1",
+  "description": "Insight : temps entre le clic et l'affichage complet d'une page, par client, SID, version, page et réseau (WiFi / Ethernet), avec exports Excel / CSV. Capsule : sauvegarde et réouverture des onglets d'une fenêtre. Prisme : inspection d'un CSV (encodage, séparateurs, anomalies) et conversion ANSI / UTF-8.",
   "minimum_chrome_version": "116",
   "permissions": ["storage", "scripting", "sidePanel", "unlimitedStorage"],
   "host_permissions": ["<all_urls>"],
@@ -15,7 +15,7 @@
     "default_path": "panel/home.html"
   },
   "action": {
-    "default_title": "Ouvrir les outils (Capsule, Insigth, Prisme)",
+    "default_title": "Ouvrir les outils (Capsule, Insight, Prisme)",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",

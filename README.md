@@ -1,8 +1,8 @@
-# Insigth
+# Insight
 
 Optimiser les requêtes SQL en analysant le temps de réponse des pages.
 
-**Insigth** est une extension Chrome qui mesure, à la demande, le temps entre **le clic** et
+**Insight** est une extension Chrome qui mesure, à la demande, le temps entre **le clic** et
 **l'affichage complet** d'une page web. Pour chaque mesure, vous indiquez le **client**, son
 **SID**, la **version de l'application** et la **page**. La mesure est enregistrée par réseau
 (**WiFi** ou **Ethernet**), avec le détail du chargement (attente serveur, téléchargement, DOM,
@@ -21,23 +21,23 @@ de pages.
 | ![Quels outils ?](docs/panel-outils.png) | ![Capsule](docs/capsule.png) | ![Prisme](docs/prisme.png) |
 
 - **Capsule** : sauvegarde les onglets de la fenêtre Chrome en cours et les rouvre d'un clic.
-- **Insigth** : mesure du temps de réponse des pages (le cœur de ce document).
+- **Insight** : mesure du temps de réponse des pages (le cœur de ce document).
 - **Prisme** : passe un fichier CSV au crible (encodage, séparateurs, colonnes décalées, accents
   cassés…) et le convertit en ANSI ou en UTF-8.
 
 Sous chaque outil, un compteur résume ce qui est enregistré : sessions de Capsule, clients et pages
-d'Insigth (référentiel des réglages et pages mesurées, par exemple « 3 clients et 10 pages sauvegardés »),
+d'Insight (référentiel des réglages et pages mesurées, par exemple « 3 clients et 10 pages sauvegardés »),
 fichiers récents de Prisme.
 
-La flèche **‹** en haut à gauche ramène au choix de l'outil. Si une mesure Insigth est en cours, le
-panneau s'ouvre directement sur Insigth pour afficher le chrono.
+La flèche **‹** en haut à gauche ramène au choix de l'outil. Si une mesure Insight est en cours, le
+panneau s'ouvre directement sur Insight pour afficher le chrono.
 
 ### Capsule : sauvegarde des onglets
 
 1. **Mes sessions** (replié au départ) liste les sessions sauvegardées, la plus récente en premier :
    titre, client, nombre d'onglets, date. Dépliez une session pour voir son commentaire et ses liens.
 2. **＋ Sauvegarder cette session** demande un **titre**, le **client associé** (facultatif,
-   auto-complété avec les clients d'Insigth) et un **commentaire** facultatif, puis enregistre tous
+   auto-complété avec les clients d'Insight) et un **commentaire** facultatif, puis enregistre tous
    les onglets de la **fenêtre Chrome où vous êtes** : avec 3 onglets dans la fenêtre 1 et 2 dans la
    fenêtre 2, sauvegarder depuis la fenêtre 1 enregistre ses 3 onglets seulement. Le client s'affiche
    en étiquette sur la session.
@@ -116,7 +116,7 @@ mesures.
 | ![Formulaire](docs/panel-formulaire.png) | ![Prêt](docs/panel-pret.png) | ![Résultat](docs/panel-resultat.png) |
 
 1. Cliquez sur l'icône de l'extension : le **panneau latéral** s'ouvre sur **Quels outils ?**,
-   choisissez **Insigth**. Le panneau reste ouvert pendant que vous cliquez dans l'application.
+   choisissez **Insight**. Le panneau reste ouvert pendant que vous cliquez dans l'application.
 2. Choisissez le réseau (**WiFi** / **Ethernet**) et remplissez **Client**, **SID**,
    **Version application** et **Page**. La page se choisit dans la liste du menu de l'application,
    rangée par rubrique (Fiche Salarié, Listes Collaborateurs, RH Suivi Effectifs, Masse Salariale,
@@ -178,10 +178,10 @@ retrouve uniquement dans l'export **Détail des temps — une page**.
 1. Récupérez ce dépôt (`git clone` ou « Download ZIP » puis décompressez).
 2. Dans Chrome, ouvrez `chrome://extensions` et activez le **Mode développeur**.
 3. Cliquez sur **Charger l'extension non empaquetée** et sélectionnez le dossier **`extension/`**.
-4. Épinglez l'icône Insigth (pièce de puzzle → épingle). Le badge indique le réseau courant
+4. Épinglez l'icône Insight (pièce de puzzle → épingle). Le badge indique le réseau courant
    (`WiFi` / `ETH`), ou `PRÊT` quand une mesure attend votre clic.
 
-Chrome 116+ (ou Edge, Brave… récents). Pour mettre à jour : `chrome://extensions` → ↻ sur Insigth.
+Chrome 116+ (ou Edge, Brave… récents). Pour mettre à jour : `chrome://extensions` → ↻ sur Insight.
 Les mesures des versions précédentes sont conservées.
 
 ## Tableau de bord et exports
@@ -333,7 +333,7 @@ extension/
   content/
     page-hook.js         contexte de la page : suivi des requêtes fetch / XHR
     content.js           mesure clic → affichage complet, détail du chargement, indicateur
-  panel/                 panneau latéral : choix de l'outil (home), Insigth (panel : formulaire, chrono,
+  panel/                 panneau latéral : choix de l'outil (home), Insight (panel : formulaire, chrono,
                          résultat, détail), Capsule (capsule), Prisme (prisme : dépôt, verdict, export)
   report/                tableau de bord : export, grille clients × pages, mesures
   prisme/                tableau de bord de Prisme : résumé, 4 vues, inspecteur de cellule
@@ -361,7 +361,7 @@ tests/
 npm test               # tests unitaires (Node 18+, aucune dépendance)
 npm install            # installe Playwright pour le test de bout en bout
 npm run test:e2e       # charge l'extension dans Chromium et déroule le parcours complet
-npm run zip            # crée insigth-extension.zip (dossier extension/)
+npm run zip            # crée insight-extension.zip (dossier extension/)
 ```
 
 Le test de bout en bout lance deux applications de démonstration dont les délais sont connus :

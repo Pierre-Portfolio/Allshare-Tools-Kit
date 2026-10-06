@@ -16,7 +16,7 @@ import { canonical } from '../lib/names.js';
 const $ = (id) => document.getElementById(id);
 const fmtWhen = (ts) => new Date(ts).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
 let capsules = [];
-let clients = []; // clients d'Insigth, proposés pour « Client associé »
+let clients = []; // clients d'Insight, proposés pour « Client associé »
 
 function el(tag, { dataset, ...props } = {}, ...children) {
   const node = Object.assign(document.createElement(tag), props);
