@@ -431,12 +431,23 @@ try {
   await tools.click('#toolCapsule');
   await tools.waitForSelector('#saveOpen');
   assert.equal(await tools.getAttribute('#saved', 'open'), null, 'sessions repliées au départ');
+  // Une autre fenêtre Chrome : ses onglets ne font pas partie de la sauvegarde
+  const otherUrl = `${base}/appli1/autre-fenetre`;
+  const otherWin = await storage((url) => chrome.windows.create({ url, focused: false }).then((w) => w.id), otherUrl);
+  for (let i = 0; i < 50 && !context.pages().some((p) => p.url() === otherUrl); i++) await sleep(100);
+  assert.ok(
+    context.pages().some((p) => p.url() === otherUrl),
+    'autre fenêtre ouverte',
+  );
   const webUrls = context
     .pages()
     .map((p) => p.url())
-    .filter((u) => u.startsWith('http'));
+    .filter((u) => u.startsWith('http') && u !== otherUrl);
   await tools.click('#saveOpen');
-  assert.equal(await tools.textContent('#saveWhat'), `Onglets ouverts à enregistrer : ${webUrls.length} onglets.`);
+  assert.equal(
+    await tools.textContent('#saveWhat'),
+    `Onglets de cette fenêtre à enregistrer : ${webUrls.length} onglets.`,
+  );
   await tools.click('#saveGo');
   assert.match(await tools.textContent('#saveError'), /titre/, 'titre obligatoire');
   await tools.fill('#saveTitle', 'Recette Appli 1');
@@ -449,7 +460,8 @@ try {
   assert.equal(caps[0].title, 'Recette Appli 1');
   assert.equal(caps[0].client, 'Appli 1', 'client associé');
   assert.equal(caps[0].comment, 'Reprendre les mesures Ethernet');
-  assert.deepEqual(caps[0].tabs.map((t) => t.url).sort(), [...webUrls].sort(), 'tous les onglets web enregistrés');
+  assert.deepEqual(caps[0].tabs.map((t) => t.url).sort(), [...webUrls].sort(), 'onglets de cette fenêtre seulement');
+  await storage((id) => chrome.windows.remove(id), otherWin);
   await tools.waitForFunction(() => document.querySelector('#savedCount').textContent === '(1)');
   await tools.click('#saved > summary');
   await tools.click('.capsule .cap-title');

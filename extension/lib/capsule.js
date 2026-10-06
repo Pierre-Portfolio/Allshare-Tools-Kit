@@ -1,4 +1,4 @@
-// Capsule : sauvegarde des onglets ouverts dans le navigateur, puis réouverture.
+// Capsule : sauvegarde des onglets de la fenêtre Chrome en cours, puis réouverture.
 //
 // chrome.storage.local
 //   capsules  sessions sauvegardées, la plus récente en premier :
@@ -70,8 +70,9 @@ export function host(url) {
 
 // ---------------------------------------------------------------- Navigateur
 
+/** Onglets de la fenêtre où le panneau est ouvert (les autres fenêtres ne sont pas sauvegardées). */
 export async function currentTabs() {
-  return snapshot(await chrome.windows.getAll({ populate: true, windowTypes: ['normal'] }));
+  return snapshot([await chrome.windows.getCurrent({ populate: true })]);
 }
 
 export async function getCapsules() {

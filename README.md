@@ -20,7 +20,7 @@ de pages.
 | :-: | :-: |
 | ![Quels outils ?](docs/panel-outils.png) | ![Capsule](docs/capsule.png) |
 
-- **Capsule** : sauvegarde tous les onglets ouverts dans le navigateur et les rouvre d'un clic.
+- **Capsule** : sauvegarde les onglets de la fenêtre Chrome en cours et les rouvre d'un clic.
 - **Insigth** : mesure du temps de réponse des pages (tout le reste de ce document).
 
 La flèche **‹** en haut à gauche ramène au choix de l'outil. Si une mesure Insigth est en cours, le
@@ -32,9 +32,11 @@ panneau s'ouvre directement sur Insigth pour afficher le chrono.
    titre, client, nombre d'onglets, date. Dépliez une session pour voir son commentaire et ses liens.
 2. **＋ Sauvegarder cette session** demande un **titre**, le **client associé** (facultatif,
    auto-complété avec les clients d'Insigth) et un **commentaire** facultatif, puis enregistre tous
-   les onglets ouverts, dans toutes les fenêtres. Le client s'affiche en étiquette sur la session.
+   les onglets de la **fenêtre Chrome où vous êtes** : avec 3 onglets dans la fenêtre 1 et 2 dans la
+   fenêtre 2, sauvegarder depuis la fenêtre 1 enregistre ses 3 onglets seulement. Le client s'affiche
+   en étiquette sur la session.
 3. **Rouvrir** (ou **↗ Tout rouvrir**) rouvre tous les onglets de la session, dans une nouvelle
-   fenêtre par fenêtre d'origine (onglets épinglés compris). Un clic sur un lien n'ouvre que celui-là.
+   fenêtre (onglets épinglés compris). Un clic sur un lien n'ouvre que celui-là.
    **Supprimer** retire la session.
 
 Seules les pages web sont enregistrées (http, https, fichiers locaux) : pas les pages internes de
@@ -275,7 +277,7 @@ extension/
     storage.js           stockage, renommage, suppression, sauvegarde / import, migration
     names.js             noms (normalisation, suggestion du client, page suivante)
     menu.js              pages du menu de l'application, par rubrique (liste du champ « Page »)
-    capsule.js           Capsule : onglets ouverts, sessions sauvegardées, réouverture
+    capsule.js           Capsule : onglets de la fenêtre, sessions sauvegardées, réouverture
     apps.js              import en masse des clients et des pages
     urls.js, export.js, format.js
 tests/

@@ -136,7 +136,7 @@ async function openForm() {
   $('clientList').replaceChildren(...clients.map((name) => el('option', { value: name })));
   pending = await currentTabs();
   $('saveWhat').textContent = pending.length
-    ? `Onglets ouverts à enregistrer : ${describeTabs(pending)}.`
+    ? `Onglets de cette fenêtre à enregistrer : ${describeTabs(pending)}.`
     : 'Aucune page web ouverte à enregistrer.';
   $('saveError').textContent = '';
   $('saveOpen').hidden = true;
@@ -162,7 +162,7 @@ $('saveForm').addEventListener('submit', async (e) => {
     $('saveError').textContent = 'Indiquez un titre.';
     return $('saveTitle').focus();
   }
-  pending = await currentTabs(); // onglets ouverts au moment de l'enregistrement
+  pending = await currentTabs(); // onglets de la fenêtre au moment de l'enregistrement
   if (!pending.length) {
     $('saveError').textContent = 'Aucune page web ouverte à enregistrer.';
     return;
