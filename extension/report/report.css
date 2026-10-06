@@ -645,3 +645,23 @@ dialog::backdrop {
     margin-left: 0;
   }
 }
+
+/* ---------- Page spécifique */
+.spec {
+  margin-right: 5px;
+  font-size: 9px;
+  color: var(--accent);
+  vertical-align: 1px;
+}
+
+.tag {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  vertical-align: 1px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}

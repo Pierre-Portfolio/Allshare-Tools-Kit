@@ -26,7 +26,9 @@ const SCRIPT_IDS = { content: 'insigth-content', hook: 'insigth-page-hook' };
 const ACTIVE = ['armed', 'measuring', 'rearming'];
 
 const label = (s) =>
-  `${[s.app, s.sid, s.version].filter(Boolean).join(' · ')} › ${s.page} · ${NETWORK_LABELS[s.network] || s.network}`;
+  `${[s.app, s.sid, s.version].filter(Boolean).join(' · ')} › ${s.page}${s.specific ? ' (spécifique)' : ''} · ${
+    NETWORK_LABELS[s.network] || s.network
+  }`;
 
 // ---------------------------------------------------------------- Session (mises à jour sérialisées)
 
@@ -102,7 +104,7 @@ async function updateBadge() {
 
 // ---------------------------------------------------------------- Actions du panneau
 
-async function arm({ tabId, app, sid, version, page, network }) {
+async function arm({ tabId, app, sid, version, page, specific, network }) {
   app = normName(app);
   page = normName(page);
   if (!app) return { ok: false, error: 'Indiquez le client.' };
@@ -131,6 +133,7 @@ async function arm({ tabId, app, sid, version, page, network }) {
     sid: normName(sid),
     version: normName(version),
     page,
+    specific: !!specific,
     network: settings.network,
     state: 'armed',
     armedAt: Date.now(),
@@ -265,6 +268,7 @@ async function saveResult(msg, tabId) {
     sid: s.sid || '',
     version: s.version || '',
     page: s.page,
+    specific: !!s.specific,
     network: s.network,
     duration: Math.max(0, Math.round(Number(msg.duration) || 0)),
     timeout: !!msg.timeout,
@@ -377,7 +381,14 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
   const target = tab || (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
   if (!target) return;
   const { draft } = await getConfig();
-  const res = await arm({ tabId: target.id, app: draft.app, sid: draft.sid, version: draft.version, page: draft.page });
+  const res = await arm({
+    tabId: target.id,
+    app: draft.app,
+    sid: draft.sid,
+    version: draft.version,
+    page: draft.page,
+    specific: draft.specific,
+  });
   if (!res.ok && chrome.sidePanel && chrome.sidePanel.open) {
     chrome.sidePanel.open({ windowId: target.windowId }).catch(() => {});
   }

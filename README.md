@@ -21,8 +21,9 @@ de pages.
 1. Cliquez sur l'icône Insigth : le **panneau latéral** s'ouvre. Il reste ouvert pendant que vous
    cliquez dans l'application.
 2. Choisissez le réseau (**WiFi** / **Ethernet**) et remplissez **Client**, **SID**,
-   **Version application** et **Page**, puis cliquez sur **Lancer l'enregistrement** (ou appuyez
-   sur Entrée).
+   **Version application** et **Page**. Cochez **Page spécifique ?** si la page est propre à ce
+   client (hors pages standard). Cliquez ensuite sur **Lancer l'enregistrement** (ou appuyez sur
+   Entrée).
 3. Dans la page, cliquez sur le lien ou le menu qui ouvre la page à mesurer. Le chrono part **au
    clic** et s'arrête quand la page est **complètement affichée**.
 4. Le temps s'affiche et la mesure est enregistrée. Trois choix s'offrent à vous :
@@ -65,6 +66,8 @@ retrouve uniquement dans l'export **Détail des temps — une page**.
 - **Client proposé d'après l'onglet** ouvert, à partir des mesures déjà faites sur ce site ou de
   l'URL déclarée dans les réglages. Quand vous choisissez un client, son SID et sa version sont
   repris de sa dernière mesure.
+- **Page spécifique ?** se coche toute seule si la page a déjà été déclarée spécifique pour ce client,
+  et se décoche sinon (par exemple avec « Page suivante »).
 - **Avancement** de la ligne client · SID · version : pages mesurées en WiFi et en Ethernet, et pages
   restantes (cliquez dessus pour les choisir).
 - **Raccourci Alt + Maj + M** : il lance l'enregistrement avec les valeurs du formulaire, sans ouvrir
@@ -94,10 +97,14 @@ La fin d'URL, c'est par exemple `f?p=103:21:…` pour une page Oracle APEX.
 
 | Type | Excel | CSV |
 | --- | --- | --- |
-| **Tout — clients × pages** | une ligne par client · SID · version, une colonne par page ; feuilles *WiFi + Ethernet*, *WiFi*, *Ethernet*, *Écart*, *Référence par page*, *Mesures* | toutes les mesures, une par ligne |
-| **Une page — tous les clients** | une ligne par client · SID · version : WiFi, Ethernet, écart, « vs médiane », nombre de mesures ; médiane, min et max en bas | les mesures de la page |
-| **Un client — toutes les pages** | une feuille par SID / version : chaque page comparée à la médiane des clients | les mesures du client |
+| **Tout — clients × pages** | une ligne par client · SID · version, une colonne par page ; feuilles *WiFi + Ethernet*, *WiFi*, *Ethernet*, *Écart*, *Référence par page*, *Pages spécifiques*, *Mesures* | toutes les mesures, une par ligne |
+| **Une page — tous les clients** | une ligne par client · SID · version : page spécifique (Oui / Non), WiFi, Ethernet, écart, « vs médiane », nombre de mesures ; médiane, min et max en bas | les mesures de la page |
+| **Un client — toutes les pages** | une feuille par SID / version : chaque page (spécifique ou non) comparée à la médiane des clients | les mesures du client |
 | **Détail des temps — une page** | une ligne par mesure : chaque étape du chargement, requête la plus lente ; + feuille *Requêtes* | idem, une ligne par mesure |
+
+La colonne **Page spécifique** (Oui / Non) figure aussi dans toutes les mesures (Excel et CSV) et
+dans le détail des temps. La feuille *Pages spécifiques* liste chaque client · SID · version avec ses
+pages spécifiques. Dans la grille du tableau de bord, une page spécifique est marquée ◆.
 
 Dans Excel, les en-têtes et les colonnes Client / SID / Version sont figés, et des filtres
 permettent de trier sur n'importe quelle colonne. La valeur affichée est la **médiane** des mesures
@@ -177,7 +184,7 @@ Thème sombre automatique :
   - la page n'a plus bougé pendant le délai de calme (1 s).
 
   Ce délai sert seulement à détecter la fin ; il n'est **pas** ajouté au temps mesuré.
-- **Ce qui est enregistré avec chaque mesure** : client, SID, version, page, réseau, durée,
+- **Ce qui est enregistré avec chaque mesure** : client, SID, version, page, page spécifique, réseau, durée,
   détail du chargement, URL complète, fin d'URL et page de départ.
 - Les scripts de mesure ne sont injectés **que pendant une mesure**, dans l'onglet concerné.
 

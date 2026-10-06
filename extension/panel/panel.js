@@ -31,7 +31,22 @@ const state = {
 };
 
 const describe = (s) =>
-  `${lineLabel({ client: s.app, sid: s.sid, version: s.version })} › ${s.page} · ${NETWORK_LABELS[s.network]}`;
+  `${lineLabel({ client: s.app, sid: s.sid, version: s.version })} › ${s.page}${s.specific ? ' (spécifique)' : ''} · ${
+    NETWORK_LABELS[s.network]
+  }`;
+
+/** « Page spécifique » déjà déclarée pour ce client et cette page (dernière mesure), sinon non. */
+function knownSpecific(client, page) {
+  const last = [...state.measures]
+    .reverse()
+    .find((m) => nameKey(m.app) === nameKey(client) && nameKey(m.page) === nameKey(page));
+  return !!(last && last.specific);
+}
+
+function setSpecific(value) {
+  $('specific').checked = !!value;
+  saveDraft({ specific: !!value });
+}
 const formLine = () => lineKey($('app').value, $('sid').value, $('version').value);
 const sessionLine = (s) => lineKey(s.app, s.sid, s.version);
 
@@ -130,6 +145,7 @@ function renderForm() {
     $('sid').value = config.draft.sid || '';
     $('version').value = config.draft.version || '';
     $('page').value = config.draft.page || '';
+    $('specific').checked = !!config.draft.specific;
   }
   renderLineLists();
   updateSuggestion();
@@ -430,7 +446,10 @@ function renderLast() {
               title: 'Supprimer cette mesure',
               dataset: { del: m.id },
             }),
-            el('span', { className: 'meta', textContent: `${NETWORK_LABELS[m.network]} · ${fmtDate(m.ts)}` }),
+            el('span', {
+              className: 'meta',
+              textContent: `${NETWORK_LABELS[m.network]} · ${fmtDate(m.ts)}${m.specific ? ' · page spécifique' : ''}`,
+            }),
           ),
         )
       : [el('li', {}, el('span', { className: 'muted', textContent: 'Aucune mesure pour le moment.' }))]),
@@ -449,7 +468,8 @@ async function arm() {
   if (!page) return showError('Indiquez le nom de la page.', 'page');
   const tab = await targetTab();
   if (!tab) return showError('Aucun onglet actif.');
-  await saveDraft({ app, sid, version, page });
+  const specific = $('specific').checked;
+  await saveDraft({ app, sid, version, page, specific });
   $('arm').disabled = true;
   const res = await send({
     type: 'arm',
@@ -458,6 +478,7 @@ async function arm() {
     sid,
     version,
     page,
+    specific,
     network: state.config.settings.network,
   });
   $('arm').disabled = false;
@@ -482,7 +503,13 @@ async function goNext() {
     s.page,
     done,
   );
-  await saveDraft({ app: s.app, sid: s.sid || '', version: s.version || '', page: next });
+  await saveDraft({
+    app: s.app,
+    sid: s.sid || '',
+    version: s.version || '',
+    page: next,
+    specific: knownSpecific(s.app, next),
+  });
   state.formFilled = false; // reprendre les valeurs du brouillon
   await send({ type: 'finish' });
   await load();
@@ -525,6 +552,8 @@ for (const id of ['app', 'sid', 'version', 'page']) {
   });
 }
 $('app').addEventListener('change', prefillLine);
+$('page').addEventListener('change', () => setSpecific(knownSpecific($('app').value, $('page').value)));
+$('specific').addEventListener('change', (e) => saveDraft({ specific: e.target.checked }));
 $('appSuggestUse').addEventListener('click', () => {
   $('app').value = state.suggestion || '';
   $('appSuggest').hidden = true;
@@ -536,6 +565,7 @@ $('progress').addEventListener('click', (e) => {
   if (!chip) return;
   $('page').value = chip.dataset.page;
   saveDraft({ page: chip.dataset.page });
+  setSpecific(knownSpecific($('app').value, chip.dataset.page));
   $('arm').focus();
 });
 $('cancel').addEventListener('click', () => send({ type: 'cancel' }));

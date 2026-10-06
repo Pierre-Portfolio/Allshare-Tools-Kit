@@ -1,6 +1,6 @@
 // Tableau de bord : export en une ligne, grille clients × pages, mesures.
 import { saveSettings, deleteMeasures, deleteClient, deletePage, isMeasureKey } from '../lib/storage.js';
-import { rate, diffStat, coverage, lineLabel, legendText, MISSING_TEXT } from '../lib/report.js';
+import { rate, diffStat, coverage, lineLabel, legendText, isSpecific, MISSING_TEXT } from '../lib/report.js';
 import { loadModel, exportData } from '../lib/export.js';
 import { nameKey, compareNames } from '../lib/names.js';
 import { NETWORKS, NETWORK_LABELS, STATS, fmtMs, fmtDate } from '../lib/format.js';
@@ -49,7 +49,7 @@ function toast(text) {
 // ---------------------------------------------------------------- Export
 
 const EXPORT_HELP = {
-  all: 'Excel : feuilles WiFi + Ethernet, WiFi, Ethernet, Écart, Référence par page et Mesures. CSV : une ligne par mesure.',
+  all: 'Excel : feuilles WiFi + Ethernet, WiFi, Ethernet, Écart, Référence par page, Pages spécifiques et Mesures. CSV : une ligne par mesure.',
   page: 'Une ligne par client (SID, version) : WiFi, Ethernet, écart et comparaison à la médiane. CSV : les mesures de la page.',
   client:
     'Une feuille par SID / version du client : chaque page comparée à la médiane des clients. CSV : les mesures du client.',
@@ -183,9 +183,13 @@ function cellHtml(line, col, v) {
     const vs = v.ratio !== null ? ` · ${xf(v.ratio)} × la médiane des clients (${fmtMs(v.ref.median)})` : '';
     title = `${where} · ${NETWORK_LABELS[col.net]} : ${fmtMs(v.value)} — ${v.count} mesure(s), min ${fmtMs(v.min)}, max ${fmtMs(v.max)}${vs}`;
   }
-  const inner = v.level ? `<span class="pill ${v.level}">${text}</span>` : text;
+  const spec = isSpecific(state.model, line.key, col.page.name);
+  if (spec) title += ' · page spécifique pour ce client';
+  const inner = (spec ? SPEC_MARK : '') + (v.level ? `<span class="pill ${v.level}">${text}</span>` : text);
   return `<td class="${cls}" title="${esc(title)}">${inner}</td>`;
 }
+
+const SPEC_MARK = '<span class="spec" aria-label="page spécifique">◆</span>';
 
 function renderMatrix() {
   const { model } = state;
@@ -290,6 +294,7 @@ function renderLegend() {
         `<span><span class="pill crit">très lent</span> ≥ ${fr(s.critRatio)} ×</span>`) +
     `<span><span class="pill missing">${MISSING_TEXT}</span> pas de mesure</span>` +
     '<span><span class="pill timeout">T/O</span> timeout</span>' +
+    `<span>${SPEC_MARK} page spécifique</span>` +
     `<span>${STATS[state.stat]} en ms · clic sur un en-tête pour trier</span>`;
   $('legend').title = legendText(s);
 }
@@ -309,7 +314,7 @@ function measuresTable(rows, withClient = true) {
         (withClient
           ? `<td>${esc(m.app)}</td><td class="muted">${esc(m.sid)}</td><td class="muted">${esc(m.version)}</td>`
           : '') +
-        `<td>${esc(m.page)}</td>` +
+        `<td>${esc(m.page)}${m.specific ? ' <span class="tag">spécifique</span>' : ''}</td>` +
         `<td class="muted">${NETWORK_LABELS[m.network] || esc(m.network)}</td>` +
         (m.timeout
           ? `<td class="n"><span class="pill timeout" title="Timeout : exclue des calculs">≥ ${nf.format(m.duration)}</span></td>`
@@ -365,7 +370,8 @@ function renderDetail() {
         d.status === 'ok' && d.pct !== null
           ? `<td class="n">${Math.abs(d.pct) * 100 >= settings.gapPct ? `<span class="pill warn">${pf.format(d.pct)}</span>` : pf.format(d.pct)}</td>`
           : '<td></td>';
-      return `<tr><td>${esc(p.name)}</td>${cell(w)}${cell(e)}${gap}<td class="n muted">${w.count} / ${e.count}</td></tr>`;
+      const spec = isSpecific(model, line.key, p.name) ? ' <span class="tag">spécifique</span>' : '';
+      return `<tr><td>${esc(p.name)}${spec}</td>${cell(w)}${cell(e)}${gap}<td class="n muted">${w.count} / ${e.count}</td></tr>`;
     })
     .join('');
   const measures = model.rows.filter((m) => m.line === line.key).reverse();

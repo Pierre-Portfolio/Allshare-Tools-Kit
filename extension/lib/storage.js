@@ -5,9 +5,10 @@
 //             (URL facultatives : servent à pré-remplir le client d'après l'onglet)
 //   pages     référentiel ordonné des pages [{ id, name, hidden }] = colonnes des exports
 //   settings  réglages (voir DEFAULT_SETTINGS)
-//   draft     dernières valeurs du formulaire { app, sid, version, page }
+//   draft     dernières valeurs du formulaire { app, sid, version, page, specific }
 //   m_<id>    une mesure par clé :
-//             { id, ts, app (= client), sid, version, page, network, duration, timeout,
+//             { id, ts, app (= client), sid, version, page, specific (page spécifique ?),
+//               network, duration, timeout,
 //               kind, trigger, url, urlEnd, startUrl, detail }
 // chrome.storage.session (jusqu'à la fermeture du navigateur)
 //   session   mesure en cours (voir background.js)

@@ -52,6 +52,7 @@ export function buildModel(measures, catalogClients = [], catalogPages = []) {
   const rows = [];
   const pageCounts = new Map();
   const lineCounts = new Map();
+  const specifics = new Set(); // ligne + page déclarée « page spécifique »
   for (const m of measures) {
     if (!m || !m.app || !m.page) continue;
     const client = addClient(m.app);
@@ -60,7 +61,17 @@ export function buildModel(measures, catalogClients = [], catalogPages = []) {
     const version = normName(m.version);
     const key = lineKey(client, sid, version);
     if (!lines.has(key)) lines.set(key, { key, client, sid, version });
-    rows.push({ ...m, app: client, sid, version, page, line: key, urlEnd: m.urlEnd || urlEnd(m.url) });
+    rows.push({
+      ...m,
+      app: client,
+      sid,
+      version,
+      page,
+      specific: !!m.specific,
+      line: key,
+      urlEnd: m.urlEnd || urlEnd(m.url),
+    });
+    if (m.specific) specifics.add(`${key}\u0000${nameKey(page)}`);
     pageCounts.set(nameKey(page), (pageCounts.get(nameKey(page)) || 0) + 1);
     lineCounts.set(key, (lineCounts.get(key) || 0) + 1);
     const ck = cellKey(key, page, m.network);
@@ -96,6 +107,7 @@ export function buildModel(measures, catalogClients = [], catalogPages = []) {
     rows,
     pageCounts,
     lineCounts,
+    specifics,
     refs: new Map(), // médianes par page (cache)
     stats: new Map(), // valeurs par case et statistique (cache)
   };
@@ -239,23 +251,39 @@ function subtitle(model, stat, date) {
   );
 }
 
-/** Colonnes des mesures brutes (Excel et CSV), URL en option. */
-function measureColumns({ fullUrl = false, urlEnd: withEnd = false } = {}) {
-  const cols = [
-    ['Date', (m) => fmtDate(m.ts), 20],
-    ['Client', (m) => m.app, 24],
-    ['SID', (m) => m.sid || '', 10],
-    ['Version', (m) => m.version || '', 10],
-    ['Page', (m) => m.page, 24],
-    ['Réseau', (m) => NETWORK_LABELS[m.network] || m.network, 10],
-    ['Durée (ms)', (m) => m.duration, 11, 'num'],
-    ['Timeout', (m) => (m.timeout ? 'Oui' : 'Non'), 9],
-    ['Type', (m) => KIND_LABELS[m.kind] || m.kind || '', 24],
-    ['Déclencheur', (m) => TRIGGER_LABELS[m.trigger] || m.trigger || '', 22],
-  ];
+/** Page déclarée « spécifique » pour cette ligne client (au moins une mesure cochée). */
+export function isSpecific(model, line, page) {
+  return model.specifics.has(`${line}\u0000${nameKey(page)}`);
+}
+
+const yesNo = (b) => (b ? 'Oui' : 'Non');
+
+/** Colonnes communes des mesures (Excel et CSV). */
+const MEASURE_COLUMNS = [
+  ['Date', (m) => fmtDate(m.ts), 20],
+  ['Client', (m) => m.app, 24],
+  ['SID', (m) => m.sid || '', 10],
+  ['Version', (m) => m.version || '', 10],
+  ['Page', (m) => m.page, 24],
+  ['Page spécifique', (m) => yesNo(m.specific), 11],
+  ['Réseau', (m) => NETWORK_LABELS[m.network] || m.network, 10],
+  ['Durée (ms)', (m) => m.duration, 11, 'num'],
+  ['Timeout', (m) => yesNo(m.timeout), 9],
+  ['Type', (m) => KIND_LABELS[m.kind] || m.kind || '', 24],
+  ['Déclencheur', (m) => TRIGGER_LABELS[m.trigger] || m.trigger || '', 22],
+];
+
+/** Colonnes d'URL ajoutées sur demande. */
+function urlColumns({ fullUrl = false, urlEnd: withEnd = false } = {}) {
+  const cols = [];
   if (withEnd) cols.push(["Fin d'URL", (m) => m.urlEnd || urlEnd(m.url), 40]);
   if (fullUrl) cols.push(['URL complète', (m) => m.url || '', 60], ['Page de départ', (m) => m.startUrl || '', 50]);
   return cols;
+}
+
+/** Colonnes des mesures brutes, URL en option. */
+function measureColumns(options = {}) {
+  return [...MEASURE_COLUMNS, ...urlColumns(options)];
 }
 
 /** Feuille des mesures brutes (filtrable). */
@@ -406,6 +434,7 @@ export function buildGlobalSheets(model, stat, settings, date = new Date(), opti
           'Médiane WiFi (ms)',
           'Lignes mesurées Ethernet',
           'Médiane Ethernet (ms)',
+          'Spécifique pour (lignes client)',
         ]),
         ...pages.map((p) => {
           const w = pageRef(model, p.name, 'wifi', stat);
@@ -416,15 +445,39 @@ export function buildGlobalSheets(model, stat, settings, date = new Date(), opti
             { v: w ? w.median : '', s: 'num' },
             { v: e ? e.count : 0, s: 'num' },
             { v: e ? e.median : '', s: 'num' },
+            { v: lines.filter((l) => isSpecific(model, l.key, p.name)).length, s: 'num' },
           ];
         }),
       ],
-      cols: [30, 14, 14, 14, 14],
+      cols: [30, 14, 14, 14, 14, 16],
       heights: { 1: 32 },
       freeze: { rows: 1 },
     },
+    specificSheet(model),
     rawSheet(model.rows, options),
   ];
+}
+
+/** Liste des pages déclarées spécifiques : client · SID · version · page. */
+function specificSheet(model) {
+  const rows = [];
+  for (const l of model.lines) {
+    for (const p of model.allPages) {
+      if (!isSpecific(model, l.key, p.name)) continue;
+      const count = model.rows.filter((m) => m.line === l.key && nameKey(m.page) === nameKey(p.name)).length;
+      rows.push([...lineCells(l), { v: p.name, s: 'text' }, { v: count, s: 'num' }]);
+    }
+  }
+  return {
+    name: 'Pages spécifiques',
+    rows: [
+      header(['Client', 'SID', 'Version', 'Page spécifique', 'Nb mesures']),
+      ...(rows.length ? rows : [[{ v: 'Aucune page déclarée spécifique', s: 'muted' }]]),
+    ],
+    cols: [24, 10, 10, 30, 12],
+    freeze: { rows: 1 },
+    autoFilter: rows.length ? `A1:E${rows.length + 1}` : undefined,
+  };
 }
 
 // ---------------------------------------------------------------- Export 2 : une page, tous les clients
@@ -443,6 +496,7 @@ export function buildPageSheets(model, pageName, stat, settings, date = new Date
       'Client',
       'SID',
       'Version',
+      'Page spécifique',
       'WiFi (ms)',
       'Ethernet (ms)',
       'Écart WiFi / Eth.',
@@ -457,8 +511,10 @@ export function buildPageSheets(model, pageName, stat, settings, date = new Date
     const w = rate(model, l.key, page, 'wifi', stat, settings);
     const e = rate(model, l.key, page, 'ethernet', stat, settings);
     const lastTs = Math.max(w.lastTs || 0, e.lastTs || 0);
+    const measured = w.status !== 'missing' || e.status !== 'missing';
     rows.push([
       ...lineCells(l),
+      { v: measured ? yesNo(isSpecific(model, l.key, page)) : '', s: 'text' },
       valueCell(w),
       valueCell(e),
       gapCell(diffStat(model, l.key, page, stat), settings),
@@ -472,6 +528,7 @@ export function buildPageSheets(model, pageName, stat, settings, date = new Date
   const lastRow = rows.length;
   const refs = NETWORKS.map((n) => pageRef(model, page, n.id, stat));
   const pad = [
+    { v: '', s: 'headerLeft' },
     { v: '', s: 'headerLeft' },
     { v: '', s: 'headerLeft' },
   ];
@@ -499,6 +556,7 @@ export function buildPageSheets(model, pageName, stat, settings, date = new Date
         ),
         10,
         10,
+        11,
         12,
         13,
         14,
@@ -510,7 +568,7 @@ export function buildPageSheets(model, pageName, stat, settings, date = new Date
       ],
       heights: { 4: 32 },
       freeze: { rows: 4, cols: 3 },
-      autoFilter: `A4:K${Math.max(5, lastRow)}`,
+      autoFilter: `A4:L${Math.max(5, lastRow)}`,
     },
     rawSheet(
       model.rows.filter((m) => nameKey(m.page) === nameKey(page)),
@@ -531,6 +589,7 @@ export function buildClientSheets(model, clientName, stat, settings, date = new 
       [{ v: legendText(settings), s: 'muted' }],
       header([
         'Page',
+        'Page spécifique',
         'WiFi (ms)',
         'Ethernet (ms)',
         'Écart WiFi / Eth.',
@@ -545,8 +604,10 @@ export function buildClientSheets(model, clientName, stat, settings, date = new 
     for (const p of model.pages) {
       const w = rate(model, l.key, p.name, 'wifi', stat, settings);
       const e = rate(model, l.key, p.name, 'ethernet', stat, settings);
+      const measured = w.status !== 'missing' || e.status !== 'missing';
       rows.push([
         { v: p.name, s: 'textBold' },
+        { v: measured ? yesNo(isSpecific(model, l.key, p.name)) : '', s: 'text' },
         valueCell(w),
         valueCell(e),
         gapCell(diffStat(model, l.key, p.name, stat), settings),
@@ -566,6 +627,7 @@ export function buildClientSheets(model, clientName, stat, settings, date = new 
           model.pages.map((p) => p.name),
           18,
         ),
+        11,
         12,
         13,
         14,
@@ -578,7 +640,7 @@ export function buildClientSheets(model, clientName, stat, settings, date = new 
       ],
       heights: { 4: 32 },
       freeze: { rows: 4, cols: 1 },
-      autoFilter: `A4:J${Math.max(5, rows.length)}`,
+      autoFilter: `A4:K${Math.max(5, rows.length)}`,
     };
   });
   const keys = new Set(lines.map((l) => l.key));
@@ -595,12 +657,12 @@ export function buildClientSheets(model, clientName, stat, settings, date = new 
 
 function detailColumns(options) {
   return [
-    ...measureColumns({}).slice(0, 7), // Date … Durée
+    ...MEASURE_COLUMNS.slice(0, MEASURE_COLUMNS.findIndex(([h]) => h === 'Durée (ms)') + 1), // Date … Durée
     ...DETAIL_COLUMNS.map(([, label], i) => [`${label} (ms)`, (m) => m._sum.durations[i] ?? '', 12, 'num']),
     ['Nb requêtes', (m) => m._sum.requestCount ?? '', 11, 'num'],
     ['Requête la plus lente (ms)', (m) => (m._sum.slowest ? Math.round(m._sum.slowest.duration) : ''), 14, 'num'],
     ['URL requête la plus lente', (m) => (m._sum.slowest ? m._sum.slowest.url : ''), 50],
-    ...measureColumns(options).slice(10), // URL en option
+    ...urlColumns(options), // URL en option
   ];
 }
 

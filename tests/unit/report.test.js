@@ -18,6 +18,7 @@ import {
   measuresCsv,
   detailCsv,
   scopeRows,
+  isSpecific,
 } from '../../extension/lib/report.js';
 import { DEFAULT_SETTINGS } from '../../extension/lib/storage.js';
 
@@ -112,7 +113,15 @@ test('export « tout » : colonnes Client, SID, Version puis pages', () => {
   const sheets = buildGlobalSheets(model, 'avg', settings, new Date(2026, 9, 5), { urlEnd: true });
   assert.deepEqual(
     sheets.map((s) => s.name),
-    ['WiFi + Ethernet', 'WiFi', 'Ethernet', 'Écart WiFi-Ethernet', 'Référence par page', 'Mesures'],
+    [
+      'WiFi + Ethernet',
+      'WiFi',
+      'Ethernet',
+      'Écart WiFi-Ethernet',
+      'Référence par page',
+      'Pages spécifiques',
+      'Mesures',
+    ],
   );
   const main = sheets[0];
   assert.deepEqual(main.merges, ['E4:F4', 'G4:H4', 'I4:J4']);
@@ -125,7 +134,7 @@ test('export « tout » : colonnes Client, SID, Version puis pages', () => {
     row10.slice(4, 8).map((c) => c.s),
     ['missing', 'timeout', 'crit', 'missing'],
   );
-  const raw = sheets[5];
+  const raw = sheets[6];
   assert.equal(raw.rows[0].at(-1).v, "Fin d'URL");
   assert.equal(raw.rows.length, measures.length + 1);
 });
@@ -136,11 +145,11 @@ test('export « une page » : une ligne par client · SID · version', () => {
   assert.equal(sheet.name, 'Clients');
   const row = sheet.rows.find((r) => r[0] && r[0].v === 'Client 2' && r[2].v === '5.3');
   assert.deepEqual(
-    row.slice(1, 5).map((c) => c.v),
-    ['PRD', '5.3', 200, 80],
+    row.slice(1, 6).map((c) => c.v),
+    ['PRD', '5.3', 'Non', 200, 80],
   );
   const median = sheet.rows.find((r) => r[0] && r[0].v === 'Médiane (tous clients)');
-  assert.equal(median[3].v, 200);
+  assert.equal(median[4].v, 200);
   assert.deepEqual(
     raw.rows[0].slice(-2).map((c) => c.v),
     ['URL complète', 'Page de départ'],
@@ -200,9 +209,51 @@ test('export « détail des temps » et CSV', () => {
   const csv = measuresCsv(scopeRows(model, { type: 'client', client: 'client 5' }), { fullUrl: true, urlEnd: true });
   const lines = csv.replace('﻿', '').trim().split('\r\n');
   assert.equal(lines.length, 2);
-  assert.match(lines[0], /^Date;Client;SID;Version;Page;Réseau;Durée \(ms\);.*;Fin d'URL;URL complète;Page de départ$/);
-  assert.match(lines[1], /;Client 5;PRD;5\.3;Clients;Ethernet;900;/);
+  assert.match(
+    lines[0],
+    /^Date;Client;SID;Version;Page;Page spécifique;Réseau;Durée \(ms\);.*;Fin d'URL;URL complète;Page de départ$/,
+  );
+  assert.match(lines[1], /;Client 5;PRD;5\.3;Clients;Non;Ethernet;900;/);
   const dcsv = detailCsv(model, 'Clients').split('\r\n');
   assert.match(dcsv[0], /Attente serveur \(ms\)/);
   assert.equal(scopeRows(model, { type: 'page', page: 'Fiche client' }).length, 1);
+});
+
+test('page spécifique : drapeau par ligne client, colonnes et feuille dédiée', () => {
+  const list = [
+    ...measures,
+    m('Client 6', 'PRD', '5.3', 'Portail maison', 'wifi', 700, { specific: true }),
+    m('Client 6', 'PRD', '5.3', 'Clients', 'wifi', 210),
+  ];
+  const model = buildModel(list, [], catalogPages);
+  const l6 = lineKey('Client 6', 'PRD', '5.3');
+  assert.equal(isSpecific(model, l6, 'portail maison'), true);
+  assert.equal(isSpecific(model, l6, 'Clients'), false);
+  assert.equal(isSpecific(model, L2, 'Portail maison'), false);
+
+  const global = buildGlobalSheets(model, 'avg', settings);
+  const spec = global.find((s) => s.name === 'Pages spécifiques');
+  assert.deepEqual(
+    spec.rows.slice(1).map((r) => r.map((c) => c.v)),
+    [['Client 6', 'PRD', '5.3', 'Portail maison', 1]],
+  );
+  const ref = global.find((s) => s.name === 'Référence par page');
+  assert.equal(ref.rows.find((r) => r[0].v === 'Portail maison')[5].v, 1);
+
+  const [page] = buildPageSheets(model, 'Portail maison', 'avg', settings);
+  const rowsByClient = Object.fromEntries(
+    page.rows
+      .slice(4)
+      .filter((r) => r[0])
+      .map((r) => [r[0].v, r[3].v]),
+  );
+  assert.equal(rowsByClient['Client 6'], 'Oui');
+  assert.equal(rowsByClient['Client 3'], '', 'pas mesurée : vide');
+
+  const [client] = buildClientSheets(model, 'Client 6', 'avg', settings);
+  const byPage = Object.fromEntries(client.rows.slice(4).map((r) => [r[0].v, r[1].v]));
+  assert.deepEqual(byPage, { Factures: '', Clients: 'Non', 'Fiche client': '', 'Portail maison': 'Oui' });
+
+  const csv = measuresCsv(scopeRows(model, { type: 'client', client: 'Client 6' }));
+  assert.match(csv, /;Portail maison;Oui;WiFi;700;/);
 });

@@ -240,17 +240,30 @@ try {
   assert.equal(await panel.inputValue('#app'), 'Appli 1');
   assert.equal(await panel.inputValue('#sid'), 'PRD', 'SID conservé');
   assert.equal(await panel.inputValue('#version'), '5.3', 'version conservée');
+  assert.equal(await panel.isChecked('#specific'), false);
   await panel.fill('#page', 'Fiche client');
+  await panel.check('#specific'); // « Page spécifique ? »
   await panel.press('#page', 'Enter');
-  await waitSession((s) => s && s.state === 'armed' && s.page === 'Fiche client', 'armé Fiche client');
+  await waitSession(
+    (s) => s && s.state === 'armed' && s.page === 'Fiche client' && s.specific === true,
+    'armé Fiche client (spécifique)',
+  );
+  assert.match(await panel.textContent('#liveLabel'), /Fiche client \(spécifique\)/);
   await page.click('#nav-clients-42');
   list = await waitMeasures(3);
-  check(list[2], { page: 'Fiche client', network: 'ethernet' }, 800, 3000, 'Ethernet · Fiche client');
+  check(
+    list[2],
+    { page: 'Fiche client', network: 'ethernet', specific: true },
+    800,
+    3000,
+    'Ethernet · Fiche client (spéc.)',
+  );
 
   // 6. SPA : un clic sans changement d'URL est ignoré, le clic de navigation est mesuré
   await page.goto(`${base}/appli1/spa/`);
   await panel.click('#next');
   await panel.waitForSelector('#viewForm:not([hidden])');
+  assert.equal(await panel.isChecked('#specific'), false, 'page suivante : case décochée');
   await panel.click('[data-network="wifi"]');
   await panel.fill('#page', 'Factures');
   await panel.click('#arm');
@@ -334,7 +347,12 @@ try {
   await report.check('#exUrlEnd');
   assert.match(await download('export-tout.csv'), /\.csv$/);
   const csv = readFileSync(join(out, 'export-tout.csv'), 'utf8').replace('﻿', '').trim().split('\r\n');
+  assert.match(csv[0], /;Page;Page spécifique;Réseau;/);
   assert.match(csv[0], /Fin d'URL;URL complète;Page de départ$/);
+  assert.ok(
+    csv.some((l) => l.includes(';Fiche client;Oui;Ethernet;')),
+    'page spécifique dans le CSV',
+  );
   assert.equal(csv.length, 1 + (await measures()).length);
   assert.ok(
     csv.some((l) => l.includes(';clients;') && l.includes(`${base}/appli1/clients`)),
@@ -439,6 +457,7 @@ try {
               sid: i % 4 === 0 ? 'REC' : 'PRD',
               version: i % 6 === 0 ? '5.4' : '5.3',
               page,
+              specific: page === 'Planning' && i % 3 === 0,
               network,
               duration: timeout ? 120000 : duration,
               timeout,

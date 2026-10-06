@@ -518,3 +518,48 @@ button.chip:hover {
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 11.5px;
 }
+
+.check-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: -2px 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.check-line input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.check-line small {
+  flex-basis: 100%;
+  padding-left: 24px;
+  font-weight: 400;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.check-line:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.tag {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  vertical-align: 1px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
