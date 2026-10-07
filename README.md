@@ -12,8 +12,8 @@ Extension Chrome qui réunit, dans un **panneau latéral**, quatre outils pour l
 
 1. **Capsule** : la sauvegarde des onglets d'une fenêtre, pour les rouvrir d'un clic ;
 2. **Insight** : la mesure du temps entre **le clic** et **l'affichage complet** d'une page, par client, SID, version, page et réseau (**Ethernet** ou **WiFi**), avec exports Excel et CSV ;
-3. **Prisme** : l'inspection d'un fichier CSV (encodage, séparateurs, colonnes décalées, accents cassés…) et sa conversion en ANSI ou en UTF-8 ;
-4. **Training** : des formations complètes, avec exercices corrigés et progression enregistrée, en trois modules : **Métier RH**, **OLAP** et **Oracle APEX**.
+3. **Training** : des formations complètes, avec exercices corrigés et progression enregistrée, en trois modules : **Métier RH**, **OLAP** et **Oracle APEX** ;
+4. **Prisme** : l'inspection d'un fichier CSV (encodage, séparateurs, colonnes décalées, accents cassés…) et sa conversion en ANSI ou en UTF-8.
 
 À chaque ouverture, le panneau demande **Quels outils ?**. Tout reste **dans le navigateur** : aucune donnée n'est envoyée sur Internet. En bas de l'accueil, **Exporter mes données Tools Kit** les enregistre toutes dans un fichier, à réimporter après une réinstallation ou sur un autre poste.
 
@@ -109,7 +109,7 @@ Allshare-Tools-Kit/
     manifest.json            → Manifest V3 (nom, permissions, panneau latéral, raccourci)
     background.js            → Service worker : déroulé d'une mesure Insight, badge, raccourci clavier
     content/                 → Scripts de mesure injectés dans l'onglet mesuré, pendant une mesure seulement
-    panel/                   → Panneau latéral : accueil « Quels outils ? », Capsule, Insight, Prisme, Training
+    panel/                   → Panneau latéral : accueil « Quels outils ? », Capsule, Insight, Training, Prisme
     training/
       training.html|js|css   → Page de formation : sommaire, notions, exercices, examen, mémo, glossaire
       content/rh/            → Module Métier RH (8 notions + examen, mémo, glossaire, ressources)

@@ -1,4 +1,4 @@
-// Accueil du panneau latéral d'Allshare Tools Kit : « Quels outils ? » (Capsule, Insight, Prisme, Training).
+// Accueil du panneau latéral d'Allshare Tools Kit : « Quels outils ? » (Capsule, Insight, Training, Prisme).
 // Affiché à chaque ouverture du panneau, sauf pendant une mesure Insight en cours.
 // En bas : « Mes données », export et import de toutes les données de l'extension (lib/backup.js).
 import { getCapsules } from '../lib/capsule.js';
