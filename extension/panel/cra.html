@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CRA</title>
+    <link rel="stylesheet" href="../common.css" />
+    <link rel="stylesheet" href="panel.css" />
+    <link rel="stylesheet" href="tools.css" />
+  </head>
+  <body>
+    <header class="top">
+      <a class="back" href="home.html?choose" title="Changer d'outil" aria-label="Changer d'outil">‹</a>
+      <img src="../icons/cra.svg" alt="" width="22" height="22" />
+      <h1>CRA</h1>
+    </header>
+    <p class="hint tagline">Pour remplir le C.R.A : les capsules du jour et les automatismes de la page de saisie.</p>
+
+    <!-- Capsules rouvertes ou sauvegardées dans la journée -->
+    <section>
+      <div class="cra-head">
+        <h2>Capsules ouvertes <span id="craTotal" class="muted"></span></h2>
+        <input id="craDay" type="date" aria-label="Jour" />
+      </div>
+      <ul id="craList" class="cra-list"></ul>
+      <p id="craEmpty" class="hint" hidden></p>
+    </section>
+
+    <!-- Automatismes de la page de saisie (content/cra.js) -->
+    <section>
+      <h2>Page de saisie du C.R.A</h2>
+      <label class="check-line">
+        <input id="autoSave" type="checkbox" />
+        <span>Enregistrer chaque ligne remplie</span>
+        <small>clique sur « Save » dès que vous quittez une ligne modifiée de la grille</small>
+      </label>
+      <label class="check-line">
+        <input id="autoHighlight" type="checkbox" />
+        <span>Cocher l'étoile jaune en arrivant</span>
+        <small>coche la case du surlignage (étoile jaune) à l'ouverture de la page</small>
+      </label>
+      <p class="hint">
+        Pages concernées : les adresses qui commencent par
+        <code>https://dsb-cra.allshare-scenario.fr/apex/r/allshare_wks/xaas/saisie-cra?</code>
+      </p>
+    </section>
+
+    <script type="module" src="cra.js"></script>
+  </body>
+</html>

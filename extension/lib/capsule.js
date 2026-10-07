@@ -3,13 +3,16 @@
 // chrome.storage.local
 //   capsules  sessions sauvegardées, dans l'ordre d'affichage (une nouvelle session arrive en tête,
 //             l'ordre se change ensuite par glisser-déposer) :
-//             [{ id, ts, title, client, comment, done, tabs: [{ url, title, win, pinned }] }]
+//             [{ id, ts, title, client, comment, done, opens, tabs: [{ url, title, win, pinned }] }]
 //             (client : facultatif, nom d'un client d'Insight ou saisi librement)
 //             (done : session cochée, plus active : barrée dans la liste)
+//             (opens : instants des réouvertures, les MAX_OPENS dernières : capsules du jour dans CRA)
 //             (win : numéro de la fenêtre d'origine, pour rouvrir fenêtre par fenêtre)
 
 import { newId } from './storage.js';
 import { normName, nameKey, compareNames } from './names.js';
+
+export const MAX_OPENS = 100;
 
 /** Adresses que Chrome sait rouvrir (les pages internes chrome://, extensions… sont ignorées). */
 export const isSavable = (url) => /^(https?|file):/i.test(String(url || ''));
@@ -186,5 +189,15 @@ export async function reopenCapsule(capsule) {
       }
     }
   }
+  if (opened) await recordOpen(capsule.id);
   return opened;
+}
+
+/** Note une réouverture de la session (liste des capsules du jour dans CRA). */
+export async function recordOpen(id, ts = Date.now()) {
+  await chrome.storage.local.set({
+    capsules: (await getCapsules()).map((c) =>
+      c.id === id ? { ...c, opens: [...(c.opens || []), ts].slice(-MAX_OPENS) } : c,
+    ),
+  });
 }

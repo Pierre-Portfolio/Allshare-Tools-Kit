@@ -4,7 +4,7 @@
 //
 // Fichier « allshare-tools-kit » :
 //   storage         tout chrome.storage.local : mesures, référentiels et réglages d'Insight, sessions
-//                   de Capsule, fichiers récents et réglages de Prisme, progression de Training
+//                   de Capsule, fichiers récents et réglages de Prisme, progression de Training, réglages de CRA
 //                   (les clés ajoutées par une version future sont reprises telles quelles)
 //   prismeContents  contenu des fichiers récents de Prisme (IndexedDB), en base64 : { [id]: '…' }
 //   localStorage    préférences de l'extension rangées dans le navigateur (thème de Training)
@@ -19,7 +19,7 @@ import { MAX_FILES, getFileBytes, putFileBytes, deleteFileBytes } from './prisme
 export const BACKUP_FORMAT = 'allshare-tools-kit';
 
 /** Réglages : les valeurs du fichier remplacent celles du poste, une à une. */
-const SETTINGS_KEYS = ['settings', 'prismeSettings', 'draft'];
+const SETTINGS_KEYS = ['settings', 'prismeSettings', 'craSettings', 'draft'];
 /** Données fusionnées une à une (les autres clés ne sont reprises que si le poste ne les a pas). */
 const MERGED_KEYS = ['apps', 'pages', 'capsules', 'prismeFiles', 'training', ...SETTINGS_KEYS];
 
@@ -116,7 +116,7 @@ export function describeCounts({ measures = 0, capsules = 0, files = 0, answers 
  *    (l'ordre choisi par glisser-déposer est gardé) ;
  *  - Prisme : fichiers ajoutés si absents (identifiant ou même contenu), les MAX_FILES plus récents gardés ;
  *  - Training : réponses ajoutées, une réponse du poste est conservée (voir mergeProgress) ;
- *  - réglages (Insight, Prisme, formulaire) : ceux du fichier ;
+ *  - réglages (Insight, Prisme, CRA, formulaire) : ceux du fichier ;
  *  - autres clés : reprises si le poste ne les a pas.
  * @param {object} local     chrome.storage.local du poste
  * @param {object} incoming  storage de la sauvegarde

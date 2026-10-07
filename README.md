@@ -8,12 +8,13 @@
 # Allshare Tools Kit — Boîte à outils Chrome
 
 ## Aperçu
-Extension Chrome qui réunit, dans un **panneau latéral**, quatre outils pour les consultants qui déploient et font vivre une application de pilotage RH auprès d'un parc de 100 à 200 clients :
+Extension Chrome qui réunit, dans un **panneau latéral**, cinq outils pour les consultants qui déploient et font vivre une application de pilotage RH auprès d'un parc de 100 à 200 clients :
 
 1. **Capsule** : la sauvegarde des onglets d'une fenêtre, pour les rouvrir d'un clic ;
 2. **Insight** : la mesure du temps entre **le clic** et **l'affichage complet** d'une page, par client, SID, version, page et réseau (**Ethernet** ou **WiFi**), avec exports Excel et CSV ;
 3. **Training** : des formations complètes, avec exercices corrigés et progression enregistrée, en trois modules : **Métier RH**, **OLAP** et **Oracle APEX** ;
-4. **Prisme** : l'inspection d'un fichier CSV (encodage, séparateurs, colonnes décalées, accents cassés…) et sa conversion en ANSI ou en UTF-8.
+4. **Prisme** : l'inspection d'un fichier CSV (encodage, séparateurs, colonnes décalées, accents cassés…) et sa conversion en ANSI ou en UTF-8 ;
+5. **CRA** : pour remplir le compte rendu d'activité, la liste des **capsules ouvertes dans la journée** et deux automatismes de la page de saisie du C.R.A (**Save** cliqué en quittant une ligne remplie, case de l'**étoile jaune** cochée à l'arrivée).
 
 À chaque ouverture, le panneau demande **Quels outils ?**. Tout reste **dans le navigateur** : aucune donnée n'est envoyée sur Internet. En bas de l'accueil, **Exporter mes données Tools Kit** les enregistre toutes dans un fichier, à réimporter après une réinstallation ou sur un autre poste.
 
@@ -56,8 +57,15 @@ Extension Chrome qui réunit, dans un **panneau latéral**, quatre outils pour l
 - **Tableau de bord** : résumé, 4 vues (Détails, Données brutes, Visuel d'Excel, CSV brut) et **inspecteur de cellule** (caractères un par un, octets ANSI et UTF-8)
 - **Exporter en ANSI** ou **en UTF-8** (avec BOM), option CRLF ; les 10 derniers fichiers restent disponibles
 
+### CRA : aide à la saisie du C.R.A (`panel/cra.html`, `content/cra.js`)
+- **Capsules ouvertes** : les sessions de Capsule **rouvertes** (Rouvrir, Tout rouvrir) ou **sauvegardées** dans la journée, avec les heures et le nombre d'onglets, dans l'ordre de la première ouverture ; un autre jour se choisit dans le calendrier
+- Sur la page de saisie du C.R.A (adresses qui commencent par `https://dsb-cra.allshare-scenario.fr/apex/r/allshare_wks/xaas/saisie-cra?`), deux cases à cocher :
+  - **Enregistrer chaque ligne remplie** : quand on quitte une ligne modifiée de la grille (autre ligne, bouton Add Row, reste de la page), le bouton **Save** est cliqué ; ouvrir une liste de valeurs ou un calendrier ne compte pas, et un Save déjà en cours (ou cliqué à la main) n'est pas relancé
+  - **Cocher l'étoile jaune en arrivant** : la case du surlignage (étoile jaune) de la grille est cochée à l'ouverture de la page, si elle ne l'est pas
+- Réglages pris en compte aussitôt, sans recharger la page ; ils font partie de « Mes données »
+
 ### Mes données : sauvegarde complète (accueil, `lib/backup.js`)
-- **Exporter mes données Tools Kit** : un seul fichier JSON avec **toutes les données de l'extension** : mesures, clients, pages et réglages d'Insight, sessions de Capsule, fichiers récents de Prisme (contenu compris) et ses réglages, progression de Training et son thème
+- **Exporter mes données Tools Kit** : un seul fichier JSON avec **toutes les données de l'extension** : mesures, clients, pages et réglages d'Insight, sessions de Capsule, fichiers récents de Prisme (contenu compris) et ses réglages, progression de Training et son thème, réglages de CRA
 - **Importer mes données Tools Kit** : ajoute le contenu du fichier aux données du poste, **sans rien effacer** ; une donnée déjà présente est ignorée (réimporter le même fichier ne crée pas de doublon), les réglages du fichier sont repris
 - À faire **avant de supprimer ou de réinstaller l'extension**, ou pour **retrouver ses données sur un autre poste**
 
@@ -108,8 +116,9 @@ Allshare-Tools-Kit/
   extension/
     manifest.json            → Manifest V3 (nom, permissions, panneau latéral, raccourci)
     background.js            → Service worker : déroulé d'une mesure Insight, badge, raccourci clavier
-    content/                 → Scripts de mesure injectés dans l'onglet mesuré, pendant une mesure seulement
-    panel/                   → Panneau latéral : accueil « Quels outils ? », Capsule, Insight, Training, Prisme
+    content/                 → Scripts de mesure injectés dans l'onglet mesuré, pendant une mesure seulement ;
+                               cra.js : automatismes de la page de saisie du C.R.A
+    panel/                   → Panneau latéral : accueil « Quels outils ? », Capsule, Insight, Training, Prisme, CRA
     training/
       training.html|js|css   → Page de formation : sommaire, notions, exercices, examen, mémo, glossaire
       content/rh/            → Module Métier RH (8 notions + examen, mémo, glossaire, ressources)

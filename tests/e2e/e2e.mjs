@@ -74,6 +74,42 @@ render();
 </script></body></html>`;
 }
 
+// Page de saisie du C.R.A simulée (grille interactive APEX) : deux lignes réparties sur deux tableaux
+// (colonnes figées), « Save » qui enregistre en 1 s, case du surlignage (étoile jaune) construite après
+// le chargement, liste de valeurs ouverte dans une boîte de dialogue
+function craPage() {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Saisie CRA</title></head><body>
+<div class="a-IG">
+  <div class="a-IG-header">
+    <button type="button" id="save" class="a-Button a-Toolbar-item" data-action="save" aria-label="Save">Save</button>
+    <button type="button" id="addRow" class="a-Button a-Toolbar-item" data-action="selection-add-row">Add Row</button>
+  </div>
+  <div id="controls"></div>
+  <div class="a-GV">
+    <table><tr data-id="1"><td class="a-GV-cell"><input id="r1a"></td></tr><tr data-id="2"><td class="a-GV-cell"><input id="r2a"></td></tr></table>
+    <table><tr data-id="1"><td class="a-GV-cell"><input id="r1b"></td></tr><tr data-id="2"><td class="a-GV-cell"><input id="r2b"></td></tr></table>
+  </div>
+</div>
+<div role="dialog"><input id="lov" placeholder="Liste de valeurs"></div>
+<script>
+window.saves = 0;
+window.highlightChanges = 0;
+setTimeout(() => {
+  controls.innerHTML = '<input id="CRA_GRID_ig_control_1" type="checkbox" class="a-IG-controlsCheckbox" data-setting="highlight">';
+  CRA_GRID_ig_control_1.addEventListener('change', () => window.highlightChanges++);
+}, 300);
+document.addEventListener('input', (e) => {
+  const td = e.target.closest('td');
+  td.classList.add('is-changed');
+  td.closest('tr').classList.add('is-updated');
+});
+save.addEventListener('click', () => {
+  window.saves++;
+  setTimeout(() => document.querySelectorAll('.is-changed, .is-updated').forEach((n) => n.classList.remove('is-changed', 'is-updated')), 1000);
+});
+</script></body></html>`;
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname === '/sso') {
@@ -536,7 +572,13 @@ try {
   await tools.waitForURL(/\/panel\/panel\.html$/);
   await tools.click('.back');
   await tools.waitForURL(/\/panel\/home\.html\?choose$/);
-  assert.deepEqual(await tools.locator('.tool strong').allTextContents(), ['Capsule', 'Insight', 'Training', 'Prisme']);
+  assert.deepEqual(await tools.locator('.tool strong').allTextContents(), [
+    'Capsule',
+    'Insight',
+    'Training',
+    'Prisme',
+    'CRA',
+  ]);
   assert.equal((await tools.textContent('.brandline')).trim(), 'Allshare Tools Kit');
   await tools.waitForFunction(() => document.querySelector('#insightCount').textContent !== '');
   const insightCount = await tools.textContent('#insightCount');
@@ -590,6 +632,8 @@ try {
   }
   const reopened = context.pages().slice(pagesBefore);
   assert.deepEqual(reopened.map((p) => p.url()).sort(), [...webUrls].sort(), 'onglets rouverts');
+  const reopenedCap = (await storage(async () => (await chrome.storage.local.get('capsules')).capsules))[0];
+  assert.equal(reopenedCap.opens.length, 1, 'réouverture notée (capsules du jour dans CRA)');
   console.log(`  Capsule : ${webUrls.length} onglets sauvegardés puis rouverts`);
   for (const p of reopened) await p.close();
   tools.once('dialog', (d) => d.accept());
@@ -925,7 +969,85 @@ try {
   await tools.waitForFunction(() => document.querySelector('#trainingCount').textContent === '3 exercices faits · 3 %');
   console.log('  Training : 3 exercices faits, progression enregistrée, rechargée, exportée et réimportée');
 
-  // 14. Mes données : export de toutes les données depuis l'accueil, extension vidée, réimport
+  // 14. CRA : capsules du jour, réglages, page de saisie du C.R.A (grille APEX simulée)
+  const todayAt = (h, m) => new Date(new Date().setHours(h, m, 0, 0)).getTime();
+  await storage(
+    async ({ a, b, y }) => {
+      const { capsules } = await chrome.storage.local.get('capsules');
+      const opens = { cap0: [y, b], cap2: [a] };
+      await chrome.storage.local.set({
+        capsules: capsules.map((c) => (opens[c.id] ? { ...c, opens: opens[c.id] } : c)),
+      });
+    },
+    { a: todayAt(8, 30), b: todayAt(9, 5), y: todayAt(12, 0) - 86400000 },
+  );
+  await tools.goto(`chrome-extension://${extId}/panel/home.html?choose`);
+  await tools.waitForFunction(
+    () => document.querySelector('#craCount').textContent === "2 capsules ouvertes aujourd'hui",
+  );
+  await tools.click('#toolCra');
+  await tools.waitForSelector('.cra-item');
+  assert.deepEqual(await tools.locator('.cra-item strong').allTextContents(), ['Recette C', 'Recette A ter']);
+  assert.deepEqual(await tools.locator('.cra-times').allTextContents(), ['08:30 · 1 onglet', '09:05 · 2 onglets']);
+  const yesterday = new Date(todayAt(12, 0) - 86400000);
+  await tools.fill('#craDay', yesterday.toLocaleDateString('sv-SE')); // AAAA-MM-JJ
+  await tools.waitForFunction(() => document.querySelectorAll('.cra-item').length === 1);
+  assert.deepEqual(await tools.locator('.cra-item strong').allTextContents(), ['Recette A ter'], 'la veille');
+  await tools.check('#autoSave');
+  await tools.check('#autoHighlight');
+  for (let i = 0; i < 50; i++) {
+    const s = await storage(async () => (await chrome.storage.local.get('craSettings')).craSettings);
+    if (s && s.autoSave && s.autoHighlight) break;
+    await sleep(100);
+  }
+  await tools.screenshot({ path: join(out, 'cra.png') });
+  // Page de saisie : étoile jaune cochée à l'arrivée, « Save » cliqué en quittant une ligne modifiée
+  await context.route('https://dsb-cra.allshare-scenario.fr/**', (route) =>
+    route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: craPage() }),
+  );
+  const cra = await context.newPage();
+  await cra.goto('https://dsb-cra.allshare-scenario.fr/apex/r/allshare_wks/xaas/saisie-cra?session=4242');
+  await cra.waitForFunction(() => document.querySelector('[data-setting="highlight"]')?.checked);
+  assert.equal(await cra.evaluate(() => window.highlightChanges), 1, 'case de l’étoile jaune cochée une fois');
+  const saves = () => cra.evaluate(() => window.saves);
+  await cra.click('#r1a');
+  await cra.keyboard.type('Projet X');
+  await cra.click('#r1b'); // même ligne, colonnes figées
+  await cra.click('#lov'); // liste de valeurs : toujours sur la ligne
+  await cra.click('#r1b');
+  await sleep(900);
+  assert.equal(await saves(), 0, 'ligne en cours : pas d’enregistrement');
+  await cra.keyboard.type('2');
+  await cra.click('#r2a'); // ligne suivante
+  await cra.waitForFunction(() => window.saves === 1);
+  await sleep(1200);
+  await cra.click('#r1a'); // ligne non modifiée quittée
+  await sleep(900);
+  assert.equal(await saves(), 1, 'ligne non modifiée : rien');
+  await cra.keyboard.type('x');
+  await cra.click('#save'); // à la main : pas de second clic pendant l'enregistrement
+  await sleep(1500);
+  assert.equal(await saves(), 2, 'Save à la main, pas de doublon');
+  await storage(() => chrome.storage.local.set({ craSettings: { autoSave: false, autoHighlight: true } }));
+  await cra.click('#r1a');
+  await cra.keyboard.type('y');
+  await cra.click('#r2a');
+  await sleep(900);
+  assert.equal(await saves(), 2, 'réglage désactivé : plus de clic');
+  await storage(() => chrome.storage.local.set({ craSettings: { autoSave: true, autoHighlight: true } }));
+  await cra.goto('https://dsb-cra.allshare-scenario.fr/apex/r/allshare_wks/xaas/autre-page?session=4242');
+  await sleep(1000);
+  assert.equal(
+    await cra.evaluate(() => document.querySelector('[data-setting="highlight"]').checked),
+    false,
+    'autre page',
+  );
+  await cra.close();
+  await context.unroute('https://dsb-cra.allshare-scenario.fr/**');
+  console.log('  CRA : capsules du jour, étoile jaune cochée, ligne enregistrée en la quittant');
+  await tools.goto(`chrome-extension://${extId}/panel/home.html?choose`);
+
+  // 15. Mes données : export de toutes les données depuis l'accueil, extension vidée, réimport
   await tools.setViewportSize({ width: 380, height: 900 });
   await tools.evaluate(() => localStorage.setItem('training.theme', 'dark'));
   const kitBefore = await storage(() => chrome.storage.local.get(null));

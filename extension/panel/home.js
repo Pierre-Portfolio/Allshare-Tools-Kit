@@ -1,4 +1,4 @@
-// Accueil du panneau latéral d'Allshare Tools Kit : « Quels outils ? » (Capsule, Insight, Training, Prisme).
+// Accueil du panneau latéral d'Allshare Tools Kit : « Quels outils ? » (Capsule, Insight, Training, Prisme, CRA).
 // Affiché à chaque ouverture du panneau, sauf pendant une mesure Insight en cours.
 // En bas : « Mes données », export et import de toutes les données de l'extension (lib/backup.js).
 import { getCapsules } from '../lib/capsule.js';
@@ -7,6 +7,7 @@ import { getConfig, getMeasures } from '../lib/storage.js';
 import { buildModel } from '../lib/report.js';
 import { savedText, fileStamp } from '../lib/format.js';
 import { getProgress, trainingCountText } from '../lib/training.js';
+import { craCountText } from '../lib/cra.js';
 import { exportAll, importAll, describeCounts } from '../lib/backup.js';
 import { downloadBlob } from '../lib/export.js';
 
@@ -45,6 +46,7 @@ async function renderCounts() {
   document.getElementById('prismeCount').textContent = f
     ? `${f} fichier${f > 1 ? 's' : ''} récent${f > 1 ? 's' : ''}`
     : '';
+  document.getElementById('craCount').textContent = craCountText(capsules);
 }
 
 // ---------------------------------------------------------------- Mes données
