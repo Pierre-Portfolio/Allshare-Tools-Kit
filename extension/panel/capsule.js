@@ -1,7 +1,7 @@
 // Capsule : sessions d'onglets sauvegardées (repliées au départ), puis bouton
 // « Sauvegarder cette session » (titre + commentaire facultatif).
 // Une session cochée n'est plus active (barrée) ; filtre Toutes / Actives / Inactives ;
-// l'ordre des sessions se change par glisser-déposer ; pages retirées (×) ou ajoutées dans une session.
+// l'ordre des sessions se change par glisser-déposer ; titre modifiable ; pages retirées (×) ou ajoutées.
 import {
   getCapsules,
   saveCapsule,
@@ -20,7 +20,7 @@ import {
   clientNames,
 } from '../lib/capsule.js';
 import { getConfig, getMeasures } from '../lib/storage.js';
-import { canonical } from '../lib/names.js';
+import { canonical, normName } from '../lib/names.js';
 
 const $ = (id) => document.getElementById(id);
 const fmtWhen = (ts) => new Date(ts).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
@@ -162,7 +162,18 @@ function item(c, open) {
           disabled: !c.tabs.length,
           dataset: { open: c.id },
         }),
-        el('button', { type: 'button', className: 'link danger', textContent: 'Supprimer', dataset: { del: c.id } }),
+        el(
+          'span',
+          { className: 'cap-edit' },
+          el('button', {
+            type: 'button',
+            className: 'link',
+            textContent: '✎ Renommer',
+            title: 'Modifier le titre de la session',
+            dataset: { rename: c.id },
+          }),
+          el('button', { type: 'button', className: 'link danger', textContent: 'Supprimer', dataset: { del: c.id } }),
+        ),
       ),
     ),
   );
@@ -188,6 +199,7 @@ $('capsules').addEventListener('click', async (e) => {
   const del = e.target.closest('[data-del]');
   const remove = e.target.closest('[data-remove]');
   const addCurrent = e.target.closest('[data-add-current]');
+  const rename = e.target.closest('[data-rename]');
   if (link) {
     e.preventDefault();
     chrome.tabs.create({ url: link.dataset.url });
@@ -213,6 +225,8 @@ $('capsules').addEventListener('click', async (e) => {
     const tab = await activeTab();
     if (!tab) return toast('L’onglet affiché ne peut pas être ajouté (page interne de Chrome)');
     if (c) await addPage(c, tab);
+  } else if (rename) {
+    startRename(rename.closest('.cap-item'));
   }
 });
 
@@ -233,12 +247,59 @@ $('capsules').addEventListener('change', (e) => {
   if (box) updateCapsule(box.dataset.done, { done: box.checked });
 });
 
-// Saisie d'une adresse : la session ne se déplace pas quand on sélectionne le texte du champ
+// Saisie (adresse, titre) : la session ne se déplace pas quand on sélectionne le texte du champ
 $('capsules').addEventListener('focusin', (e) => {
-  if (e.target.matches('.cap-add input')) e.target.closest('.cap-item').draggable = false;
+  if (e.target.matches('input[type="text"]')) e.target.closest('.cap-item').draggable = false;
 });
 $('capsules').addEventListener('focusout', (e) => {
-  if (e.target.matches('.cap-add input')) e.target.closest('.cap-item').draggable = true;
+  if (e.target.matches('input[type="text"]')) e.target.closest('.cap-item').draggable = true;
+});
+
+// ---------------------------------------------------------------- Titre modifié sur place
+
+let renaming = null; // champ du titre en cours de modification
+
+/** Remplace le titre de la session par un champ : Entrée (ou clic ailleurs) enregistre, Échap annule. */
+function startRename(li) {
+  const c = capsules.find((x) => x.id === li.dataset.id);
+  if (!c) return;
+  renaming = el('input', {
+    type: 'text',
+    className: 'cap-title-input',
+    value: c.title,
+    maxLength: 120,
+    title: 'Entrée pour enregistrer, Échap pour annuler',
+  });
+  li.querySelector('.cap-title').replaceWith(renaming);
+  renaming.focus();
+  renaming.select();
+}
+
+async function endRename(input, save) {
+  if (input !== renaming) return; // déjà enregistré (Entrée puis perte du focus)
+  renaming = null;
+  const c = capsuleOf(input);
+  const title = normName(input.value);
+  if (!save || !c || !title || title === c.title) return render();
+  await updateCapsule(c.id, { title });
+  toast(`Session renommée : ${title}`);
+}
+
+$('capsules').addEventListener('keydown', (e) => {
+  if (!e.target.matches('.cap-title-input')) return;
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    endRename(e.target, true);
+  } else if (e.key === 'Escape') {
+    endRename(e.target, false);
+  }
+});
+// Espace tapé dans le champ : Chrome replierait la session (champ dans le résumé)
+$('capsules').addEventListener('keyup', (e) => {
+  if (e.key === ' ' && e.target.matches('.cap-title-input')) e.preventDefault();
+});
+$('capsules').addEventListener('focusout', (e) => {
+  if (e.target.matches('.cap-title-input')) endRename(e.target, true);
 });
 
 $('capFilter').addEventListener('click', (e) => {

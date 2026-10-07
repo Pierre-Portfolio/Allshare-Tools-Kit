@@ -31,6 +31,7 @@ Extension Chrome qui réunit, dans un **panneau latéral**, quatre outils pour l
 ### Capsule : sauvegarde des onglets (`panel/capsule.html`)
 - **Sauvegarder cette session** : enregistre les onglets de la **fenêtre où vous êtes**, avec un **titre**, un **client associé** (auto-complété avec les clients d'Insight) et un **commentaire**
 - **Mes sessions** : titre, client, nombre d'onglets et date ; **Rouvrir** recrée une fenêtre avec tous les onglets (épinglés compris), un clic sur un lien n'ouvre que celui-là
+- **✎ Renommer** (session dépliée) : le titre devient un champ, **Entrée** ou un clic ailleurs enregistre, **Échap** annule
 - **Pages d'une session** modifiables une fois la session dépliée : **×** retire une page ; **Ajouter** une adresse saisie (`exemple.fr/page` devient `https://exemple.fr/page`) ou **＋ Ajouter l'onglet affiché** dans la fenêtre ; une page déjà présente n'est pas ajoutée deux fois
 - **Case à cocher** à gauche de chaque session : cochée, la session n'est **plus active** et apparaît **barrée** ; filtre **Toutes / Actives / Inactives** au-dessus de la liste
 - **Glisser-déposer** : l'ordre des sessions se change en les faisant glisser les unes au-dessus ou en dessous des autres ; il est gardé, y compris par l'export / import de « Mes données »

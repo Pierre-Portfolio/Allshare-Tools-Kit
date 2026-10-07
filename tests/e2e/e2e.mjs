@@ -690,6 +690,31 @@ try {
   await tools.waitForFunction(() => document.querySelectorAll('[data-id="cap0"] .cap-links li').length === 2);
   await tools.screenshot({ path: join(out, 'capsule-pages.png') });
   console.log('  Capsule : pages ajoutées (adresse, onglet affiché) et retirée');
+  // Titre modifié sur place : Échap annule, Entrée ou clic ailleurs enregistre
+  const titleInput = '[data-id="cap0"] .cap-title-input';
+  const titleOf = async (id) => (await storedCaps()).find((c) => c.id === id).title;
+  await tools.click('[data-id="cap0"] [data-rename]');
+  await tools.fill(titleInput, 'Abandonné');
+  await tools.screenshot({ path: join(out, 'capsule-titre.png') });
+  await tools.press(titleInput, 'Escape');
+  await tools.waitForSelector('[data-id="cap0"] .cap-title');
+  assert.equal(await tools.textContent('[data-id="cap0"] .cap-title'), 'Recette A', 'Échap : titre inchangé');
+  await tools.click('[data-id="cap0"] [data-rename]');
+  await tools.keyboard.press('End');
+  await tools.keyboard.type('  bis '); // espaces tapés dans le résumé : la session ne se replie pas
+  await tools.keyboard.press('Enter');
+  for (let i = 0; i < 50 && (await titleOf('cap0')) !== 'Recette A bis'; i++) await sleep(100);
+  assert.equal(await titleOf('cap0'), 'Recette A bis', 'titre enregistré, espaces nettoyés');
+  await tools.waitForFunction(
+    () => document.querySelector('[data-id="cap0"] .cap-title')?.textContent === 'Recette A bis',
+  );
+  assert.notEqual(await tools.getAttribute('[data-id="cap0"] .capsule', 'open'), null, 'session toujours dépliée');
+  await tools.click('[data-id="cap0"] [data-rename]');
+  await tools.fill(titleInput, 'Recette A ter');
+  await tools.click('.tagline');
+  for (let i = 0; i < 50 && (await titleOf('cap0')) !== 'Recette A ter'; i++) await sleep(100);
+  assert.equal(await titleOf('cap0'), 'Recette A ter', 'clic ailleurs : titre enregistré');
+  console.log('  Capsule : titre modifié sur place');
 
   // 12. Prisme : CSV refusé, fichier propre, exemple avec erreurs, export, tableau de bord
   await tools.setViewportSize({ width: 380, height: 1000 });
