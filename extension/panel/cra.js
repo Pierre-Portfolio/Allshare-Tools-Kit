@@ -1,12 +1,11 @@
 // CRA (panneau latéral) : capsules rouvertes ou sauvegardées le jour choisi (aujourd'hui par défaut),
-// avec leur temps d'ouverture, et réglages des automatismes de la page de saisie du C.R.A (content/cra.js).
-import { getCapsules, describeTabs } from '../lib/capsule.js';
-import { openedOn, fmtOpenTime, getCraSettings, saveCraSettings } from '../lib/cra.js';
+// avec leur temps d'ouverture, réglages des automatismes de la page de saisie du C.R.A (content/cra.js),
+// et pages allshare-scenario.fr ouvertes aujourd'hui (craPages, tenu par background.js).
+import { getCapsules, describeTabs, host } from '../lib/capsule.js';
+import { openedOn, fmtOpenTime, isoDay, pagesToday, getCraSettings, saveCraSettings } from '../lib/cra.js';
 
 const $ = (id) => document.getElementById(id);
 const fmtTime = (ts) => new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-const isoDay = (d) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 function el(tag, props = {}, ...children) {
   const node = Object.assign(document.createElement(tag), props);
@@ -61,8 +60,43 @@ async function renderList() {
   );
 }
 
-// Temps d'ouverture des capsules encore ouvertes : mis à jour chaque minute
-setInterval(renderList, 60000);
+// ---------------------------------------------------------------- Pages allshare-scenario.fr du jour
+
+/** « dsb-cra.allshare-scenario.fr/apex/r/…/saisie-cra » : domaine et chemin, sans paramètres. */
+function shortUrl(url) {
+  try {
+    return host(url) + new URL(url).pathname.replace(/\/$/, '');
+  } catch {
+    return url;
+  }
+}
+
+async function renderPages() {
+  const pages = pagesToday((await chrome.storage.local.get('craPages')).craPages);
+  $('pagesTotal').textContent = pages.length ? `(${pages.length})` : '';
+  $('pagesEmpty').hidden = pages.length > 0;
+  $('pagesList').replaceChildren(
+    ...pages.map((p) =>
+      el(
+        'li',
+        { className: 'cra-item', title: p.url },
+        el(
+          'div',
+          { className: 'cra-title' },
+          el('strong', { textContent: p.title || shortUrl(p.url) }),
+          el('b', { className: 'cra-open', textContent: `${fmtOpenTime(p.ms)}${p.live ? ' (en cours)' : ''}` }),
+        ),
+        el('small', { className: 'cra-times cra-url', textContent: shortUrl(p.url) }),
+      ),
+    ),
+  );
+}
+
+// Temps d'ouverture des capsules et des pages encore ouvertes : mis à jour chaque minute
+setInterval(() => {
+  renderList();
+  renderPages();
+}, 60000);
 
 $('craDay').value = isoDay(new Date());
 $('craDay').addEventListener('change', renderList);
@@ -82,7 +116,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   if (changes.capsules) renderList();
   if (changes.craSettings) renderSettings();
+  if (changes.craPages) renderPages();
 });
 
 renderList();
 renderSettings();
+renderPages();

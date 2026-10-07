@@ -14,7 +14,7 @@ Extension Chrome qui réunit, dans un **panneau latéral**, cinq outils pour les
 2. **Insight** : la mesure du temps entre **le clic** et **l'affichage complet** d'une page, par client, SID, version, page et réseau (**Ethernet** ou **WiFi**), avec exports Excel et CSV ;
 3. **Training** : des formations complètes, avec exercices corrigés et progression enregistrée, en trois modules : **Métier RH**, **OLAP** et **Oracle APEX** ;
 4. **Prisme** : l'inspection d'un fichier CSV (encodage, séparateurs, colonnes décalées, accents cassés…) et sa conversion en ANSI ou en UTF-8 ;
-5. **CRA** : pour remplir le compte rendu d'activité, la liste des **capsules ouvertes dans la journée** avec leur **temps d'ouverture**, et deux automatismes de la page de saisie du C.R.A (**Save** cliqué en quittant une ligne remplie, case de l'**étoile jaune** décochée à l'arrivée).
+5. **CRA** : pour remplir le compte rendu d'activité, la liste des **capsules ouvertes dans la journée** avec leur **temps d'ouverture**, le temps d'ouverture des **pages allshare-scenario.fr** du jour, et deux automatismes de la page de saisie du C.R.A (**Save** cliqué en quittant une ligne remplie, case de l'**étoile jaune** décochée à l'arrivée).
 
 À chaque ouverture, le panneau demande **Quels outils ?**. Tout reste **dans le navigateur** : aucune donnée n'est envoyée sur Internet. En bas de l'accueil, **Exporter mes données Tools Kit** les enregistre toutes dans un fichier, à réimporter après une réinstallation ou sur un autre poste.
 
@@ -65,6 +65,7 @@ Extension Chrome qui réunit, dans un **panneau latéral**, cinq outils pour les
   - **Enregistrer chaque ligne remplie** : quand on quitte une ligne modifiée de la grille (autre ligne, bouton Add Row, reste de la page), le bouton **Save** est cliqué ; ouvrir une liste de valeurs ou un calendrier ne compte pas, et un Save déjà en cours (ou cliqué à la main) n'est pas relancé
   - **Décocher l'étoile jaune en arrivant** : la case du surlignage (étoile jaune) de la grille est décochée à l'ouverture de la page, si elle est cochée ; quand les réglages de la grille sont repliés, ils sont dépliés le temps de la décocher, puis repliés
 - Réglages pris en compte aussitôt, sans recharger la page ; ils font partie de « Mes données »
+- **Pages allshare-scenario.fr** (zone repliée tout en bas) : chaque page du domaine (sous-domaines compris, ex. `dsb-cra.allshare-scenario.fr`) ouverte aujourd'hui dans un onglet, avec son titre, son adresse et son **temps d'ouverture** (« (en cours) » si elle est encore ouverte), la plus longue en tête ; un onglet en arrière-plan compte, une page ouverte dans deux onglets ne compte qu'une fois, le numéro de session APEX de l'adresse est ignoré. **Remis à zéro chaque jour** ; si l'ordinateur se met en veille, l'attente ne compte pas (3 min au plus)
 
 ### Mes données : sauvegarde complète (accueil, `lib/backup.js`)
 - **Exporter mes données Tools Kit** : un seul fichier JSON avec **toutes les données de l'extension** : mesures, clients, pages et réglages d'Insight, sessions de Capsule, fichiers récents de Prisme (contenu compris) et ses réglages, progression de Training et son thème, réglages de CRA

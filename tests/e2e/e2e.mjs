@@ -1117,7 +1117,24 @@ try {
   );
   await cra.close();
   await context.unroute('https://dsb-cra.allshare-scenario.fr/**');
-  console.log('  CRA : capsules du jour et temps d’ouverture, étoile jaune décochée, ligne enregistrée en la quittant');
+  // Pages allshare-scenario.fr du jour : les deux pages ouvertes, sans numéro de session, plus en cours
+  const craPages = () => storage(async () => (await chrome.storage.local.get('craPages')).craPages);
+  for (let i = 0; i < 50 && (await craPages())?.open.length !== 0; i++) await sleep(100);
+  const sitePages = await craPages();
+  const xaas = 'https://dsb-cra.allshare-scenario.fr/apex/r/allshare_wks/xaas';
+  assert.deepEqual(Object.keys(sitePages.pages).sort(), [`${xaas}/autre-page`, `${xaas}/saisie-cra`]);
+  assert.ok(sitePages.pages[`${xaas}/saisie-cra`].ms > 3000, 'temps d’ouverture de la page de saisie');
+  assert.equal(sitePages.pages[`${xaas}/saisie-cra`].title, 'Saisie CRA');
+  assert.equal(await tools.getAttribute('#sitePages', 'open'), null, 'repliée au départ');
+  await tools.click('#sitePages > summary');
+  assert.equal(await tools.textContent('#pagesTotal'), '(2)');
+  assert.deepEqual(await tools.locator('#pagesList .cra-url').allTextContents(), [
+    'dsb-cra.allshare-scenario.fr/apex/r/allshare_wks/xaas/saisie-cra',
+    'dsb-cra.allshare-scenario.fr/apex/r/allshare_wks/xaas/autre-page',
+  ]);
+  assert.deepEqual(await tools.locator('#pagesList .cra-open').allTextContents(), ['< 1 min', '< 1 min']);
+  await tools.screenshot({ path: join(out, 'cra-pages.png'), fullPage: true });
+  console.log('  CRA : capsules du jour et temps d’ouverture, étoile jaune décochée, ligne enregistrée, pages du jour');
   await tools.goto(`chrome-extension://${extId}/panel/home.html?choose`);
 
   // 15. Mes données : export de toutes les données depuis l'accueil, extension vidée, réimport

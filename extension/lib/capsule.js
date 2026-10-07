@@ -11,8 +11,8 @@
 //              la fermeture de ses fenêtres Chrome ; tant que la période dure, pas de `to` et `wins` liste les
 //              fenêtres encore ouvertes ; temps d'ouverture affiché dans CRA, fin notée par background.js)
 //             (win : numéro de la fenêtre d'origine, pour rouvrir fenêtre par fenêtre)
-//   capsuleAlive  dernier instant où Chrome tournait avec une capsule ouverte (relevé chaque minute) :
-//                 fin des périodes restées ouvertes quand Chrome a été quitté
+//   capsuleAlive  dernier instant où Chrome tournait avec une capsule (ou une page allshare-scenario.fr) ouverte,
+//                 relevé chaque minute : fin des périodes restées ouvertes quand Chrome a été quitté
 
 import { newId } from './storage.js';
 import { normName, nameKey, compareNames } from './names.js';

@@ -980,3 +980,25 @@ button.t-resume.primary {
   color: var(--text);
   font-weight: 650;
 }
+
+/* Pages allshare-scenario.fr : liste dans la zone repliable, en bas du panneau */
+.cra-pages {
+  padding: 0 8px 8px;
+}
+
+.cra-pages .cra-item {
+  border-left-color: var(--accent);
+}
+
+.cra-pages .cra-open {
+  margin-left: auto;
+  padding-left: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.cra-url {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

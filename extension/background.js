@@ -1,5 +1,6 @@
 // Allshare Tools Kit — service worker : mesures Insight, badge de l'icône, raccourci clavier,
-// temps d'ouverture des capsules (fin notée à la fermeture de leurs fenêtres, voir lib/capsule.js).
+// temps d'ouverture des capsules (fin notée à la fermeture de leurs fenêtres, voir lib/capsule.js)
+// et des pages allshare-scenario.fr du jour (craPages, voir lib/cra.js).
 //
 // Une mesure se déroule ainsi (état « session » dans chrome.storage.session) :
 //   armed      le formulaire a été validé : les scripts de mesure sont injectés
@@ -24,6 +25,7 @@ import {
 } from './lib/storage.js';
 import { canonical, normName } from './lib/names.js';
 import { getCapsules, closeOpenSpans, anyOpen } from './lib/capsule.js';
+import { trackPages } from './lib/cra.js';
 import { urlEnd } from './lib/urls.js';
 import { NETWORK_LABELS } from './lib/format.js';
 
@@ -438,7 +440,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 // ---------------------------------------------------------------- Capsule : temps d'ouverture
 
-const ALIVE_ALARM = 'capsule-alive';
+const TICK_ALARM = 'tick'; // relevé chaque minute (capsules et pages allshare-scenario.fr ouvertes)
 
 // Mises à jour des capsules sérialisées : deux fenêtres fermées ensemble ne s'écrasent pas
 let capsuleChain = Promise.resolve();
@@ -454,19 +456,46 @@ const lastAlive = async () => (await chrome.storage.local.get('capsuleAlive')).c
 
 chrome.windows.onRemoved.addListener((windowId) => closeCapsuleSpans((w) => w !== windowId, Date.now()));
 
-// Relevé chaque minute tant qu'une capsule est ouverte : si Chrome est quitté, ses périodes se terminent là
-async function syncAliveAlarm() {
-  const open = anyOpen(await getCapsules());
-  if (!open) await chrome.alarms.clear(ALIVE_ALARM);
-  else if (!(await chrome.alarms.get(ALIVE_ALARM))) await chrome.alarms.create(ALIVE_ALARM, { periodInMinutes: 1 });
+// ---------------------------------------------------------------- CRA : pages allshare-scenario.fr du jour
+
+// Relevés sérialisés (lecture puis écriture de craPages) ; `restart` : les onglets d'avant n'existent plus
+let pagesChain = Promise.resolve();
+function updatePages(restart = false) {
+  pagesChain = pagesChain
+    .then(async () => {
+      const { craPages } = await chrome.storage.local.get('craPages');
+      const before = restart && craPages ? { ...craPages, open: [] } : craPages;
+      const next = trackPages(before, await chrome.tabs.query({}), Date.now());
+      if (!(craPages && craPages.open.length) && !next.open.length) return; // aucune page suivie
+      await chrome.storage.local.set({ craPages: next });
+    })
+    .catch((e) => console.error('[CRA] pages', e));
+  return pagesChain;
+}
+
+chrome.tabs.onUpdated.addListener((tabId, info) => (info.url || info.title) && updatePages());
+chrome.tabs.onRemoved.addListener(() => updatePages());
+chrome.tabs.onReplaced.addListener(() => updatePages());
+
+// ---------------------------------------------------------------- Relevé chaque minute
+
+// Tant qu'une capsule ou une page allshare-scenario.fr est ouverte : temps des pages mis à jour, et
+// dernier instant où Chrome tournait (si Chrome est quitté, les capsules ouvertes se terminent là)
+async function syncTickAlarm() {
+  const [capsules, { craPages }] = await Promise.all([getCapsules(), chrome.storage.local.get('craPages')]);
+  const open = anyOpen(capsules) || !!(craPages && craPages.open.length);
+  if (!open) await chrome.alarms.clear(TICK_ALARM);
+  else if (!(await chrome.alarms.get(TICK_ALARM))) await chrome.alarms.create(TICK_ALARM, { periodInMinutes: 1 });
 }
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === ALIVE_ALARM) chrome.storage.local.set({ capsuleAlive: Date.now() });
+  if (alarm.name !== TICK_ALARM) return;
+  chrome.storage.local.set({ capsuleAlive: Date.now() });
+  updatePages();
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.capsules) syncAliveAlarm();
+  if (area === 'local' && (changes.capsules || changes.craPages)) syncTickAlarm();
 });
 
 // Raccourci clavier : lance la mesure avec les valeurs du formulaire.
@@ -506,12 +535,15 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   // Extension rechargée : les fenêtres fermées entre-temps n'ont pas été vues
   const windows = new Set((await chrome.windows.getAll()).map((w) => w.id));
   await closeCapsuleSpans((w) => windows.has(w), lastAlive);
-  await syncAliveAlarm();
+  await updatePages();
+  await chrome.alarms.clearAll(); // relevé d'une version précédente
+  await syncTickAlarm();
   await boot();
 });
 chrome.runtime.onStartup.addListener(async () => {
-  // Chrome redémarré : les fenêtres de la dernière fois n'existent plus
+  // Chrome redémarré : les fenêtres et onglets de la dernière fois n'existent plus
   await closeCapsuleSpans(() => false, lastAlive);
-  await syncAliveAlarm();
+  await updatePages(true);
+  await syncTickAlarm();
   await boot();
 });

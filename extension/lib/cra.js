@@ -5,13 +5,30 @@
 //                { autoSave, autoHighlight }
 //                (autoSave : clic sur « Save » quand on quitte une ligne modifiée de la grille)
 //                (autoHighlight : case de l'étoile jaune, le surlignage de la grille, décochée en arrivant sur la page)
+//   craPages     pages allshare-scenario.fr ouvertes aujourd'hui (remis à zéro chaque jour), tenu par background.js :
+//                { day: 'AAAA-MM-JJ', at, pages: { [clé]: { url, title, ms } }, open: [clé…] }
+//                (at : dernière mise à jour ; open : pages ouvertes dans un onglet à cet instant, qui gagnent
+//                 le temps écoulé depuis at ; clé : voir pageKey)
 // Capsules ouvertes dans la journée : capsules[].opens (réouvertures, voir lib/capsule.js) et date de sauvegarde ;
 // temps d'ouverture : capsules[].spans (de la sauvegarde ou d'une réouverture à la fermeture de ses fenêtres).
+
+import { normName } from './names.js';
 
 /** Début des adresses de la page de saisie du C.R.A (Oracle APEX). */
 export const CRA_PAGE = 'https://dsb-cra.allshare-scenario.fr/apex/r/allshare_wks/xaas/saisie-cra?';
 
 export const DEFAULT_CRA = { autoSave: false, autoHighlight: false };
+
+/** Domaine des pages dont le temps d'ouverture est compté (sous-domaines compris). */
+export const SITE = 'allshare-scenario.fr';
+/** Au-delà, l'ordinateur était en veille : le relevé de background.js passe chaque minute. */
+export const MAX_GAP = 3 * 60000;
+
+/** « 2026-10-07 » : jour de `date`, heure locale. */
+export function isoDay(date) {
+  const d = new Date(date);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 /** Début et fin (exclue) du jour de `date`, heure locale. */
 export function dayBounds(date) {
@@ -72,6 +89,79 @@ export function openedOn(capsules, date, now = Date.now()) {
     .filter((x) => x.events.length || x.open > 0)
     .sort((a, b) => a.start - b.start)
     .map(({ start, ...x }) => x);
+}
+
+// ---------------------------------------------------------------- Pages allshare-scenario.fr
+
+/** Page du domaine allshare-scenario.fr (ou d'un sous-domaine) ? */
+export function isSitePage(url) {
+  try {
+    const host = new URL(url).hostname;
+    return host === SITE || host.endsWith(`.${SITE}`);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Clé d'une page : son adresse sans ancre ni numéro de session APEX (paramètres session, cs, clear ;
+ * 3e valeur de f?p=), pour qu'une même page ne soit pas comptée à part à chaque connexion.
+ */
+export function pageKey(url) {
+  const u = new URL(url);
+  u.hash = '';
+  for (const name of ['session', 'cs', 'clear']) u.searchParams.delete(name);
+  const p = u.searchParams.get('p');
+  if (p && p.split(':').length > 2) u.searchParams.set('p', p.replace(/^([^:]*:[^:]*:)[^:]*/, '$1'));
+  return u.href;
+}
+
+/**
+ * Relevé à `now` : les pages ouvertes depuis le dernier relevé gagnent le temps écoulé (MAX_GAP au plus) ;
+ * un nouveau jour repart de zéro (seul le temps depuis minuit compte). Fonction pure.
+ */
+export function advancePages(state, now) {
+  const day = isoDay(now);
+  if (!state) return { day, at: now, pages: {}, open: [] };
+  const sameDay = state.day === day;
+  const since = sameDay ? state.at : Math.max(state.at, dayBounds(now)[0]);
+  const gained = Math.max(0, Math.min(now - since, MAX_GAP));
+  const pages = sameDay ? { ...state.pages } : {};
+  for (const key of state.open) {
+    const page = pages[key] || state.pages[key];
+    if (page) pages[key] = { ...page, ms: (sameDay ? page.ms : 0) + gained };
+  }
+  return { day, at: now, pages, open: state.open };
+}
+
+/**
+ * Relevé à `now` d'après les onglets ouverts : les pages allshare-scenario.fr affichées (titre et adresse
+ * à jour) comptent à partir de maintenant, les autres s'arrêtent. Fonction pure.
+ * @param {{url: string, title: string}[]} tabs  tous les onglets de Chrome
+ */
+export function trackPages(state, tabs, now) {
+  const next = advancePages(state, now);
+  const pages = { ...next.pages };
+  const open = [];
+  for (const t of tabs) {
+    if (!isSitePage(t.url)) continue;
+    const key = pageKey(t.url);
+    if (!open.includes(key)) open.push(key);
+    const page = pages[key];
+    pages[key] = { url: t.url, title: normName(t.title) || (page && page.title) || '', ms: page ? page.ms : 0 };
+  }
+  return { ...next, pages, open };
+}
+
+/**
+ * Pages du jour pour le panneau, la plus longtemps ouverte en tête. Fonction pure.
+ * @returns {{key, url, title, ms, live: boolean}[]} live : ouverte dans un onglet en ce moment
+ */
+export function pagesToday(state, now = Date.now()) {
+  const { pages, open } = advancePages(state, now);
+  return Object.entries(pages)
+    .map(([key, page]) => ({ key, ...page, live: open.includes(key) }))
+    .sort((a, b) => b.ms - a.ms);
 }
 
 /** « 2 capsules ouvertes aujourd'hui » (vide s'il n'y en a pas), pour l'accueil. */
