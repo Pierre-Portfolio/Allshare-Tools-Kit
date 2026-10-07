@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildXlsx, colName } from '../../extension/lib/xlsx.js';
+import { buildXlsx, buildXlsxCompressed, colName } from '../../extension/lib/xlsx.js';
 
 test('colName', () => {
   assert.equal(colName(0), 'A');
@@ -47,4 +47,29 @@ test('buildXlsx produit une archive ZIP valide', () => {
   assert.match(listing, /name="Comparatif"/);
   assert.match(listing, /name="comparatif \(2\)"/);
   assert.match(listing, /name="Nom trop long avec des caractèr"/);
+});
+
+test('buildXlsxCompressed : archive ZIP compressée (deflate), même contenu, bien plus petite', async () => {
+  const rows = Array.from({ length: 300 }, (_, i) => [`Client ${i % 7}`, { v: 1234 + i, s: 'num' }, 'PRD']);
+  const sheets = [{ name: 'Mesures', rows }];
+  const plain = buildXlsx(sheets);
+  const packed = await buildXlsxCompressed(sheets);
+  assert.ok(packed.length * 4 < plain.length, `${packed.length} octets au lieu de ${plain.length}`);
+  const dir = mkdtempSync(join(tmpdir(), 'insight-'));
+  const file = join(dir, 'z.xlsx');
+  writeFileSync(file, packed);
+  let out;
+  try {
+    out = execFileSync('python3', [
+      '-c',
+      `import zipfile,sys;z=zipfile.ZipFile(sys.argv[1]);assert z.testzip() is None;i=z.getinfo('xl/worksheets/sheet1.xml');print(i.compress_type, len(z.read(i)))`,
+      file,
+    ]).toString();
+  } catch (e) {
+    if (e.code === 'ENOENT') return; // python absent : vérification sautée
+    throw e;
+  }
+  const [method, size] = out.trim().split(' ').map(Number);
+  assert.equal(method, 8, 'deflate');
+  assert.ok(size > 10000, 'feuille décompressée intacte');
 });

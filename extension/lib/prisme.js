@@ -788,6 +788,7 @@ export function analyze(bytes, { expected: exp = 'ansi', encOverride = 'auto', d
     if (/\S {2,}\S/.test(v)) add('double-space', { r, c });
     if (RX_NBSP.test(v)) add('nbsp', { r, c });
     if (RX_ZERO_WIDTH.test(v)) add('zero-width', { r, c });
+    // eslint-disable-next-line no-control-regex -- caractères de contrôle recherchés exprès
     if (/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(v)) add('control', { r, c });
     if (/[\u0080-\u009F]/.test(v)) add('c1-control', { r, c });
     if (delim !== '\t' && /\t/.test(v)) add('tab-in-cell', { r, c });

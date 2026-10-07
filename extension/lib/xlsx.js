@@ -1,8 +1,8 @@
 // Générateur minimal de fichiers Excel (.xlsx) sans dépendance.
 //
-// Un .xlsx est une archive ZIP de fichiers XML ; on l'écrit ici en mode
-// « stocké » (sans compression), ce qu'Excel, LibreOffice et Google Sheets
-// lisent sans problème.
+// Un .xlsx est une archive ZIP de fichiers XML : buildXlsxCompressed la compresse (deflate, comme
+// Excel : fichier 5 à 10 fois plus petit) quand CompressionStream est disponible ; buildXlsx l'écrit
+// en mode « stocké » (sans compression), ce qu'Excel, LibreOffice et Google Sheets lisent aussi.
 //
 // Feuille : { name, rows: [[cell]], cols: [largeurs], merges: ['A1:B1'],
 //             freeze: { rows, cols }, autoFilter: 'A1:F20',
@@ -85,12 +85,15 @@ const NS_MAIN = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
 const NS_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 
 function esc(value) {
-  return String(value)
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  return (
+    String(value)
+      // eslint-disable-next-line no-control-regex -- caractères interdits en XML, retirés exprès
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+  );
 }
 
 /** 0 -> A, 25 -> Z, 26 -> AA… */
@@ -193,10 +196,10 @@ function sheetNames(sheets) {
   });
 }
 
-/** Construit le fichier .xlsx et renvoie ses octets. */
-export function buildXlsx(sheets, date = new Date()) {
+/** Fichiers XML du classeur : [{ name, data }]. */
+function xlsxFiles(sheets) {
   const names = sheetNames(sheets);
-  const files = [
+  return [
     {
       name: '[Content_Types].xml',
       data:
@@ -247,10 +250,33 @@ export function buildXlsx(sheets, date = new Date()) {
     { name: 'xl/styles.xml', data: STYLES_XML },
     ...sheets.map((s, i) => ({ name: `xl/worksheets/sheet${i + 1}.xml`, data: sheetXml(s) })),
   ];
-  return zipStore(files, date);
 }
 
-// ---- ZIP (méthode 0 « stored »)
+/** Construit le fichier .xlsx (sans compression) et renvoie ses octets. */
+export function buildXlsx(sheets, date = new Date()) {
+  return zipStore(xlsxFiles(sheets), date);
+}
+
+/** Octets compressés au format deflate brut (celui des archives ZIP). */
+async function deflateRaw(bytes) {
+  const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+/** Construit le fichier .xlsx compressé (repli sans compression si CompressionStream manque). */
+export async function buildXlsxCompressed(sheets, date = new Date()) {
+  const files = xlsxFiles(sheets);
+  if (typeof CompressionStream !== 'function') return zipStore(files, date);
+  const entries = await Promise.all(
+    files.map(async (f) => {
+      const data = enc.encode(f.data);
+      return { name: f.name, data, packed: await deflateRaw(data) };
+    }),
+  );
+  return zipEntries(entries, date);
+}
+
+// ---- ZIP (méthode 0 « stored », ou 8 « deflate » pour les fichiers compressés)
 
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
@@ -269,6 +295,14 @@ function crc32(bytes) {
 }
 
 export function zipStore(files, date = new Date()) {
+  return zipEntries(
+    files.map((f) => ({ name: f.name, data: typeof f.data === 'string' ? enc.encode(f.data) : f.data })),
+    date,
+  );
+}
+
+/** Archive ZIP : [{ name, data (octets), packed? (octets compressés en deflate brut) }]. */
+function zipEntries(files, date) {
   const time = (date.getHours() << 11) | (date.getMinutes() << 5) | (date.getSeconds() >> 1);
   const day = ((date.getFullYear() - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
   const parts = [];
@@ -277,7 +311,9 @@ export function zipStore(files, date = new Date()) {
 
   for (const f of files) {
     const name = enc.encode(f.name);
-    const data = typeof f.data === 'string' ? enc.encode(f.data) : f.data;
+    const { data } = f;
+    const stored = f.packed || data;
+    const method = f.packed ? 8 : 0;
     const crc = crc32(data);
 
     const local = new Uint8Array(30 + name.length);
@@ -285,15 +321,15 @@ export function zipStore(files, date = new Date()) {
     lv.setUint32(0, 0x04034b50, true);
     lv.setUint16(4, 20, true); // version nécessaire
     lv.setUint16(6, 0x0800, true); // noms en UTF-8
-    lv.setUint16(8, 0, true); // stocké
+    lv.setUint16(8, method, true); // 0 : stocké, 8 : deflate
     lv.setUint16(10, time, true);
     lv.setUint16(12, day, true);
     lv.setUint32(14, crc, true);
-    lv.setUint32(18, data.length, true);
+    lv.setUint32(18, stored.length, true);
     lv.setUint32(22, data.length, true);
     lv.setUint16(26, name.length, true);
     local.set(name, 30);
-    parts.push(local, data);
+    parts.push(local, stored);
 
     const cd = new Uint8Array(46 + name.length);
     const cv = new DataView(cd.buffer);
@@ -301,18 +337,18 @@ export function zipStore(files, date = new Date()) {
     cv.setUint16(4, 20, true);
     cv.setUint16(6, 20, true);
     cv.setUint16(8, 0x0800, true);
-    cv.setUint16(10, 0, true);
+    cv.setUint16(10, method, true);
     cv.setUint16(12, time, true);
     cv.setUint16(14, day, true);
     cv.setUint32(16, crc, true);
-    cv.setUint32(20, data.length, true);
+    cv.setUint32(20, stored.length, true);
     cv.setUint32(24, data.length, true);
     cv.setUint16(28, name.length, true);
     cv.setUint32(42, offset, true);
     cd.set(name, 46);
     central.push(cd);
 
-    offset += local.length + data.length;
+    offset += local.length + stored.length;
   }
 
   const cdSize = central.reduce((s, c) => s + c.length, 0);

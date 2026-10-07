@@ -8,10 +8,56 @@
 //   (hors de chrome.storage.local : les mesures d'Insight y sont relues en entier à chaque affichage)
 
 import { newId, withLock } from './storage.js';
-import { fingerprint, summarize } from './prisme.js';
+import { analyze, fingerprint, fmtSize, summarize } from './prisme.js';
+import { downloadBlob } from './dom.js';
+import { showExtensionPage } from './tabs.js';
 
 export const MAX_FILES = 10;
+/** Au-delà, l'analyse se fait dans un Web Worker : la page reste utilisable pendant ce temps. */
+export const WORKER_MIN = 512 * 1024;
+/** Au-delà, l'ouverture est confirmée : analyse longue, et le fichier est gardé dans les fichiers récents. */
+export const LARGE_FILE = 20 * 1024 * 1024;
 export const DEFAULT_PRISME_SETTINGS = { expected: 'ansi', crlf: true, view: 'details' };
+
+// ---------------------------------------------------------------- Analyse
+
+let worker = null;
+let lastJob = 0;
+const jobs = new Map();
+
+function analysisWorker() {
+  if (worker) return worker;
+  worker = new Worker(new URL('./prisme-worker.js', import.meta.url), { type: 'module' });
+  worker.onmessage = ({ data }) => {
+    const job = jobs.get(data.id);
+    jobs.delete(data.id);
+    if (job) data.error ? job.reject(new Error(data.error)) : job.resolve(data.res);
+  };
+  worker.onerror = (e) => {
+    for (const job of jobs.values()) job.reject(new Error(e.message || 'Analyse impossible'));
+    jobs.clear();
+    worker = null;
+  };
+  return worker;
+}
+
+/**
+ * Analyse d'un fichier (voir analyze) : dans un Web Worker au-delà de WORKER_MIN, directement sinon
+ * (ou si le Worker échoue). @returns {Promise<object>} résultat de analyze
+ */
+export function analyzeFile(bytes, options) {
+  if (bytes.length < WORKER_MIN || typeof Worker !== 'function') return Promise.resolve(analyze(bytes, options));
+  return new Promise((resolve, reject) => {
+    const id = ++lastJob;
+    jobs.set(id, { resolve, reject });
+    analysisWorker().postMessage({ id, bytes, options });
+  }).catch(() => analyze(bytes, options));
+}
+
+/** Gros fichier : l'utilisateur confirme l'ouverture. */
+export const confirmLarge = (bytes, name) =>
+  bytes.length <= LARGE_FILE ||
+  confirm(`« ${name} » pèse ${fmtSize(bytes.length)} : son analyse peut prendre un moment. L'ouvrir quand même ?`);
 
 // ---------------------------------------------------------------- Réglages
 
@@ -131,36 +177,16 @@ export function deleteFile(id) {
 export const readFile = async (file) => new Uint8Array(await file.arrayBuffer());
 
 /** Télécharge des octets sous un nom de fichier. */
-export function download(bytes, name, type = 'text/csv') {
-  const url = URL.createObjectURL(new Blob([bytes], { type }));
-  const a = Object.assign(document.createElement('a'), { href: url, download: name });
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
-}
+export const download = (bytes, name, type = 'text/csv') => downloadBlob(bytes, name, type);
 
 /**
  * Ouvre le tableau de bord sur un fichier (et, au besoin, sur une anomalie) : réutilise l'onglet
  * du tableau de bord s'il est déjà ouvert, sinon en ouvre un nouveau.
  */
-export async function openDashboard(id, issue) {
+export function openDashboard(id, issue) {
   const base = chrome.runtime.getURL('prisme/prisme.html');
   const params = new URLSearchParams();
   if (id) params.set('id', id);
   if (issue) params.set('issue', issue);
-  const url = params.size ? `${base}?${params}` : base;
-  try {
-    const [ctx] = (await chrome.runtime.getContexts({ contextTypes: ['TAB'] })).filter(
-      (c) => c.documentUrl && c.documentUrl.startsWith(base) && c.tabId >= 0,
-    );
-    if (ctx) {
-      await chrome.tabs.update(ctx.tabId, ctx.documentUrl === url ? { active: true } : { url, active: true });
-      if (ctx.windowId >= 0) await chrome.windows.update(ctx.windowId, { focused: true });
-      return;
-    }
-  } catch {
-    /* onglet fermé entre-temps : on en ouvre un nouveau */
-  }
-  await chrome.tabs.create({ url });
+  return showExtensionPage(base, params.size ? `${base}?${params}` : base);
 }

@@ -1,6 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { convertV1, isOlderVersion, planLineEdit, DEFAULT_SETTINGS } from '../../extension/lib/storage.js';
+import {
+  convertV1,
+  isOlderVersion,
+  planLineEdit,
+  DEFAULT_SETTINGS,
+  measureItems,
+  applyMeasureChanges,
+} from '../../extension/lib/storage.js';
 
 test('convertV1 : mesures de la version 1 (appli par URL, page par chemin) -> noms', () => {
   const apps = [{ id: 'x1', name: 'Client A', baseUrls: ['https://a.fr/'] }];
@@ -123,4 +130,39 @@ test('planLineEdit : client, SID et version d’une ligne', () => {
   );
 
   assert.throws(() => planLineEdit(apps, measures, line, { client: '  ' }), /client/);
+});
+
+test('measureItems : la mesure et, à part, son détail des temps', () => {
+  const detail = { kind: 'spa', marks: { end: 10 } };
+  assert.deepEqual(
+    measureItems([
+      { id: 'a', ts: 1, detail },
+      { id: 'b', ts: 2 },
+    ]),
+    {
+      m_a: { id: 'a', ts: 1 },
+      d_a: detail,
+      m_b: { id: 'b', ts: 2 },
+    },
+  );
+});
+
+test('applyMeasureChanges : mesures ajoutées, modifiées, supprimées sans tout relire', () => {
+  const list = [
+    { id: 'a', ts: 1, page: 'P' },
+    { id: 'b', ts: 3, page: 'P' },
+  ];
+  assert.equal(applyMeasureChanges(list, { settings: { newValue: {} }, d_a: { newValue: {} } }), null);
+  const next = applyMeasureChanges(list, {
+    m_c: { newValue: { id: 'c', ts: 2, page: 'P' } },
+    m_a: { oldValue: list[0] },
+    m_b: { oldValue: list[1], newValue: { id: 'b', ts: 3, page: 'Q' } },
+  });
+  assert.deepEqual(
+    next.map((m) => [m.id, m.page]),
+    [
+      ['c', 'P'],
+      ['b', 'Q'],
+    ],
+  );
 });

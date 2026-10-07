@@ -1,16 +1,9 @@
 // Training (panneau latéral) : les trois modules avec leur progression, le bouton « Reprendre »
 // et la liste des notions. Les cours s'ouvrent dans un onglet (training/training.html).
 import { MODULES, getProgress, moduleStats, overallStats, openTraining, TRAINING_KEY } from '../lib/training.js';
+import { $, el } from '../lib/dom.js';
 
-const $ = (id) => document.getElementById(id);
 const ACCENT = { rh: 'rh', olap: 'olap', apex: 'apex' };
-
-function el(tag, { dataset, ...props } = {}, ...children) {
-  const node = Object.assign(document.createElement(tag), props);
-  if (dataset) Object.assign(node.dataset, dataset);
-  node.append(...children.filter((c) => c !== null && c !== undefined && c !== false));
-  return node;
-}
 
 const track = (pct) => el('span', { className: 't-track' }, el('i', { style: `width:${pct}%` }));
 

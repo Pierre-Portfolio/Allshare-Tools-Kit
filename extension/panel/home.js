@@ -3,17 +3,16 @@
 // En bas : « Mes données », export et import de toutes les données de l'extension (lib/backup.js).
 import { getCapsules } from '../lib/capsule.js';
 import { getFiles } from '../lib/prisme-files.js';
-import { getConfig, getMeasures } from '../lib/storage.js';
+import { getConfig, ACTIVE_STATES } from '../lib/storage.js';
 import { buildModel } from '../lib/report.js';
 import { savedText, fileStamp } from '../lib/format.js';
 import { getProgress, trainingCountText } from '../lib/training.js';
 import { craCountText } from '../lib/cra.js';
 import { exportAll, importAll, describeCounts } from '../lib/backup.js';
-import { downloadBlob } from '../lib/export.js';
+import { downloadBlob } from '../lib/dom.js';
 
-const ACTIVE = ['armed', 'measuring', 'rearming'];
 const chosen = new URLSearchParams(location.search).has('choose'); // retour volontaire depuis un outil
-const isActive = (s) => !!(s && ACTIVE.includes(s.state));
+const isActive = (s) => !!(s && ACTIVE_STATES.includes(s.state));
 /** Raccourci clavier d'Insight avec un formulaire incomplet, il y a moins de 10 s : Insight plutôt que l'accueil. */
 const wantsInsight = (p) => !!(p && p.tool === 'insight' && Date.now() - p.at < 10000);
 
@@ -25,10 +24,9 @@ async function init() {
 }
 
 async function renderCounts() {
-  const [capsules, { apps, pages }, measures, files, progress] = await Promise.all([
+  const [capsules, { apps, pages }, files, progress] = await Promise.all([
     getCapsules(),
     getConfig(),
-    getMeasures(),
     getFiles(),
     getProgress(),
   ]);
@@ -37,8 +35,9 @@ async function renderCounts() {
   document.getElementById('capsuleCount').textContent = n
     ? `${n} session${n > 1 ? 's' : ''} sauvegardée${n > 1 ? 's' : ''}`
     : '';
-  // Clients et pages d'Insight : référentiel (Réglages) et mesures, sans doublon
-  const model = buildModel(measures, apps, pages);
+  // Clients et pages d'Insight : le référentiel suffit (chaque mesure y ajoute son client et sa page),
+  // sans relire les mesures
+  const model = buildModel([], apps, pages);
   document.getElementById('insightCount').textContent = savedText(model.clients.length, model.allPages.length);
   const f = files.length;
   document.getElementById('prismeCount').textContent = f

@@ -22,30 +22,15 @@ import {
   host,
   clientNames,
 } from '../lib/capsule.js';
-import { getConfig, getMeasures } from '../lib/storage.js';
+import { getConfig } from '../lib/storage.js';
 import { canonical, normName } from '../lib/names.js';
+import { $, el, toast } from '../lib/dom.js';
 
-const $ = (id) => document.getElementById(id);
 const fmtWhen = (ts) => new Date(ts).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
 let capsules = [];
 let clients = []; // clients d'Insight, proposés pour « Client associé »
 let filter = 'all'; // filtre de la liste : 'all', 'active' ou 'inactive'
 const FILTERS = { all: 'Toutes', active: 'Actives', inactive: 'Inactives' };
-
-function el(tag, { dataset, ...props } = {}, ...children) {
-  const node = Object.assign(document.createElement(tag), props);
-  if (dataset) Object.assign(node.dataset, dataset);
-  node.append(...children.filter((c) => c !== null && c !== undefined && c !== false));
-  return node;
-}
-
-function toast(text) {
-  const t = $('toast');
-  t.textContent = text;
-  t.classList.add('show');
-  clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => t.classList.remove('show'), 2500);
-}
 
 // ---------------------------------------------------------------- Liste
 
@@ -391,8 +376,8 @@ $('capsules').addEventListener('dragend', (e) => {
 let pending = []; // onglets qui seront enregistrés
 
 async function openForm() {
-  const [{ apps }, measures] = await Promise.all([getConfig(), getMeasures()]);
-  clients = clientNames(apps, measures);
+  const { apps } = await getConfig();
+  clients = clientNames(apps, []); // le référentiel contient tous les clients mesurés
   $('clientList').replaceChildren(...clients.map((name) => el('option', { value: name })));
   pending = await currentTabs();
   $('saveWhat').textContent = pending.length

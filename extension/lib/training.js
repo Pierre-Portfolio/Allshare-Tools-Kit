@@ -11,6 +11,7 @@
 //   Identifiants d'exercice : « olap-3-e2 » (notion olap-3, exercice 2), « rh-exam-4 » (examen du module rh).
 
 import { MODULES, moduleById } from '../training/content/index.js';
+import { showExtensionPage } from './tabs.js';
 
 export { MODULES, moduleById };
 
@@ -213,20 +214,6 @@ export function trainingUrl(moduleId, anchor) {
  * Ouvre la page de formation : réutilise son onglet s'il est déjà ouvert (même module : simple
  * changement d'ancre, sans rechargement), sinon en ouvre un nouveau.
  */
-export async function openTraining(moduleId, anchor) {
-  const base = chrome.runtime.getURL('training/training.html');
-  const url = trainingUrl(moduleId, anchor);
-  try {
-    const [ctx] = (await chrome.runtime.getContexts({ contextTypes: ['TAB'] })).filter(
-      (c) => c.documentUrl && c.documentUrl.startsWith(base) && c.tabId >= 0,
-    );
-    if (ctx) {
-      await chrome.tabs.update(ctx.tabId, ctx.documentUrl === url ? { active: true } : { url, active: true });
-      if (ctx.windowId >= 0) await chrome.windows.update(ctx.windowId, { focused: true });
-      return;
-    }
-  } catch {
-    /* onglet fermé entre-temps : on en ouvre un nouveau */
-  }
-  await chrome.tabs.create({ url });
+export function openTraining(moduleId, anchor) {
+  return showExtensionPage(chrome.runtime.getURL('training/training.html'), trainingUrl(moduleId, anchor));
 }

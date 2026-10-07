@@ -3,15 +3,9 @@
 // et pages allshare-scenario.fr ouvertes aujourd'hui (craPages, tenu par background.js).
 import { getCapsules, describeTabs, host } from '../lib/capsule.js';
 import { openedOn, fmtOpenTime, isoDay, pagesToday, getCraSettings, saveCraSettings } from '../lib/cra.js';
+import { $, el } from '../lib/dom.js';
 
-const $ = (id) => document.getElementById(id);
 const fmtTime = (ts) => new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-
-function el(tag, props = {}, ...children) {
-  const node = Object.assign(document.createElement(tag), props);
-  node.append(...children.filter((c) => c !== null && c !== undefined && c !== false));
-  return node;
-}
 
 /** Jour choisi, à minuit heure locale. */
 function chosenDay() {

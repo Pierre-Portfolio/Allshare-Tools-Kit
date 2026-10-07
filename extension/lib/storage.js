@@ -9,7 +9,10 @@
 //   m_<id>    une mesure par clé :
 //             { id, ts, app (= client), sid, version, page, specific (page spécifique ?),
 //               network, duration, timeout,
-//               kind, trigger, url, urlEnd, startUrl, detail }
+//               kind, trigger, url, urlEnd, startUrl }
+//   d_<id>    détail des temps de la mesure <id> (voir lib/timing.js), lu seulement quand il est affiché
+//             ou exporté : près de 90 % du poids d'une mesure, rangé à part pour que la liste des mesures
+//             se relise vite (avant la version 3.13, il était dans la mesure elle-même : voir migrateDetails)
 // chrome.storage.session (jusqu'à la fermeture du navigateur)
 //   session   mesure en cours (voir background.js)
 
@@ -38,6 +41,7 @@ export const DEFAULT_SETTINGS = {
 };
 
 export const MEASURE_PREFIX = 'm_';
+export const DETAIL_PREFIX = 'd_';
 
 /**
  * Lecture, modification puis écriture d'une clé de chrome.storage.local : les pages de l'extension et le
@@ -107,21 +111,72 @@ export function saveDraft(patch) {
 export const saveApps = (apps) => chrome.storage.local.set({ apps });
 export const savePages = (pages) => chrome.storage.local.set({ pages });
 
+export const isMeasureKey = (key) => key.startsWith(MEASURE_PREFIX);
+export const isDetailKey = (key) => key.startsWith(DETAIL_PREFIX);
+
+/** Mesures triées de la plus ancienne à la plus récente. */
+const byTime = (a, b) => a.ts - b.ts;
+
+/**
+ * Mesures, sans leur détail des temps. Chrome 130+ : seules les clés m_* sont lues (getKeys) ;
+ * avant, tout le stockage est lu puis filtré.
+ */
 export async function getMeasures() {
-  const all = await chrome.storage.local.get(null);
+  const store = chrome.storage.local;
+  const all =
+    typeof store.getKeys === 'function'
+      ? await store.get((await store.getKeys()).filter(isMeasureKey))
+      : await store.get(null);
   return Object.keys(all)
-    .filter((k) => k.startsWith(MEASURE_PREFIX))
+    .filter(isMeasureKey)
     .map((k) => all[k])
-    .sort((a, b) => a.ts - b.ts);
+    .sort(byTime);
 }
 
-export const addMeasure = (m) => chrome.storage.local.set({ [MEASURE_PREFIX + m.id]: m });
-export const putMeasures = (list) =>
-  chrome.storage.local.set(Object.fromEntries(list.map((m) => [MEASURE_PREFIX + m.id, m])));
-export const deleteMeasures = (ids) => chrome.storage.local.remove(ids.map((id) => MEASURE_PREFIX + id));
-export const isMeasureKey = (key) => key.startsWith(MEASURE_PREFIX);
+/** Détail des temps de ces mesures : { [id]: detail } (absent si la mesure n'en a pas). */
+export async function getDetails(ids) {
+  if (!ids.length) return {};
+  const found = await chrome.storage.local.get(ids.map((id) => DETAIL_PREFIX + id));
+  return Object.fromEntries(Object.entries(found).map(([k, v]) => [k.slice(DETAIL_PREFIX.length), v]));
+}
+
+/** Clés à écrire pour des mesures : la mesure (m_) et, à part, son détail des temps (d_). */
+export function measureItems(list) {
+  const items = {};
+  for (const m of list) {
+    const { detail, ...light } = m;
+    items[MEASURE_PREFIX + m.id] = light;
+    if (detail) items[DETAIL_PREFIX + m.id] = detail;
+  }
+  return items;
+}
+
+export const addMeasure = (m) => chrome.storage.local.set(measureItems([m]));
+export const putMeasures = (list) => chrome.storage.local.set(measureItems(list));
+export const deleteMeasures = (ids) =>
+  chrome.storage.local.remove(ids.flatMap((id) => [MEASURE_PREFIX + id, DETAIL_PREFIX + id]));
+
+/**
+ * Mesures déjà chargées, mises à jour d'après un évènement chrome.storage.onChanged (sans tout relire).
+ * Fonction pure. @returns {object[]|null} nouvelle liste triée, ou null si aucune mesure n'a changé
+ */
+export function applyMeasureChanges(measures, changes) {
+  const keys = Object.keys(changes).filter(isMeasureKey);
+  if (!keys.length) return null;
+  const byId = new Map(measures.map((m) => [m.id, m]));
+  for (const k of keys) {
+    const id = k.slice(MEASURE_PREFIX.length);
+    const value = changes[k].newValue;
+    if (value) byId.set(id, value);
+    else byId.delete(id);
+  }
+  return [...byId.values()].sort(byTime);
+}
 
 // ---------------------------------------------------------------- Mesure en cours
+
+/** États d'une mesure en cours (voir background.js) : ensuite 'done', ou plus de session. */
+export const ACTIVE_STATES = ['armed', 'measuring', 'rearming'];
 
 export async function getSession() {
   return (await chrome.storage.session.get('session')).session || null;
@@ -288,13 +343,16 @@ export async function deletePage(page) {
 
 export async function exportBackup() {
   const { apps, pages } = await getConfig();
+  const measures = await getMeasures();
+  const details = await getDetails(measures.map((m) => m.id));
   return {
     format: 'insight-backup',
     version: 2,
     exportedAt: new Date().toISOString(),
     apps,
     pages,
-    measures: await getMeasures(),
+    // détail des temps dans chaque mesure : fichier lisible par toutes les versions
+    measures: measures.map((m) => (details[m.id] ? { ...m, detail: details[m.id] } : m)),
   };
 }
 
@@ -312,6 +370,45 @@ export function convertV1(apps, pages, measures) {
         return { ...rest, app: names.get(appId), page: labels.get(m.page) || m.page, startUrl: m.url };
       }),
   };
+}
+
+/**
+ * Version 3.13 : le détail des temps quitte la mesure (clé m_) pour sa propre clé (d_).
+ * Faite une fois à la mise à jour ; sans effet ensuite. @returns {Promise<number>} mesures déplacées
+ */
+export async function migrateDetails() {
+  const all = await chrome.storage.local.get(null);
+  const heavy = Object.keys(all)
+    .filter((k) => isMeasureKey(k) && all[k] && 'detail' in all[k])
+    .map((k) => all[k]);
+  if (heavy.length) await putMeasures(heavy);
+  return heavy.length;
+}
+
+/**
+ * Clients et pages mesurés absents du référentiel (données anciennes) : ajoutés, pour que le
+ * référentiel suffise aux compteurs de l'accueil et aux clients proposés par Capsule.
+ */
+export function syncCatalog() {
+  return withLock('catalog', async () => {
+    const { apps, pages } = await getConfig();
+    const measures = await getMeasures();
+    const missing = (field, list) => {
+      const known = new Set(list.map((x) => nameKey(x.name)));
+      const names = new Map();
+      for (const m of measures)
+        if (normName(m[field]) && !known.has(nameKey(m[field]))) names.set(nameKey(m[field]), normName(m[field]));
+      return [...names.values()];
+    };
+    const missingApps = missing('app', apps);
+    const missingPages = missing('page', pages);
+    if (!missingApps.length && !missingPages.length) return 0;
+    await chrome.storage.local.set({
+      apps: [...apps, ...missingApps.map((name) => ({ id: newId(), name, baseUrls: [] }))],
+      pages: [...pages, ...missingPages.map((name) => ({ id: newId(), name, hidden: false }))],
+    });
+    return missingApps.length + missingPages.length;
+  });
 }
 
 /** Migration au démarrage si des mesures de la version 1 sont présentes. */
@@ -339,11 +436,7 @@ export async function importBackup(data) {
   return withLock('catalog', async () => {
     const { apps, pages } = await getConfig();
     const merged = mergeInsight({ apps, pages, measures: await getMeasures() }, incoming);
-    await chrome.storage.local.set({
-      apps: merged.apps,
-      pages: merged.pages,
-      ...Object.fromEntries(merged.measures.map((m) => [MEASURE_PREFIX + m.id, m])),
-    });
+    await chrome.storage.local.set({ apps: merged.apps, pages: merged.pages, ...measureItems(merged.measures) });
     return { added: merged.measures.length, skipped: incoming.measures.length - merged.measures.length };
   });
 }

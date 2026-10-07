@@ -1,7 +1,6 @@
 // Prisme (panneau latéral) : dépôt d'un CSV, verdict en un coup d'œil, export ANSI / UTF-8,
 // fichiers récents. Le détail complet s'ouvre dans le tableau de bord (prisme/prisme.html).
 import {
-  analyze,
   binaryKind,
   convert,
   convertedName,
@@ -17,6 +16,8 @@ import {
 } from '../lib/prisme.js';
 import {
   addFile,
+  analyzeFile,
+  confirmLarge,
   deleteFile,
   download,
   getFileBytes,
@@ -28,8 +29,8 @@ import {
   touchFile,
   updateSummary,
 } from '../lib/prisme-files.js';
+import { $, el, toast } from '../lib/dom.js';
 
-const $ = (id) => document.getElementById(id);
 const nf = new Intl.NumberFormat('fr-FR');
 const fmtWhen = (ts) => new Date(ts).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
 const plural = (n, word) => `${nf.format(n)} ${word}${n > 1 ? 's' : ''}`;
@@ -41,21 +42,6 @@ const state = {
   current: null, // { entry, bytes, res }
   busy: false, // fichier en cours d'enregistrement par ce panneau
 };
-
-function el(tag, { dataset, ...props } = {}, ...children) {
-  const node = Object.assign(document.createElement(tag), props);
-  if (dataset) Object.assign(node.dataset, dataset);
-  node.append(...children.filter((c) => c !== null && c !== undefined && c !== false));
-  return node;
-}
-
-function toast(text) {
-  const t = $('toast');
-  t.textContent = text;
-  t.classList.add('show');
-  clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => t.classList.remove('show'), 2500);
-}
 
 /** Pastilles erreurs / alertes / infos. */
 function countPills(counts) {
@@ -80,13 +66,13 @@ async function load() {
     cur.entry = top;
     // Encodage attendu changé depuis le tableau de bord : nouvelle analyse du même fichier
     if (cur.res.options.expected !== state.settings.expected) {
-      cur.res = analyze(cur.bytes, { expected: state.settings.expected });
+      cur.res = await analyzeFile(cur.bytes, { expected: state.settings.expected });
     }
     return renderCurrent();
   }
   const bytes = await getFileBytes(top.id);
   if (!bytes) return deleteFile(top.id); // contenu perdu (données du navigateur effacées)
-  state.current = { entry: top, bytes, res: analyze(bytes, { expected: state.settings.expected }) };
+  state.current = { entry: top, bytes, res: await analyzeFile(bytes, { expected: state.settings.expected }) };
   renderCurrent();
 }
 
@@ -109,9 +95,10 @@ async function openBytes(bytes, name) {
     return;
   }
   $('dropError').hidden = true;
+  if (!confirmLarge(bytes, name)) return;
   state.busy = true;
   try {
-    const res = analyze(bytes, { expected: state.settings.expected });
+    const res = await analyzeFile(bytes, { expected: state.settings.expected });
     const entry = await addFile(name, bytes, res);
     state.current = { entry, bytes, res };
     state.files = await getFiles();
@@ -269,7 +256,7 @@ $('expected').addEventListener('click', async (e) => {
   renderSettings();
   const cur = state.current;
   if (cur) {
-    cur.res = analyze(cur.bytes, { expected: state.settings.expected });
+    cur.res = await analyzeFile(cur.bytes, { expected: state.settings.expected });
     renderCurrent();
   }
   await savePrismeSettings({ expected: state.settings.expected });

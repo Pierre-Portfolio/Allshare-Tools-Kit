@@ -53,6 +53,7 @@ Extension Chrome qui réunit, dans un **panneau latéral**, cinq outils pour les
 
 ### Prisme : inspection et conversion de CSV (`panel/prisme.html`, `prisme/`)
 - **Dépôt d'un fichier** (ou exemple avec erreurs), **encodage attendu** ANSI ou UTF-8, refus clair des classeurs, archives, PDF et images
+- **Gros fichiers** : analysés en arrière-plan (la page reste utilisable), ouverture confirmée au-delà de 20 Mo
 - **Verdict** : erreurs et alertes, encodage, séparateur, fins de ligne, lignes, colonnes, 5 principales anomalies
 - **53 contrôles** classés en erreur, alerte ou info : encodage, structure, guillemets, contenu (accents cassés, espaces insécables, formules…), cohérence des colonnes, fins de ligne
 - **Tableau de bord** : résumé, 4 vues (Détails, Données brutes, Visuel d'Excel, CSV brut) et **inspecteur de cellule** (caractères un par un, octets ANSI et UTF-8)
@@ -74,10 +75,11 @@ Extension Chrome qui réunit, dans un **panneau latéral**, cinq outils pour les
 
 ## Technologies
 - **JavaScript / HTML / CSS** — extension Chrome **Manifest V3**, modules ES, sans framework ni dépendance d'exécution
+- **Stockage** — une clé par mesure, son détail des temps rangé à part (lu seulement quand il est affiché ou exporté) ; Chrome 130+ ne relit que les clés des mesures, ce qui garde le panneau et le tableau de bord rapides à 200 clients
 - **API Chrome** — panneau latéral (`sidePanel`), `storage`, `scripting`, `tabs`, `windows`
-- **API Web natives** — Navigation Timing, `PerformanceObserver`, `MutationObserver`, `TextDecoder`, IndexedDB, `Blob`
+- **API Web natives** — Navigation Timing, `PerformanceObserver`, `MutationObserver`, `TextDecoder`, IndexedDB, `Blob`, Web Locks (écritures partagées), Web Worker (gros CSV de Prisme), `CompressionStream` (Excel compressé)
 - **Excel** — générateur `.xlsx` maison (cases colorées, volets figés, filtres)
-- **Node.js** (tests unitaires, `node --test`) et **Playwright** (test de bout en bout dans Chromium)
+- **Node.js** (tests unitaires, `node --test`), **Playwright** (test de bout en bout dans Chromium), **ESLint** et **Prettier**, **GitHub Actions**
 
 ## Installation
 
@@ -104,11 +106,15 @@ Avant de **supprimer** l'extension (nouvelle version installée à la place, cha
 
 ```bash
 npm test               # tests unitaires (Node 18+, aucune dépendance)
-npm ci                 # installe Playwright (version figée par package-lock.json)
+npm ci                 # installe Playwright, ESLint et Prettier (versions figées par package-lock.json)
+npm run check          # contrôle du code (ESLint), formatage (Prettier), versions, tests unitaires
+npm run format         # remet le code au format Prettier
 npx playwright install chromium   # une fois : le Chromium de cette version de Playwright
 npm run test:e2e       # charge l'extension dans Chromium et déroule le parcours complet
 npm run zip            # crée allshare-tools-kit.zip (dossier extension/)
 ```
+
+L'intégration continue (`.github/workflows/ci.yml`) lance `npm run check` puis le test de bout en bout à chaque envoi sur `main` et sur chaque pull request.
 
 Le test de bout en bout sert deux applications de démonstration aux délais connus et déroule tout : mesures Insight (Ethernet par défaut, relance, page suivante relancée automatiquement, SPA, annulation, suggestion), exports, unité s / ms, modification d'une ligne, relance par double-clic depuis le tableau de bord, réglages, Capsule, Prisme et Training (réponses, rechargement, reprise, onglet réutilisé, laboratoire du cube, export / import de la progression) et la sauvegarde complète (export depuis l'accueil, extension vidée, réimport sans doublon). Captures et fichiers dans `tests/e2e/out/`.
 
@@ -116,7 +122,10 @@ Le test de bout en bout sert deux applications de démonstration aux délais con
 ```
 Allshare-Tools-Kit/
   README.md                  → Présentation du projet
-  package.json               → Scripts de test et d'empaquetage
+  package.json               → Scripts de test, de contrôle et d'empaquetage
+  eslint.config.js           → Règles du contrôle du code (npm run lint)
+  scripts/check-version.mjs  → Même version dans package.json et manifest.json
+  .github/workflows/ci.yml   → Intégration continue (contrôles, tests unitaires, test de bout en bout)
   extension/
     manifest.json            → Manifest V3 (nom, permissions, panneau latéral, raccourci)
     background.js            → Service worker : déroulé d'une mesure Insight, badge, raccourci clavier
@@ -132,7 +141,8 @@ Allshare-Tools-Kit/
     report/                  → Tableau de bord d'Insight : grille clients × pages, exports
     prisme/                  → Tableau de bord de Prisme : 4 vues, inspecteur de cellule
     options/                 → Réglages d'Insight : clients, pages, mesure, anomalies, données
-    lib/                     → Logique sans interface : training, report, xlsx, storage, prisme, capsule, backup…
+    lib/                     → Logique sans interface : training, report, xlsx, storage, prisme, capsule, backup… ;
+                               dom.js / tabs.js : outils communs des pages ; prisme-worker.js : analyse des gros CSV
     icons/                   → Logo du projet et icônes des outils
   tests/
     unit/                    → Tests Node (node --test)

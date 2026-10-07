@@ -3,7 +3,7 @@
 // ou pour les passer sur un autre poste.
 //
 // Fichier « allshare-tools-kit » :
-//   storage         tout chrome.storage.local : mesures, référentiels et réglages d'Insight, sessions
+//   storage         tout chrome.storage.local : mesures (et leur détail des temps), référentiels et réglages d'Insight, sessions
 //                   de Capsule, fichiers récents et réglages de Prisme, progression de Training, réglages de CRA
 //                   (les clés ajoutées par une version future sont reprises telles quelles)
 //   prismeContents  contenu des fichiers récents de Prisme (IndexedDB), en base64 : { [id]: '…' }
@@ -12,7 +12,7 @@
 // L'import fusionne : rien n'est effacé sur le poste, une donnée déjà présente est ignorée
 // (réimporter le même fichier ne crée pas de doublon) et les réglages du fichier sont repris.
 
-import { MEASURE_PREFIX, DEFAULT_SETTINGS, mergeInsight, isMeasureKey } from './storage.js';
+import { DETAIL_PREFIX, DEFAULT_SETTINGS, mergeInsight, measureItems, isMeasureKey, isDetailKey } from './storage.js';
 import { mergeProgress, normalize } from './training.js';
 import { MAX_FILES, DEFAULT_PRISME_SETTINGS, getFileBytes, putFileBytes, deleteFileBytes } from './prisme-files.js';
 import { closeSpans, isSavable } from './capsule.js';
@@ -175,7 +175,11 @@ export function mergeBackup(
   );
   set.apps = insight.apps;
   set.pages = insight.pages;
-  for (const m of insight.measures) set[MEASURE_PREFIX + m.id] = m;
+  // Détail des temps : clé d_ de la sauvegarde, ou dans la mesure (sauvegardes d'avant la version 3.13)
+  Object.assign(
+    set,
+    measureItems(insight.measures.map((m) => ({ ...m, detail: m.detail || incoming[DETAIL_PREFIX + m.id] }))),
+  );
 
   const localCaps = list(local.capsules);
   const capIds = new Set(localCaps.map((c) => c && c.id));
@@ -215,7 +219,8 @@ export function mergeBackup(
   }
 
   for (const [key, value] of Object.entries(incoming)) {
-    if (MERGED_KEYS.includes(key) || LOCAL_KEYS.includes(key) || isMeasureKey(key) || key in local) continue;
+    if (MERGED_KEYS.includes(key) || LOCAL_KEYS.includes(key) || key in local) continue;
+    if (isMeasureKey(key) || isDetailKey(key)) continue; // mesures : voir plus haut
     // Pages allshare-scenario.fr du jour : temps repris, mais aucun onglet de l'autre poste n'est ouvert ici
     set[key] = key === 'craPages' && isObject(value) ? { ...value, open: [] } : value;
   }

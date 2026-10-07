@@ -21,17 +21,19 @@ import {
   saveSettings,
   newId,
   migrateV1,
+  migrateDetails,
   migrateNetworkDefault,
+  syncCatalog,
+  ACTIVE_STATES as ACTIVE,
 } from './lib/storage.js';
 import { canonical, normName } from './lib/names.js';
 import { getCapsules, closeOpenSpans, anyOpen } from './lib/capsule.js';
-import { trackPages } from './lib/cra.js';
+import { trackPages, isSitePage } from './lib/cra.js';
 import { urlEnd } from './lib/urls.js';
 import { NETWORK_LABELS } from './lib/format.js';
 
 const SCRIPT_IDS = { content: 'insight-content', hook: 'insight-page-hook' };
 const OLD_SCRIPT_IDS = ['insigth-content', 'insigth-page-hook']; // avant le renommage en Insight
-const ACTIVE = ['armed', 'measuring', 'rearming'];
 
 const label = (s) =>
   `${[s.app, s.sid, s.version].filter(Boolean).join(' · ')} › ${s.page}${s.specific ? ' (spécifique)' : ''} · ${
@@ -460,12 +462,18 @@ chrome.windows.onRemoved.addListener((windowId) => closeCapsuleSpans((w) => w !=
 
 // Relevés sérialisés (lecture puis écriture de craPages) ; `restart` : les onglets d'avant n'existent plus
 let pagesChain = Promise.resolve();
+// Onglets affichant une page du domaine au dernier relevé : seuls leurs changements (et l'arrivée d'un
+// onglet sur le domaine) déclenchent un relevé. Vide au réveil du service worker : le relevé de chaque
+// minute le reconstitue.
+let siteTabs = new Set();
 function updatePages(restart = false) {
   pagesChain = pagesChain
     .then(async () => {
       const { craPages } = await chrome.storage.local.get('craPages');
       const before = restart && craPages ? { ...craPages, open: [] } : craPages;
-      const next = trackPages(before, await chrome.tabs.query({}), Date.now());
+      const tabs = await chrome.tabs.query({});
+      siteTabs = new Set(tabs.filter((t) => isSitePage(t.url)).map((t) => t.id));
+      const next = trackPages(before, tabs, Date.now());
       if (!(craPages && craPages.open.length) && !next.open.length) return; // aucune page suivie
       await chrome.storage.local.set({ craPages: next });
     })
@@ -473,9 +481,13 @@ function updatePages(restart = false) {
   return pagesChain;
 }
 
-chrome.tabs.onUpdated.addListener((tabId, info) => (info.url || info.title) && updatePages());
-chrome.tabs.onRemoved.addListener(() => updatePages());
-chrome.tabs.onReplaced.addListener(() => updatePages());
+// Les autres onglets (titres qui changent sans cesse : messagerie, visio…) ne provoquent aucune écriture.
+chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+  if (!info.url && !info.title) return;
+  if (siteTabs.has(tabId) || isSitePage(info.url || (tab && tab.url))) updatePages();
+});
+chrome.tabs.onRemoved.addListener((tabId) => siteTabs.has(tabId) && updatePages());
+chrome.tabs.onReplaced.addListener(() => updatePages()); // rare (page préchargée) : relevé complet
 
 // ---------------------------------------------------------------- Relevé chaque minute
 
@@ -535,7 +547,9 @@ async function boot() {
 }
 
 chrome.runtime.onInstalled.addListener(async (details) => {
+  await migrateDetails().catch((e) => console.error('[Insight] détail des temps', e));
   await migrateV1().catch((e) => console.error('[Insight] migration', e));
+  await syncCatalog().catch((e) => console.error('[Insight] référentiel', e));
   if (details && details.reason === 'update') {
     await migrateNetworkDefault(details.previousVersion).catch((e) => console.error('[Insight] réseau', e));
   }

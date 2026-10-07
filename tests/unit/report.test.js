@@ -21,6 +21,7 @@ import {
   isSpecific,
   startUrlFor,
   cellRows,
+  csvText,
 } from '../../extension/lib/report.js';
 import { DEFAULT_SETTINGS } from '../../extension/lib/storage.js';
 
@@ -321,4 +322,20 @@ test('relance d’une case : page de départ et mesures de la case', () => {
     [100, 120],
   );
   assert.equal(cellRows(model, l7, 'Clients', 'ethernet').length, 0);
+});
+
+test('CSV : un texte qu’Excel prendrait pour une formule est précédé d’une apostrophe', () => {
+  for (const [v, out] of [
+    ['=SOMME(A1)', "'=SOMME(A1)"],
+    ['+33 1 23', "'+33 1 23"],
+    ['-Client', "'-Client"],
+    ['@cmd', "'@cmd"],
+    ['Client A', 'Client A'],
+    ['2026-10-07 09:00:00', '2026-10-07 09:00:00'],
+  ]) {
+    assert.equal(csvText(v), out);
+  }
+  const csv = measuresCsv([{ id: '1', ts: 0, app: '=HYPERLINK("x")', page: 'P', network: 'wifi', duration: -1 }]);
+  assert.match(csv, /;"'=HYPERLINK\(""x""\)";/, 'client neutralisé');
+  assert.match(csv, /;-1;/, 'nombre négatif inchangé');
 });

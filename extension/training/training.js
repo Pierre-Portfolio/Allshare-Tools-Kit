@@ -2,6 +2,7 @@
 // questions ouvertes), examen, mémo, glossaire et ressources. La progression est enregistrée dans
 // l'extension (chrome.storage.local, voir lib/training.js) et partagée avec le panneau latéral.
 import { esc } from './content/helpers.js';
+import { $, toast, downloadBlob } from '../lib/dom.js';
 import {
   MODULES,
   moduleById,
@@ -20,7 +21,6 @@ import {
   TRAINING_KEY,
 } from '../lib/training.js';
 
-const $ = (id) => document.getElementById(id);
 const THEME_KEY = 'training.theme';
 const LVL = { Débutant: 'lvl-1', 'Débutant → Intermédiaire': 'lvl-2', Intermédiaire: 'lvl-2' };
 
@@ -29,14 +29,6 @@ let progress = normalize(null);
 let lastWritten = ''; // dernière progression écrite par cette page (pour ignorer son propre écho)
 const mod = moduleById(params.get('m')) || MODULES[0];
 const notions = mod.notions;
-
-function toast(text) {
-  const t = $('toast');
-  t.textContent = text;
-  t.classList.add('show');
-  clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => t.classList.remove('show'), 2500);
-}
 
 // ---------------------------------------------------------------- Enregistrement
 
@@ -685,13 +677,11 @@ async function start() {
   $('exportBtn').addEventListener('click', () => {
     const d = new Date();
     const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-    const blob = new Blob([JSON.stringify(progressBackup(progress), null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = Object.assign(document.createElement('a'), { href: url, download: `training-progression-${stamp}.json` });
-    document.body.append(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    downloadBlob(
+      JSON.stringify(progressBackup(progress), null, 2),
+      `training-progression-${stamp}.json`,
+      'application/json',
+    );
   });
   $('importInput').addEventListener('change', async (e) => {
     const file = e.target.files[0];

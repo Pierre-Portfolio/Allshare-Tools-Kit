@@ -1,7 +1,6 @@
 // Prisme · tableau de bord : résumé, lecture / conversion, et 4 vues du fichier
 // (détails avec anomalies, données brutes, visuel d'Excel, CSV brut) + inspecteur de cellule.
 import {
-  analyze,
   binaryKind,
   colLetter,
   convert,
@@ -29,6 +28,8 @@ import {
 } from '../lib/prisme.js';
 import {
   addFile,
+  analyzeFile,
+  confirmLarge,
   download,
   getFileBytes,
   getFiles,
@@ -37,10 +38,9 @@ import {
   savePrismeSettings,
   updateSummary,
 } from '../lib/prisme-files.js';
+import { $, esc, toast as showToast } from '../lib/dom.js';
 
-const $ = (id) => document.getElementById(id);
 const nf = new Intl.NumberFormat('fr-FR');
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const VIEWS = ['details', 'raw', 'excel', 'text'];
 const PANES = { details: 'paneDetails', raw: 'paneRaw', excel: 'paneExcel', text: 'paneText' };
 const STEP = 1000; // lignes affichées par tranche
@@ -68,13 +68,7 @@ const state = {
   dirty: new Set(VIEWS), // vues à recalculer à leur prochain affichage
 };
 
-function toast(text) {
-  const t = $('toast');
-  t.textContent = text;
-  t.classList.add('show');
-  clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => t.classList.remove('show'), 3000);
-}
+const toast = (text) => showToast(text, 3000);
 
 // ---------------------------------------------------------------- Chargement
 
@@ -93,7 +87,7 @@ async function init() {
     showDrop();
     return toast('Ce fichier ne fait plus partie des fichiers récents.');
   }
-  setFile(entry.id, entry.name, bytes);
+  await setFile(entry.id, entry.name, bytes);
   if (params.get('issue')) focusIssue(params.get('issue'));
 }
 
@@ -109,13 +103,16 @@ async function openBytes(bytes, name) {
     $('dropError').hidden = false;
     return;
   }
-  const entry = await addFile(name, bytes, analyze(bytes, { expected: state.settings.expected }));
+  if (!confirmLarge(bytes, name)) return;
+  const res = await analyzeFile(bytes, { expected: state.settings.expected });
+  const entry = await addFile(name, bytes, res);
   state.files = await getFiles();
   renderRecent();
-  setFile(entry.id, name, bytes);
+  await setFile(entry.id, name, bytes, res); // analyse faite une seule fois
 }
 
-function setFile(id, name, bytes) {
+/** Fichier affiché ; `res` : analyse déjà faite avec les options par défaut. */
+function setFile(id, name, bytes, res = null) {
   Object.assign(state, {
     id,
     name,
@@ -134,15 +131,25 @@ function setFile(id, name, bytes) {
   history.replaceState(null, '', `?id=${encodeURIComponent(id)}`);
   document.title = `${name} · Prisme`;
   $('recentPick').value = id;
-  reanalyze();
+  if (!res) return reanalyze();
+  analysisSeq++;
+  showResult(res);
 }
 
-function reanalyze() {
-  state.res = analyze(state.bytes, {
+let analysisSeq = 0;
+/** Nouvelle analyse (encodage, séparateur ou encodage attendu changés) ; seule la plus récente s'affiche. */
+async function reanalyze() {
+  const seq = ++analysisSeq;
+  const res = await analyzeFile(state.bytes, {
     expected: state.settings.expected,
     encOverride: state.encOverride,
     delimOverride: state.delimOverride,
   });
+  if (seq === analysisSeq) showResult(res);
+}
+
+function showResult(res) {
+  state.res = res;
   state.dirty = new Set(VIEWS);
   renderAll();
 }
@@ -724,7 +731,7 @@ document.addEventListener('drop', async (e) => {
 
 $('selExpected').addEventListener('change', async (e) => {
   state.settings = { ...state.settings, expected: e.target.value };
-  if (state.bytes) reanalyze();
+  if (state.bytes) await reanalyze();
   await savePrismeSettings({ expected: state.settings.expected });
   if (state.bytes && state.encOverride === 'auto' && state.delimOverride === 'auto') {
     await updateSummary(state.id, state.res);

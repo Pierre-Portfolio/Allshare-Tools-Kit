@@ -802,9 +802,13 @@ export function buildDetailSheets(model, pageName, date = new Date(), options = 
 
 // ---------------------------------------------------------------- CSV (une ligne par mesure)
 
+/** Texte qu'Excel prendrait pour une formule (= + - @, tabulation, retour) : précédé d'une apostrophe. */
+export const csvText = (s) => (/^[=+\-@\t\r]/.test(s) ? `'${s}` : s);
+
 function toCsv(cols, rows) {
   const q = (v) => {
-    const s = v === null || v === undefined ? '' : typeof v === 'number' ? String(v).replace('.', ',') : String(v);
+    const s =
+      v === null || v === undefined ? '' : typeof v === 'number' ? String(v).replace('.', ',') : csvText(String(v));
     return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   return (

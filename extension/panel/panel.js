@@ -2,11 +2,12 @@
 import {
   getConfig,
   getMeasures,
+  getDetails,
   getSession,
   saveSettings,
   saveDraft,
   deleteMeasures,
-  isMeasureKey,
+  applyMeasureChanges,
 } from '../lib/storage.js';
 import {
   buildModel,
@@ -24,8 +25,8 @@ import { MENU, MENU_PAGES, MENU_TOP, fitLabel } from '../lib/menu.js';
 import { phases } from '../lib/timing.js';
 import { urlEnd } from '../lib/urls.js';
 import { NETWORKS, NETWORK_LABELS, STATS, unitOf, fmtNum, fmtDuration, fmtDate } from '../lib/format.js';
+import { $, el, toast } from '../lib/dom.js';
 
-const $ = (id) => document.getElementById(id);
 const nf = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
 const params = new URLSearchParams(location.search);
 const fixedTabId = params.has('tabId') ? Number(params.get('tabId')) : null; // ouverture dans un onglet (tests)
@@ -74,21 +75,6 @@ function pageNames() {
 const formLine = () => lineKey($('app').value, $('sid').value, $('version').value);
 const sessionLine = (s) => lineKey(s.app, s.sid, s.version);
 
-function el(tag, { dataset, ...props } = {}, ...children) {
-  const node = Object.assign(document.createElement(tag), props);
-  if (dataset) Object.assign(node.dataset, dataset);
-  node.append(...children.filter((c) => c !== null && c !== undefined && c !== false));
-  return node;
-}
-
-function toast(text) {
-  const t = $('toast');
-  t.textContent = text;
-  t.classList.add('show');
-  clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => t.classList.remove('show'), 2500);
-}
-
 const other = (network) => (network === 'wifi' ? 'ethernet' : 'wifi');
 const send = (msg) => chrome.runtime.sendMessage(msg).catch((e) => ({ ok: false, error: e.message }));
 
@@ -104,19 +90,34 @@ async function targetTab() {
 
 // ---------------------------------------------------------------- Données
 
+/** Ouverture du panneau : tout est lu. */
 async function load() {
   const [config, measures, session] = await Promise.all([getConfig(), getMeasures(), getSession()]);
   state.config = config;
   state.measures = measures;
   state.session = session;
-  state.model = buildModel(measures, config.apps, config.pages);
+  refresh();
+}
+
+function refresh() {
+  state.model = buildModel(state.measures, state.config.apps, state.config.pages);
   render();
 }
 
-let pendingLoad = 0;
-function scheduleLoad() {
-  clearTimeout(pendingLoad);
-  pendingLoad = setTimeout(load, 80);
+// Changements : les mesures sont mises à jour d'après l'évènement (sans relire toutes les mesures),
+// seuls les réglages ou la session sont relus ; un seul rendu pour une rafale de changements.
+const stale = { config: false, session: false };
+let pendingUpdate = 0;
+function scheduleUpdate() {
+  clearTimeout(pendingUpdate);
+  pendingUpdate = setTimeout(async () => {
+    const { config, session } = stale;
+    stale.config = stale.session = false;
+    const [nextConfig, nextSession] = await Promise.all([config && getConfig(), session && getSession()]);
+    if (config) state.config = nextConfig;
+    if (session) state.session = nextSession;
+    refresh();
+  }, 80);
 }
 
 // ---------------------------------------------------------------- Rendu
@@ -303,7 +304,7 @@ function renderResult(s) {
   const deleted = !state.measures.some((m) => m.id === r.measureId);
   $('resLabel').textContent = describe(s);
   const line = sessionLine(s);
-  renderDetail(state.measures.find((m) => m.id === r.measureId));
+  showDetail(deleted ? null : r.measureId);
 
   const facts = [];
   const value = $('resValue');
@@ -374,9 +375,20 @@ function progressRow(label, done, total, current) {
   );
 }
 
+/** Détail des temps de la mesure affichée, lu une seule fois (il est rangé à part des mesures). */
+const shownDetail = { id: null, detail: null };
+async function showDetail(id) {
+  if (!id) return renderDetail(null);
+  if (shownDetail.id !== id) {
+    const detail = (await getDetails([id]))[id] || null;
+    Object.assign(shownDetail, { id, detail });
+  }
+  const current = state.session && state.session.result && state.session.result.measureId;
+  if (current === id) renderDetail(shownDetail.detail); // résultat toujours affiché
+}
+
 /** Détail du chargement (type « Load timings »), disponible juste après la mesure. */
-function renderDetail(measure) {
-  const d = measure && measure.detail;
+function renderDetail(d) {
   $('detail').hidden = !d;
   if (!d) return;
   const rows = phases(d);
@@ -681,9 +693,15 @@ $('openExports').addEventListener('click', () =>
 $('openSettings').addEventListener('click', () => chrome.runtime.openOptionsPage());
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'session' && changes.session) scheduleLoad();
-  if (area !== 'local') return;
-  if (changes.settings || changes.apps || changes.pages || Object.keys(changes).some(isMeasureKey)) scheduleLoad();
+  if (area === 'session' && changes.session) {
+    stale.session = true;
+    scheduleUpdate();
+  }
+  if (area !== 'local' || !state.config) return;
+  const measures = applyMeasureChanges(state.measures, changes);
+  if (measures) state.measures = measures;
+  if (changes.settings || changes.apps || changes.pages) stale.config = true;
+  if (measures || stale.config) scheduleUpdate();
 });
 if (!fixedTabId) {
   chrome.tabs.onActivated.addListener(() => !state.session && updateSuggestion());

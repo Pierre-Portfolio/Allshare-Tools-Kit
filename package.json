@@ -1,15 +1,24 @@
 {
   "name": "allshare-tools-kit",
-  "version": "3.12.1",
+  "version": "3.13.0",
   "private": true,
   "description": "Allshare Tools Kit : extension Chrome regroupant Training (Métier RH, OLAP, APEX), Capsule, Insight (temps de réponse clic → affichage complet), Prisme (inspecteur CSV) et CRA (capsules du jour, saisie du C.R.A).",
   "type": "module",
   "scripts": {
     "test": "node --test \"tests/unit/*.test.js\"",
     "test:e2e": "node tests/e2e/e2e.mjs",
+    "lint": "eslint .",
+    "format": "prettier --write \"extension/**/*.{js,css,html,json}\" \"tests/**/*.{js,mjs}\" \"scripts/**/*.mjs\" eslint.config.js package.json",
+    "format:check": "prettier --check \"extension/**/*.{js,css,html,json}\" \"tests/**/*.{js,mjs}\" \"scripts/**/*.mjs\" eslint.config.js package.json",
+    "check:version": "node scripts/check-version.mjs",
+    "check": "npm run lint && npm run format:check && npm run check:version && npm test",
     "zip": "cd extension && zip -r ../allshare-tools-kit.zip . -x '*.DS_Store'"
   },
   "devDependencies": {
-    "playwright": "1.56.1"
+    "@eslint/js": "9.39.5",
+    "eslint": "9.39.5",
+    "globals": "16.5.0",
+    "playwright": "1.56.1",
+    "prettier": "3.9.9"
   }
 }

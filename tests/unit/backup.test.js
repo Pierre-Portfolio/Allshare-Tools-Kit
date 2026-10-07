@@ -207,3 +207,17 @@ test('mergeBackup : sessions et réglages d’un autre poste remis en ordre', ()
   assert.equal(set.craPages.pages.k.ms, 9);
   assert.ok(!('capsuleAlive' in set), 'propre au poste de la sauvegarde');
 });
+
+test('mergeBackup : détail des temps rangé à part, y compris depuis une ancienne sauvegarde', () => {
+  const detail = { kind: 'load', marks: { end: 900 }, requests: [], requestCount: 0 };
+  const incoming = {
+    m_3: { ...measure('3', 'Client A', 'Dashboard'), detail }, // avant la version 3.13
+    m_4: measure('4', 'Client A', 'Dashboard', 'wifi'),
+    d_4: detail,
+    d_9: detail, // détail sans mesure : ignoré
+  };
+  const { set } = mergeBackup({}, incoming);
+  assert.deepEqual(set.m_3, measure('3', 'Client A', 'Dashboard'));
+  assert.deepEqual([set.d_3, set.d_4], [detail, detail]);
+  assert.ok(!('d_9' in set) && !('detail' in set.m_4));
+});

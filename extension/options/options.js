@@ -10,16 +10,15 @@ import {
   renameEverywhere,
   deletePage,
   newId,
-  isMeasureKey,
+  applyMeasureChanges,
 } from '../lib/storage.js';
 import { parseBase } from '../lib/urls.js';
 import { parseAppList, parsePageList, mergeApps, appsToCsv, urlConflicts } from '../lib/apps.js';
 import { buildModel } from '../lib/report.js';
 import { normName, nameKey, compareNames } from '../lib/names.js';
-import { downloadBlob } from '../lib/export.js';
+import { $, el, toast as showToast, downloadBlob } from '../lib/dom.js';
 import { fileStamp, unitOf } from '../lib/format.js';
 
-const $ = (id) => document.getElementById(id);
 const nf = new Intl.NumberFormat('fr-FR');
 
 const state = {
@@ -33,29 +32,23 @@ const state = {
   bulk: null,
 };
 
-function el(tag, { dataset, ...props } = {}, ...children) {
-  const node = Object.assign(document.createElement(tag), props);
-  if (dataset) Object.assign(node.dataset, dataset);
-  node.append(...children.filter((c) => c !== null && c !== undefined && c !== false));
-  return node;
-}
-
-function toast(text) {
-  const t = $('toast');
-  t.textContent = text;
-  t.classList.add('show');
-  clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => t.classList.remove('show'), 2800);
-}
+const toast = (text) => showToast(text, 2800);
 
 const norm = (s) => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 async function load() {
   const [{ apps, pages, settings }, measures] = await Promise.all([getConfig(), getMeasures()]);
   Object.assign(state, { apps, pages, settings, measures });
-  state.model = buildModel(measures, apps, pages);
+  derive();
+}
+
+/** Modèle et compteurs par client, d'après les mesures et le référentiel en mémoire. */
+function derive() {
+  state.model = buildModel(state.measures, state.apps, state.pages);
   state.clientCounts = new Map();
-  for (const m of measures) state.clientCounts.set(nameKey(m.app), (state.clientCounts.get(nameKey(m.app)) || 0) + 1);
+  for (const m of state.measures) {
+    state.clientCounts.set(nameKey(m.app), (state.clientCounts.get(nameKey(m.app)) || 0) + 1);
+  }
 }
 
 /** « PRD (5.3, 5.2) · REC (5.3) » : SID et versions déjà mesurés pour ce client. */
@@ -546,15 +539,23 @@ function renderAll() {
   renderData();
 }
 
+// Changements : mesures mises à jour d'après l'évènement (sans tout relire), référentiel relu au besoin
 let pending = 0;
+let catalogStale = false;
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== 'local') return;
-  const measuresChanged = Object.keys(changes).some(isMeasureKey);
-  const catalogChanged = changes.apps || changes.pages;
-  if (!measuresChanged && !catalogChanged) return;
+  if (area !== 'local' || !state.model) return;
+  const measures = applyMeasureChanges(state.measures, changes);
+  if (measures) state.measures = measures;
+  if (changes.apps || changes.pages) catalogStale = true;
+  if (!measures && !catalogStale) return;
   clearTimeout(pending);
   pending = setTimeout(async () => {
-    await load();
+    if (catalogStale) {
+      catalogStale = false;
+      const { apps, pages } = await getConfig();
+      Object.assign(state, { apps, pages });
+    }
+    derive();
     renderData();
     if (document.activeElement && document.activeElement.closest('#pageRows')) return; // saisie en cours
     renderPages();

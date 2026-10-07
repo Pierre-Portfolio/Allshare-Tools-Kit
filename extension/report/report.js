@@ -1,6 +1,15 @@
 // Tableau de bord : export en une ligne, grille clients × pages, mesures.
-import { saveSettings, deleteMeasures, deleteClient, deletePage, editLine, isMeasureKey } from '../lib/storage.js';
 import {
+  getConfig,
+  saveSettings,
+  deleteMeasures,
+  deleteClient,
+  deletePage,
+  editLine,
+  applyMeasureChanges,
+} from '../lib/storage.js';
+import {
+  buildModel,
   rate,
   diffStat,
   coverage,
@@ -15,8 +24,8 @@ import {
 import { loadModel, exportData } from '../lib/export.js';
 import { nameKey, normName, canonical, compareNames } from '../lib/names.js';
 import { NETWORKS, NETWORK_LABELS, STATS, UNITS, unitOf, fmtNum, fmtDuration, fmtDate } from '../lib/format.js';
+import { $, esc, toast } from '../lib/dom.js';
 
-const $ = (id) => document.getElementById(id);
 const nf = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 });
 const pf = new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFractionDigits: 0, signDisplay: 'exceptZero' });
 const pct = new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFractionDigits: 0 });
@@ -45,24 +54,11 @@ const state = {
 
 const dur = (ms) => fmtDuration(ms, state.unit);
 
-const esc = (s) =>
-  String(s ?? '').replace(
-    /[&<>"']/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
-  );
 const norm = (s) =>
   String(s ?? '')
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase();
-
-function toast(text) {
-  const t = $('toast');
-  t.textContent = text;
-  t.classList.add('show');
-  clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => t.classList.remove('show'), 2500);
-}
 
 // ---------------------------------------------------------------- Export
 
@@ -121,7 +117,7 @@ async function runExport(req = {}) {
   if ((full.type === 'page' || full.type === 'detail') && !full.page) return toast('Choisissez une page');
   if (full.type === 'client' && !full.client) return toast('Choisissez un client');
   try {
-    await exportData(full);
+    await exportData(full, { model: state.model, settings: state.settings });
     toast('Export téléchargé');
   } catch (e) {
     toast(`Export impossible : ${e.message}`);
@@ -705,19 +701,35 @@ function renderAll() {
 }
 
 async function load() {
-  const { model, settings, measures, apps } = await loadModel();
-  Object.assign(state, { model, settings, measures, apps });
+  const { model, settings, measures, apps, pages } = await loadModel();
+  Object.assign(state, { model, measures, apps, pages });
+  applySettings(settings);
+  renderAll();
+}
+
+function applySettings(settings) {
+  state.settings = settings;
   state.stat = STATS[settings.stat] ? settings.stat : 'median';
   state.unit = unitOf(settings);
   state.view = VIEWS.includes(settings.reportView) ? settings.reportView : 'both';
   $('stat').value = state.stat;
-  renderAll();
 }
 
-let pendingLoad = 0;
-function scheduleLoad() {
-  clearTimeout(pendingLoad);
-  pendingLoad = setTimeout(load, 200);
+// Changements : mesures mises à jour d'après l'évènement (sans tout relire), référentiel et réglages relus
+let configStale = false;
+let pendingUpdate = 0;
+function scheduleUpdate() {
+  clearTimeout(pendingUpdate);
+  pendingUpdate = setTimeout(async () => {
+    if (configStale) {
+      configStale = false;
+      const { apps, pages, settings } = await getConfig();
+      Object.assign(state, { apps, pages });
+      applySettings(settings);
+    }
+    state.model = buildModel(state.measures, state.apps, state.pages);
+    renderAll();
+  }, 200);
 }
 
 // ---------------------------------------------------------------- Évènements
@@ -851,7 +863,11 @@ window.addEventListener('scroll', closeMenu, true);
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
-  if (changes.apps || changes.pages || changes.settings || Object.keys(changes).some(isMeasureKey)) scheduleLoad();
+  if (!state.model) return;
+  const measures = applyMeasureChanges(state.measures, changes);
+  if (measures) state.measures = measures;
+  if (changes.apps || changes.pages || changes.settings) configStale = true;
+  if (measures || configStale) scheduleUpdate();
 });
 
 chrome.tabs.getCurrent().then(

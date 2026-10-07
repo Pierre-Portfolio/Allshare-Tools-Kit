@@ -1,6 +1,6 @@
 // Téléchargement des exports depuis les pages de l'extension.
 
-import { getConfig, getMeasures } from './storage.js';
+import { getConfig, getMeasures, getDetails } from './storage.js';
 import {
   buildModel,
   buildGlobalSheets,
@@ -11,19 +11,9 @@ import {
   detailCsv,
   scopeRows,
 } from './report.js';
-import { buildXlsx } from './xlsx.js';
+import { buildXlsxCompressed } from './xlsx.js';
 import { fileStamp, unitOf } from './format.js';
-
-export function downloadBlob(data, filename, type) {
-  const url = URL.createObjectURL(new Blob([data], { type }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 30000);
-}
+import { downloadBlob } from './dom.js';
 
 export async function loadModel() {
   const { apps, pages, settings, draft } = await getConfig();
@@ -40,14 +30,22 @@ const slug = (s) =>
     .toLowerCase()
     .slice(0, 40) || 'export';
 
+/** Modèle dont les mesures de `rows` ont leur détail des temps (rangé à part, lu seulement ici). */
+async function withDetails(model, rows) {
+  const details = await getDetails(rows.map((m) => m.id));
+  return { ...model, rows: model.rows.map((m) => (details[m.id] ? { ...m, detail: details[m.id] } : m)) };
+}
+
 /**
  * Export à la demande.
  * @param {{type: 'all'|'page'|'client'|'detail', page?: string, client?: string,
  *          format: 'xlsx'|'csv', fullUrl?: boolean, urlEnd?: boolean, stat?: string,
  *          unit?: 's'|'ms'}} req  unité des durées : celle des réglages par défaut
+ * @param {{model: object, settings: object}} [loaded]  modèle déjà chargé (tableau de bord) : pas relu
  */
-export async function exportData(req) {
-  const { model, settings } = await loadModel();
+export async function exportData(req, loaded = null) {
+  const { model: base, settings } = loaded || (await loadModel());
+  const model = req.type === 'detail' ? await withDetails(base, scopeRows(base, req)) : base;
   const stat = req.stat || settings.stat;
   const options = { fullUrl: !!req.fullUrl, urlEnd: !!req.urlEnd, unit: req.unit || unitOf(settings) };
   const now = new Date();
@@ -75,7 +73,7 @@ export async function exportData(req) {
           ? buildDetailSheets(model, req.page, now, options)
           : buildGlobalSheets(model, stat, settings, now, options);
   downloadBlob(
-    buildXlsx(sheets, now),
+    await buildXlsxCompressed(sheets, now),
     `insight-${name}-${fileStamp(now)}.xlsx`,
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   );

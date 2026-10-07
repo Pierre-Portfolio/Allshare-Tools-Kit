@@ -279,8 +279,9 @@ try {
   assert.equal(list[0].startUrl, `${base}/appli1/`);
   assert.equal(list[0].url, `${base}/appli1/clients`, 'URL complète enregistrée');
   assert.equal(list[0].urlEnd, 'clients', "fin d'URL enregistrée");
-  // Détail : repères Navigation Timing + appel fetch /api/data (500 ms)
-  const d = list[0].detail;
+  // Détail : repères Navigation Timing + appel fetch /api/data (500 ms), rangé à part de la mesure (d_<id>)
+  assert.ok(!('detail' in list[0]), 'détail rangé à part');
+  const d = await storage(async (id) => (await chrome.storage.local.get(`d_${id}`))[`d_${id}`], list[0].id);
   assert.equal(d.kind, 'load');
   assert.ok(d.marks.responseStart - d.marks.requestStart >= 250, 'attente serveur ≥ délai serveur');
   const apiCall = d.requests.find((r) => r.url.includes('/api/data'));
@@ -1104,7 +1105,7 @@ try {
   );
   await cra.waitForFunction(() => window.toggles === 2);
   assert.equal(
-    await cra.evaluate(() => CRA_GRID_ig_report_settings.className.includes('is-collapsed')),
+    await cra.evaluate(() => document.getElementById('CRA_GRID_ig_report_settings').className.includes('is-collapsed')),
     true,
     'réglages repliés de nouveau',
   );
