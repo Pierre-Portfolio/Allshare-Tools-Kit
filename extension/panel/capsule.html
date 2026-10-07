@@ -22,10 +22,16 @@
         <span>Mes sessions</span>
         <span id="savedCount" class="muted"></span>
       </summary>
+      <div id="capFilter" class="segmented cap-filter" role="radiogroup" aria-label="Filtrer les sessions" hidden>
+        <button type="button" role="radio" data-filter="all">Toutes</button>
+        <button type="button" role="radio" data-filter="active">Actives</button>
+        <button type="button" role="radio" data-filter="inactive">Inactives</button>
+      </div>
       <ul id="capsules" class="capsules"></ul>
       <p id="savedEmpty" class="hint" hidden>
         Aucune session pour le moment : cliquez sur « Sauvegarder cette session » ci-dessous.
       </p>
+      <p id="filterEmpty" class="hint" hidden></p>
     </details>
 
     <button id="saveOpen" type="button" class="big primary">＋ Sauvegarder cette session</button>

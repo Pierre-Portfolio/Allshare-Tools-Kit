@@ -1,10 +1,16 @@
 // Capsule : sessions d'onglets sauvegardées (repliées au départ), puis bouton
 // « Sauvegarder cette session » (titre + commentaire facultatif).
+// Une session cochée n'est plus active (barrée) ; filtre Toutes / Actives / Inactives ;
+// l'ordre des sessions se change par glisser-déposer.
 import {
   getCapsules,
   saveCapsule,
+  setCapsuleDone,
+  moveCapsule,
   deleteCapsule,
   reopenCapsule,
+  filterCapsules,
+  reorder,
   currentTabs,
   describeTabs,
   host,
@@ -17,6 +23,8 @@ const $ = (id) => document.getElementById(id);
 const fmtWhen = (ts) => new Date(ts).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
 let capsules = [];
 let clients = []; // clients d'Insight, proposés pour « Client associé »
+let filter = 'all'; // filtre de la liste : 'all', 'active' ou 'inactive'
+const FILTERS = { all: 'Toutes', active: 'Actives', inactive: 'Inactives' };
 
 function el(tag, { dataset, ...props } = {}, ...children) {
   const node = Object.assign(document.createElement(tag), props);
@@ -41,24 +49,43 @@ async function load() {
 }
 
 function render() {
+  const shown = filterCapsules(capsules, filter);
+  const inactive = capsules.filter((c) => c.done).length;
+  const counts = { all: capsules.length, active: capsules.length - inactive, inactive };
   $('savedCount').textContent = capsules.length ? `(${capsules.length})` : '';
   $('savedEmpty').hidden = capsules.length > 0;
-  $('capsules').replaceChildren(...capsules.map(item));
+  $('capFilter').hidden = !capsules.length;
+  for (const b of $('capFilter').querySelectorAll('[data-filter]')) {
+    b.textContent = `${FILTERS[b.dataset.filter]} (${counts[b.dataset.filter]})`;
+    b.setAttribute('aria-checked', String(b.dataset.filter === filter));
+  }
+  $('filterEmpty').hidden = !capsules.length || shown.length > 0;
+  $('filterEmpty').textContent = filter === 'active' ? 'Aucune session active.' : 'Aucune session inactive.';
+  // Sessions dépliées : elles le restent après un rechargement de la liste
+  const open = new Set([...$('capsules').querySelectorAll('.capsule[open]')].map((d) => d.parentElement.dataset.id));
+  $('capsules').replaceChildren(...shown.map((c) => item(c, open.has(c.id))));
 }
 
-function item(c) {
+function item(c, open) {
   return el(
     'li',
-    {},
+    { className: c.done ? 'cap-item done' : 'cap-item', draggable: true, dataset: { id: c.id } },
     el(
       'details',
-      { className: 'capsule' },
+      { className: 'capsule', open },
       el(
         'summary',
         {},
+        el('input', {
+          type: 'checkbox',
+          className: 'cap-done',
+          checked: !!c.done,
+          title: c.done ? 'Session inactive : décocher pour la réactiver' : 'Cocher si la session n’est plus active',
+          dataset: { done: c.id },
+        }),
         el(
           'span',
-          { className: 'cap-head' },
+          { className: 'cap-head', title: 'Cliquer pour voir les onglets, glisser pour changer l’ordre' },
           el('strong', { className: 'cap-title', textContent: c.title }),
           el(
             'span',
@@ -124,6 +151,75 @@ $('capsules').addEventListener('click', async (e) => {
     await deleteCapsule(c.id);
     toast('Session supprimée');
   }
+});
+
+$('capsules').addEventListener('change', (e) => {
+  const box = e.target.closest('[data-done]');
+  if (box) setCapsuleDone(box.dataset.done, box.checked);
+});
+
+$('capFilter').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-filter]');
+  if (!b) return;
+  filter = b.dataset.filter;
+  render();
+});
+
+// ---------------------------------------------------------------- Glisser-déposer
+
+let dragged = null; // identifiant de la session déplacée
+
+function clearDrop() {
+  for (const li of $('capsules').querySelectorAll('.drop-before, .drop-after')) {
+    li.classList.remove('drop-before', 'drop-after');
+  }
+}
+
+/** Session survolée et côté du dépôt (au-dessus ou en dessous), ou null. */
+function dropTarget(e) {
+  const li = e.target.closest('.cap-item');
+  if (!dragged || !li || li.dataset.id === dragged) return null;
+  const r = li.getBoundingClientRect();
+  return { li, after: e.clientY > r.top + r.height / 2 };
+}
+
+$('capsules').addEventListener('dragstart', (e) => {
+  if (!e.target.classList?.contains('cap-item')) return; // un lien d'onglet glissé, par exemple
+  dragged = e.target.dataset.id;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', e.target.querySelector('.cap-title').textContent);
+  e.target.classList.add('dragging');
+});
+
+$('capsules').addEventListener('dragover', (e) => {
+  const t = dropTarget(e);
+  clearDrop();
+  if (!t) return;
+  e.preventDefault(); // dépôt autorisé
+  e.dataTransfer.dropEffect = 'move';
+  t.li.classList.add(t.after ? 'drop-after' : 'drop-before');
+});
+
+$('capsules').addEventListener('dragleave', (e) => {
+  if (!$('capsules').contains(e.relatedTarget)) clearDrop();
+});
+
+$('capsules').addEventListener('drop', (e) => {
+  const t = dropTarget(e);
+  clearDrop();
+  if (!t) return;
+  e.preventDefault();
+  const id = dragged;
+  dragged = null;
+  capsules = reorder(capsules, id, t.li.dataset.id, t.after);
+  render();
+  moveCapsule(id, t.li.dataset.id, t.after);
+});
+
+$('capsules').addEventListener('dragend', (e) => {
+  dragged = null;
+  clearDrop();
+  e.target.classList?.remove('dragging');
 });
 
 // ---------------------------------------------------------------- Sauvegarde

@@ -106,7 +106,10 @@ test('mergeBackup : sur un autre poste, rien n’est effacé ni doublé', () => 
     m_1: measure('1', 'client a', 'Dashboard'), // déjà présente (même identifiant)
     m_9: measure('9', 'client a', 'Factures'),
     settings: { network: 'ethernet', quietMs: 2000 },
-    capsules: [{ id: 'c9', ts: 90, title: 'Locale', tabs: [] }],
+    capsules: [
+      { id: 'c8', ts: 10, title: 'Placée en tête', tabs: [] }, // ordre choisi par glisser-déposer
+      { id: 'c9', ts: 90, title: 'Locale', tabs: [] },
+    ],
     prismeFiles: [{ ...file('g1', 20, 'f1'), name: 'f1.csv' }], // même fichier que f1, autre identifiant
     training: { qcm: { 'rh-1-e1': { pick: 0 }, 'olap-1-e1': { pick: 1 } }, open: {}, last: null },
     futur: { x: 2 },
@@ -130,8 +133,8 @@ test('mergeBackup : sur un autre poste, rien n’est effacé ni doublé', () => 
   assert.deepEqual(s.settings, { network: 'wifi', unit: 'ms', quietMs: 2000 }, 'réglages du fichier');
   assert.deepEqual(
     s.capsules.map((c) => c.id),
-    ['c9', 'c1'],
-    'sessions réunies, la plus récente en premier',
+    ['c8', 'c9', 'c1'],
+    'sessions du poste dans leur ordre, puis celles du fichier',
   );
   assert.ok(!('prismeFiles' in s), 'fichier déjà présent');
   assert.deepEqual(s.training.qcm, { 'rh-1-e1': { pick: 0 }, 'olap-1-e1': { pick: 1 } }, 'réponse locale gardée');

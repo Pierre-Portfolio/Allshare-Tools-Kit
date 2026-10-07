@@ -595,6 +595,66 @@ try {
   tools.once('dialog', (d) => d.accept());
   await tools.click('.cap-actions .danger');
   await tools.waitForSelector('#savedEmpty:not([hidden])');
+  // Session cochée (plus active) : barrée ; filtre Toutes / Actives / Inactives ; ordre par glisser-déposer
+  await storage(
+    (tabs) =>
+      chrome.storage.local.set({
+        capsules: ['Recette A', 'Recette B', 'Recette C'].map((title, i) => ({
+          id: `cap${i}`,
+          ts: 3 - i,
+          title,
+          client: '',
+          comment: '',
+          tabs,
+        })),
+      }),
+    [{ url: `${base}/appli1/a`, title: 'A', win: 0, pinned: false }],
+  );
+  await tools.waitForFunction(() => document.querySelector('#savedCount').textContent === '(3)');
+  const capTitles = () => tools.locator('.cap-item .cap-title').allTextContents();
+  const storedCaps = () => storage(async () => (await chrome.storage.local.get('capsules')).capsules);
+  const capIds = async () => (await storedCaps()).map((c) => c.id);
+  assert.deepEqual(await capTitles(), ['Recette A', 'Recette B', 'Recette C']);
+  await tools.check('.cap-item[data-id="cap1"] .cap-done');
+  await tools.waitForSelector('.cap-item.done[data-id="cap1"]');
+  assert.equal(await tools.getAttribute('[data-id="cap1"] .capsule', 'open'), null, 'cocher ne déplie pas la session');
+  assert.equal(
+    await tools.$eval('.cap-item.done .cap-title', (e) => getComputedStyle(e).textDecorationLine),
+    'line-through',
+  );
+  assert.deepEqual(
+    (await storedCaps()).map((c) => !!c.done),
+    [false, true, false],
+    'case enregistrée',
+  );
+  assert.deepEqual(await tools.locator('#capFilter button').allTextContents(), [
+    'Toutes (3)',
+    'Actives (2)',
+    'Inactives (1)',
+  ]);
+  await tools.click('#capFilter [data-filter="inactive"]');
+  assert.deepEqual(await capTitles(), ['Recette B']);
+  await tools.click('#capFilter [data-filter="active"]');
+  assert.deepEqual(await capTitles(), ['Recette A', 'Recette C']);
+  await tools.click('#capFilter [data-filter="all"]');
+  // Recette C glissée au-dessus de Recette A, puis Recette A en dessous de Recette B
+  const capHeight = async (id) => (await tools.locator(`.cap-item[data-id="${id}"]`).boundingBox()).height;
+  await tools.dragAndDrop('[data-id="cap2"] .cap-title', '.cap-item[data-id="cap0"]', {
+    targetPosition: { x: 60, y: 4 },
+  });
+  assert.deepEqual(await capTitles(), ['Recette C', 'Recette A', 'Recette B']);
+  await tools.dragAndDrop('[data-id="cap0"] .cap-title', '.cap-item[data-id="cap1"]', {
+    targetPosition: { x: 60, y: (await capHeight('cap1')) - 4 },
+  });
+  assert.deepEqual(await capTitles(), ['Recette C', 'Recette B', 'Recette A']);
+  for (let i = 0; i < 50 && (await capIds()).join() !== 'cap2,cap1,cap0'; i++) await sleep(100);
+  assert.deepEqual(await capIds(), ['cap2', 'cap1', 'cap0'], 'ordre enregistré');
+  await tools.reload();
+  await tools.click('#saved > summary');
+  assert.deepEqual(await capTitles(), ['Recette C', 'Recette B', 'Recette A'], 'ordre gardé à la réouverture');
+  assert.equal(await tools.isChecked('[data-id="cap1"] .cap-done'), true);
+  await tools.screenshot({ path: join(out, 'capsule-liste.png') });
+  console.log('  Capsule : session cochée et barrée, filtre, ordre changé par glisser-déposer');
 
   // 12. Prisme : CSV refusé, fichier propre, exemple avec erreurs, export, tableau de bord
   await tools.setViewportSize({ width: 380, height: 1000 });
@@ -822,7 +882,7 @@ try {
   await tools.waitForFunction(() => document.querySelector('#dataStatus').textContent !== '');
   assert.match(
     await tools.textContent('#dataStatus'),
-    /^Fichier téléchargé : \d+ mesures Insight, 1 fichier Prisme, \d+ réponses Training et les réglages\.$/,
+    /^Fichier téléchargé : \d+ mesures Insight, 3 sessions Capsule, 1 fichier Prisme, \d+ réponses Training et les réglages\.$/,
   );
   await tools.screenshot({ path: join(out, 'panel-donnees.png'), fullPage: true });
   // Extension supprimée puis réinstallée : plus aucune donnée

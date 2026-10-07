@@ -1,9 +1,11 @@
 // Capsule : sauvegarde des onglets de la fenêtre Chrome en cours, puis réouverture.
 //
 // chrome.storage.local
-//   capsules  sessions sauvegardées, la plus récente en premier :
-//             [{ id, ts, title, client, comment, tabs: [{ url, title, win, pinned }] }]
+//   capsules  sessions sauvegardées, dans l'ordre d'affichage (une nouvelle session arrive en tête,
+//             l'ordre se change ensuite par glisser-déposer) :
+//             [{ id, ts, title, client, comment, done, tabs: [{ url, title, win, pinned }] }]
 //             (client : facultatif, nom d'un client d'Insight ou saisi librement)
+//             (done : session cochée, plus active : barrée dans la liste)
 //             (win : numéro de la fenêtre d'origine, pour rouvrir fenêtre par fenêtre)
 
 import { newId } from './storage.js';
@@ -58,6 +60,27 @@ export function clientNames(apps, measures) {
   return [...names.values()].sort(compareNames);
 }
 
+/** Sessions affichées pour un filtre : 'all' (toutes), 'active' (non cochées) ou 'inactive' (cochées). */
+export function filterCapsules(capsules, filter) {
+  if (filter === 'active') return capsules.filter((c) => !c.done);
+  if (filter === 'inactive') return capsules.filter((c) => c.done);
+  return capsules;
+}
+
+/**
+ * Déplace une session juste avant (ou après) une autre. Fonction pure.
+ * @returns {object[]} nouvelle liste (la même si l'une des deux sessions est introuvable)
+ */
+export function reorder(capsules, id, targetId, after = false) {
+  const moved = capsules.find((c) => c.id === id);
+  if (!moved || id === targetId) return capsules;
+  const rest = capsules.filter((c) => c.id !== id);
+  const at = rest.findIndex((c) => c.id === targetId);
+  if (at < 0) return capsules;
+  rest.splice(after ? at + 1 : at, 0, moved);
+  return rest;
+}
+
 /** Nom de domaine affiché sous le titre d'un onglet. */
 export function host(url) {
   try {
@@ -91,6 +114,17 @@ export async function saveCapsule({ title, client, comment, tabs }) {
   };
   await chrome.storage.local.set({ capsules: [capsule, ...(await getCapsules())] });
   return capsule;
+}
+
+/** Coche (session plus active, barrée) ou décoche une session. */
+export async function setCapsuleDone(id, done) {
+  const capsules = (await getCapsules()).map((c) => (c.id === id ? { ...c, done: !!done } : c));
+  await chrome.storage.local.set({ capsules });
+}
+
+/** Glisser-déposer : place la session `id` avant (ou après) la session `targetId`. */
+export async function moveCapsule(id, targetId, after = false) {
+  await chrome.storage.local.set({ capsules: reorder(await getCapsules(), id, targetId, after) });
 }
 
 export async function deleteCapsule(id) {

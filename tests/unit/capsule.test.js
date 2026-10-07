@@ -1,6 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isSavable, snapshot, byWindow, describeTabs, host, clientNames } from '../../extension/lib/capsule.js';
+import {
+  isSavable,
+  snapshot,
+  byWindow,
+  describeTabs,
+  host,
+  clientNames,
+  filterCapsules,
+  reorder,
+} from '../../extension/lib/capsule.js';
 
 const tab = (url, title = '', pinned = false) => ({ url, title, pinned });
 
@@ -50,4 +59,24 @@ test('adresses : rouvrables et domaine affiché', () => {
   assert.ok(!isSavable('chrome://newtab/') && !isSavable('about:blank') && !isSavable(undefined));
   assert.equal(host('https://srv.exemple.fr:8443/app/f?p=1'), 'srv.exemple.fr:8443');
   assert.equal(host('file:///C:/x.html'), 'fichier local');
+});
+
+test('filtre : toutes, actives (non cochées) ou inactives (cochées)', () => {
+  const caps = [{ id: 'a' }, { id: 'b', done: true }, { id: 'c', done: false }];
+  const ids = (list) => list.map((c) => c.id);
+  assert.deepEqual(ids(filterCapsules(caps, 'all')), ['a', 'b', 'c']);
+  assert.deepEqual(ids(filterCapsules(caps, 'active')), ['a', 'c']);
+  assert.deepEqual(ids(filterCapsules(caps, 'inactive')), ['b']);
+});
+
+test('glisser-déposer : session placée avant ou après une autre', () => {
+  const caps = ['a', 'b', 'c', 'd'].map((id) => ({ id }));
+  const ids = (list) => list.map((c) => c.id).join('');
+  assert.equal(ids(reorder(caps, 'd', 'a')), 'dabc', 'au-dessus de la première');
+  assert.equal(ids(reorder(caps, 'a', 'd', true)), 'bcda', 'en dessous de la dernière');
+  assert.equal(ids(reorder(caps, 'a', 'c')), 'bacd', 'vers le bas, au-dessus de c');
+  assert.equal(ids(reorder(caps, 'd', 'b', true)), 'abdc', 'vers le haut, en dessous de b');
+  assert.equal(reorder(caps, 'b', 'b'), caps, 'sur elle-même');
+  assert.equal(reorder(caps, 'x', 'a'), caps, 'session introuvable');
+  assert.equal(ids(caps), 'abcd', 'liste d’origine intacte');
 });

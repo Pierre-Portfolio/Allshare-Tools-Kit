@@ -178,6 +178,17 @@
   padding: 0 14px 12px;
 }
 
+.cap-filter {
+  display: flex;
+  margin: 0 8px 8px;
+}
+
+.cap-filter button {
+  flex: 1;
+  padding: 5px 8px;
+  font-size: 12.5px;
+}
+
 .capsules {
   list-style: none;
   margin: 0;
@@ -192,9 +203,22 @@
   background: var(--bg);
 }
 
+.cap-item.dragging {
+  opacity: 0.4;
+}
+
+/* Emplacement du dépôt : trait au-dessus ou en dessous de la session survolée */
+.cap-item.drop-before {
+  box-shadow: 0 -3px 0 var(--accent);
+}
+
+.cap-item.drop-after {
+  box-shadow: 0 3px 0 var(--accent);
+}
+
 .capsule > summary {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto auto 1fr auto;
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
@@ -202,9 +226,22 @@
   list-style: none;
 }
 
+.cap-done {
+  order: -1; /* à gauche de la flèche */
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .cap-head {
   display: grid;
   min-width: 0;
+}
+
+.cap-item.done .cap-title,
+.cap-item.done .cap-meta {
+  text-decoration: line-through;
+  color: var(--muted);
 }
 
 .cap-title {

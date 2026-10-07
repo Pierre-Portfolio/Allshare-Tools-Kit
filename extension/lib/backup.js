@@ -112,7 +112,8 @@ export function describeCounts({ measures = 0, capsules = 0, files = 0, answers 
 /**
  * Fusion d'une sauvegarde avec les données du poste. Fonction pure.
  *  - Insight : clients et pages reconnus par leur nom, mesures par identifiant (voir mergeInsight) ;
- *  - Capsule : sessions ajoutées si absentes (identifiant), la plus récente en premier ;
+ *  - Capsule : sessions ajoutées si absentes (identifiant), après celles du poste, dans l'ordre du fichier
+ *    (l'ordre choisi par glisser-déposer est gardé) ;
  *  - Prisme : fichiers ajoutés si absents (identifiant ou même contenu), les MAX_FILES plus récents gardés ;
  *  - Training : réponses ajoutées, une réponse du poste est conservée (voir mergeProgress) ;
  *  - réglages (Insight, Prisme, formulaire) : ceux du fichier ;
@@ -137,7 +138,7 @@ export function mergeBackup(local, incoming, prismeContents = {}) {
   const localCaps = list(local.capsules);
   const capIds = new Set(localCaps.map((c) => c && c.id));
   const newCaps = list(incoming.capsules).filter((c) => c && c.id && !capIds.has(c.id) && Array.isArray(c.tabs));
-  if (newCaps.length) set.capsules = [...localCaps, ...newCaps].sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  if (newCaps.length) set.capsules = [...localCaps, ...newCaps];
 
   const localFiles = list(local.prismeFiles);
   const known = (f) =>
