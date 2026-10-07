@@ -75,8 +75,8 @@ render();
 }
 
 // Page de saisie du C.R.A simulée (grille interactive APEX) : deux lignes réparties sur deux tableaux
-// (colonnes figées), « Save » qui enregistre en 1 s, case du surlignage (étoile jaune) construite après
-// le chargement, liste de valeurs ouverte dans une boîte de dialogue
+// (colonnes figées), « Save » qui enregistre en 1 s, case du surlignage (étoile jaune) cochée, dans les
+// réglages de la grille construits repliés après le chargement, liste de valeurs ouverte dans une boîte de dialogue
 function craPage() {
   return `<!doctype html><html><head><meta charset="utf-8"><title>Saisie CRA</title></head><body>
 <div class="a-IG">
@@ -93,10 +93,23 @@ function craPage() {
 <div role="dialog"><input id="lov" placeholder="Liste de valeurs"></div>
 <script>
 window.saves = 0;
-window.highlightChanges = 0;
+window.highlightChanges = [];
+window.toggles = 0;
 setTimeout(() => {
-  controls.innerHTML = '<input id="CRA_GRID_ig_control_1" type="checkbox" class="a-IG-controlsCheckbox" data-setting="highlight">';
-  CRA_GRID_ig_control_1.addEventListener('change', () => window.highlightChanges++);
+  controls.innerHTML = '<div id="CRA_GRID_ig_report_settings" class="a-MediaBlock a-IG-controlsContainer a-Collapsible is-collapsed">'
+    + '<div class="a-MediaBlock-graphic" role="heading"><button type="button" id="toggle" aria-expanded="false" aria-controls="a_Collapsible1_content"></button></div>'
+    + '<div class="a-MediaBlock-content a-Collapsible-content" id="a_Collapsible1_content" aria-hidden="true">'
+    + '<input id="CRA_GRID_ig_control_1" type="checkbox" class="a-IG-controlsCheckbox" data-setting="highlight" checked></div></div>';
+  const area = CRA_GRID_ig_report_settings;
+  toggle.addEventListener('click', () => {
+    window.toggles++;
+    const open = area.classList.toggle('is-expanded');
+    area.classList.toggle('is-collapsed', !open);
+    toggle.setAttribute('aria-expanded', open);
+    a_Collapsible1_content.setAttribute('aria-hidden', !open);
+  });
+  // état des réglages (dépliés ?) au moment où la case change
+  CRA_GRID_ig_control_1.addEventListener('change', () => window.highlightChanges.push(area.classList.contains('is-expanded')));
 }, 300);
 document.addEventListener('input', (e) => {
   const td = e.target.closest('td');
@@ -617,6 +630,8 @@ try {
   assert.equal(caps[0].client, 'Appli 1', 'client associé');
   assert.equal(caps[0].comment, 'Reprendre les mesures Ethernet');
   assert.deepEqual(caps[0].tabs.map((t) => t.url).sort(), [...webUrls].sort(), 'onglets de cette fenêtre seulement');
+  assert.equal(caps[0].spans.length, 1, 'ouverte dans cette fenêtre (temps d’ouverture dans CRA)');
+  assert.ok(caps[0].spans[0].wins.length === 1 && !caps[0].spans[0].to);
   await storage((id) => chrome.windows.remove(id), otherWin);
   await tools.waitForFunction(() => document.querySelector('#savedCount').textContent === '(1)');
   await tools.click('#saved > summary');
@@ -634,8 +649,15 @@ try {
   assert.deepEqual(reopened.map((p) => p.url()).sort(), [...webUrls].sort(), 'onglets rouverts');
   const reopenedCap = (await storage(async () => (await chrome.storage.local.get('capsules')).capsules))[0];
   assert.equal(reopenedCap.opens.length, 1, 'réouverture notée (capsules du jour dans CRA)');
-  console.log(`  Capsule : ${webUrls.length} onglets sauvegardés puis rouverts`);
   for (const p of reopened) await p.close();
+  const spansOf = async () =>
+    (await storage(async () => (await chrome.storage.local.get('capsules')).capsules))[0].spans;
+  for (let i = 0; i < 50 && !(await spansOf())[1]?.to; i++) await sleep(100);
+  const spans = await spansOf();
+  assert.equal(spans.length, 2, 'sauvegarde puis réouverture');
+  assert.ok(!spans[0].to, 'fenêtre de la sauvegarde toujours ouverte');
+  assert.ok(spans[1].to >= spans[1].from && !spans[1].wins, 'fenêtre rouverte fermée : fin de la période');
+  console.log(`  Capsule : ${webUrls.length} onglets sauvegardés puis rouverts, fenêtre refermée`);
   tools.once('dialog', (d) => d.accept());
   await tools.click('.cap-actions .danger');
   await tools.waitForSelector('#savedEmpty:not([hidden])');
@@ -667,9 +689,18 @@ try {
     'line-through',
   );
   assert.deepEqual(
-    (await storedCaps()).map((c) => !!c.done),
-    [false, true, false],
-    'case enregistrée',
+    await capTitles(),
+    ['Recette A', 'Recette C', 'Recette B'],
+    'rangée sous la dernière session active',
+  );
+  assert.deepEqual(
+    (await storedCaps()).map((c) => [c.id, !!c.done]),
+    [
+      ['cap0', false],
+      ['cap2', false],
+      ['cap1', true],
+    ],
+    'case et ordre enregistrés',
   );
   assert.deepEqual(await tools.locator('#capFilter button').allTextContents(), [
     'Toutes (3)',
@@ -681,6 +712,14 @@ try {
   await tools.click('#capFilter [data-filter="active"]');
   assert.deepEqual(await capTitles(), ['Recette A', 'Recette C']);
   await tools.click('#capFilter [data-filter="all"]');
+  // Recherche : tous les mots, sans majuscules ; aucune session trouvée
+  await tools.fill('#capSearch', 'RECETTE  b');
+  assert.deepEqual(await capTitles(), ['Recette B']);
+  await tools.fill('#capSearch', 'zzz');
+  assert.deepEqual(await capTitles(), []);
+  assert.equal(await tools.textContent('#filterEmpty'), 'Aucune session ne correspond à « zzz ».');
+  await tools.fill('#capSearch', '');
+  assert.deepEqual(await capTitles(), ['Recette A', 'Recette C', 'Recette B']);
   // Recette C glissée au-dessus de Recette A, puis Recette A en dessous de Recette B
   const capHeight = async (id) => (await tools.locator(`.cap-item[data-id="${id}"]`).boundingBox()).height;
   await tools.dragAndDrop('[data-id="cap2"] .cap-title', '.cap-item[data-id="cap0"]', {
@@ -698,7 +737,7 @@ try {
   assert.deepEqual(await capTitles(), ['Recette C', 'Recette B', 'Recette A'], 'ordre gardé à la réouverture');
   assert.equal(await tools.isChecked('[data-id="cap1"] .cap-done'), true);
   await tools.screenshot({ path: join(out, 'capsule-liste.png') });
-  console.log('  Capsule : session cochée et barrée, filtre, ordre changé par glisser-déposer');
+  console.log('  Capsule : session cochée, barrée et rangée sous les actives, recherche, filtre, glisser-déposer');
   // Pages d'une session : ajoutées (adresse saisie, onglet affiché) puis retirée
   const pagesOf = async (id) => (await storedCaps()).find((c) => c.id === id).tabs.map((t) => t.url);
   const waitPages = async (id, n) => {
@@ -971,15 +1010,18 @@ try {
 
   // 14. CRA : capsules du jour, réglages, page de saisie du C.R.A (grille APEX simulée)
   const todayAt = (h, m) => new Date(new Date().setHours(h, m, 0, 0)).getTime();
+  // Recette A ter : rouverte hier et ce matin, encore ouverte (fenêtre « live ») ; Recette C : 45 min ce matin
+  const liveWin = await storage(() => chrome.windows.create({ url: 'about:blank', focused: false }).then((w) => w.id));
   await storage(
-    async ({ a, b, y }) => {
+    async ({ a, b, y, liveWin }) => {
       const { capsules } = await chrome.storage.local.get('capsules');
       const opens = { cap0: [y, b], cap2: [a] };
+      const spans = { cap0: [{ from: y, wins: [liveWin] }], cap2: [{ from: a, to: a + 45 * 60000 }] };
       await chrome.storage.local.set({
-        capsules: capsules.map((c) => (opens[c.id] ? { ...c, opens: opens[c.id] } : c)),
+        capsules: capsules.map((c) => (opens[c.id] ? { ...c, opens: opens[c.id], spans: spans[c.id] } : c)),
       });
     },
-    { a: todayAt(8, 30), b: todayAt(9, 5), y: todayAt(12, 0) - 86400000 },
+    { a: todayAt(8, 30), b: todayAt(9, 5), y: todayAt(12, 0) - 86400000, liveWin },
   );
   await tools.goto(`chrome-extension://${extId}/panel/home.html?choose`);
   await tools.waitForFunction(
@@ -987,12 +1029,33 @@ try {
   );
   await tools.click('#toolCra');
   await tools.waitForSelector('.cra-item');
-  assert.deepEqual(await tools.locator('.cra-item strong').allTextContents(), ['Recette C', 'Recette A ter']);
-  assert.deepEqual(await tools.locator('.cra-times').allTextContents(), ['08:30 · 1 onglet', '09:05 · 2 onglets']);
+  assert.deepEqual(
+    await tools.locator('.cra-item strong').allTextContents(),
+    ['Recette A ter', 'Recette C'],
+    'ouverte depuis la veille : en tête',
+  );
+  const craTimes = () => tools.locator('.cra-times').allTextContents();
+  const [liveTimes, closedTimes] = await craTimes();
+  const OPEN = String.raw`ouverte (< 1 min|\d+ min|\d+ h \d\d)`;
+  assert.match(
+    liveTimes,
+    new RegExp(String.raw`^09:05 · 2 onglets · ${OPEN} \(en cours\)$`),
+    'temps d’ouverture en cours',
+  );
+  assert.equal(closedTimes, '08:30 · 1 onglet · ouverte 45 min');
+  await storage((id) => chrome.windows.remove(id), liveWin);
+  await tools.waitForFunction(() => !document.querySelector('.cra-open').textContent.includes('en cours'));
+  assert.match((await craTimes())[0], new RegExp(String.raw`^09:05 · 2 onglets · ${OPEN}$`), 'fenêtre fermée');
+  await tools.screenshot({ path: join(out, 'cra-capsules.png') });
   const yesterday = new Date(todayAt(12, 0) - 86400000);
   await tools.fill('#craDay', yesterday.toLocaleDateString('sv-SE')); // AAAA-MM-JJ
   await tools.waitForFunction(() => document.querySelectorAll('.cra-item').length === 1);
   assert.deepEqual(await tools.locator('.cra-item strong').allTextContents(), ['Recette A ter'], 'la veille');
+  assert.match(
+    (await craTimes())[0],
+    new RegExp(String.raw`^\d\d:\d\d · 2 onglets · ${OPEN}$`),
+    'la veille : jusqu’à minuit',
+  );
   await tools.check('#autoSave');
   await tools.check('#autoHighlight');
   for (let i = 0; i < 50; i++) {
@@ -1001,14 +1064,24 @@ try {
     await sleep(100);
   }
   await tools.screenshot({ path: join(out, 'cra.png') });
-  // Page de saisie : étoile jaune cochée à l'arrivée, « Save » cliqué en quittant une ligne modifiée
+  // Page de saisie : étoile jaune décochée à l'arrivée, « Save » cliqué en quittant une ligne modifiée
   await context.route('https://dsb-cra.allshare-scenario.fr/**', (route) =>
     route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: craPage() }),
   );
   const cra = await context.newPage();
   await cra.goto('https://dsb-cra.allshare-scenario.fr/apex/r/allshare_wks/xaas/saisie-cra?session=4242');
-  await cra.waitForFunction(() => document.querySelector('[data-setting="highlight"]')?.checked);
-  assert.equal(await cra.evaluate(() => window.highlightChanges), 1, 'case de l’étoile jaune cochée une fois');
+  await cra.waitForFunction(() => document.querySelector('[data-setting="highlight"]')?.checked === false);
+  assert.deepEqual(
+    await cra.evaluate(() => window.highlightChanges),
+    [true],
+    'étoile jaune décochée, réglages dépliés',
+  );
+  await cra.waitForFunction(() => window.toggles === 2);
+  assert.equal(
+    await cra.evaluate(() => CRA_GRID_ig_report_settings.className.includes('is-collapsed')),
+    true,
+    'réglages repliés de nouveau',
+  );
   const saves = () => cra.evaluate(() => window.saves);
   await cra.click('#r1a');
   await cra.keyboard.type('Projet X');
@@ -1039,12 +1112,12 @@ try {
   await sleep(1000);
   assert.equal(
     await cra.evaluate(() => document.querySelector('[data-setting="highlight"]').checked),
-    false,
+    true,
     'autre page',
   );
   await cra.close();
   await context.unroute('https://dsb-cra.allshare-scenario.fr/**');
-  console.log('  CRA : capsules du jour, étoile jaune cochée, ligne enregistrée en la quittant');
+  console.log('  CRA : capsules du jour et temps d’ouverture, étoile jaune décochée, ligne enregistrée en la quittant');
   await tools.goto(`chrome-extension://${extId}/panel/home.html?choose`);
 
   // 15. Mes données : export de toutes les données depuis l'accueil, extension vidée, réimport

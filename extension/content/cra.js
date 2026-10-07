@@ -2,8 +2,9 @@
 //
 // Déclaré dans le manifest pour les seules adresses commençant par CRA_PAGE (voir lib/cra.js).
 // Réglages du module CRA (chrome.storage.local, craSettings), appliqués dès qu'ils changent :
-//  * autoHighlight : en arrivant sur la page, coche la case de l'étoile jaune (surlignage des
-//                    contrôles de la grille) si elle ne l'est pas ;
+//  * autoHighlight : en arrivant sur la page, décoche la case de l'étoile jaune (surlignage des lignes,
+//                    dans les réglages de la grille) si elle est cochée ; repliés, les réglages sont
+//                    dépliés le temps de la décocher, comme à la main, puis repliés ;
 //  * autoSave      : quand le focus quitte une ligne modifiée de la grille (autre ligne, bouton
 //                    « Add Row », reste de la page), clique sur « Save ». Ouvrir une liste de valeurs,
 //                    un calendrier ou un menu ne compte pas comme quitter la ligne.
@@ -13,6 +14,7 @@
   window.__craContent = true;
 
   const HIGHLIGHT = 'input.a-IG-controlsCheckbox[data-setting="highlight"]';
+  const SETTINGS = '.a-IG-controlsContainer'; // réglages de la grille : filtres, étoile jaune, sommes…
   const POPUPS = '[role="dialog"], .ui-dialog, .a-Menu, .a-DatePicker-calendar, .ui-datepicker, .a-PopupLOV-dialog';
   const SETTLE_MS = 400; // le focus passe parfois par la grille entre deux cellules
   const WAIT_GRID_MS = 30000; // la grille interactive se construit après le chargement de la page
@@ -21,20 +23,69 @@
 
   // ------------------------------------------------------------ Étoile jaune
 
-  let highlighted = false; // une seule fois par page
+  let unhighlighted = false; // une seule fois par page
+  let expanded = null; // réglages repliés que l'extension a dépliés : repliés de nouveau ensuite
+  let triedExpand = false; // dépliés une seule fois par page
 
-  function highlight() {
-    const boxes = document.querySelectorAll(HIGHLIGHT);
-    if (!boxes.length) return false;
-    for (const box of boxes) if (!box.checked) box.click(); // le clic passe par les gestionnaires d'APEX
-    highlighted = true;
+  // Zone repliable d'APEX : contenu masqué (aria-hidden) et bouton qui le déplie (aria-controls)
+  const contentOf = (area) => area.querySelector('.a-Collapsible-content');
+  const isCollapsed = (area) =>
+    area.classList.contains('is-collapsed') || contentOf(area)?.getAttribute('aria-hidden') === 'true';
+  function toggleOf(area) {
+    const id = contentOf(area)?.id;
+    return (
+      (id && area.querySelector(`[aria-controls="${CSS.escape(id)}"]`)) ||
+      area.querySelector('.a-Collapsible-toggle, .a-MediaBlock-graphic button')
+    );
+  }
+
+  function expand(area) {
+    const toggle = toggleOf(area);
+    if (!toggle || triedExpand) return;
+    triedExpand = true;
+    expanded = area;
+    toggle.click();
+  }
+
+  /** Replie les réglages dépliés par l'extension (APEX a pu les reconstruire : on reprend la zone de la page). */
+  function collapseBack() {
+    if (!expanded) return;
+    const area = expanded.isConnected ? expanded : document.querySelector(SETTINGS);
+    expanded = null;
+    if (area && !isCollapsed(area)) toggleOf(area)?.click();
+  }
+
+  /** true : rien de plus à faire sur cette page. */
+  function unhighlight() {
+    const boxes = [...document.querySelectorAll(HIGHLIGHT)].filter((box) => box.checked);
+    if (!boxes.length) {
+      if (document.querySelector(HIGHLIGHT)) return done(); // déjà décochée
+      // Pas encore de case : grille en construction, ou réglages repliés qui ne l'affichent qu'une fois dépliés
+      const area = document.querySelector(SETTINGS);
+      if (area && isCollapsed(area) && !triedExpand) {
+        expand(area);
+        setTimeout(() => document.querySelector(HIGHLIGHT) || collapseBack(), 2000); // pas d'étoile jaune
+      }
+      return false;
+    }
+    for (const box of boxes) {
+      const area = box.closest(SETTINGS);
+      if (area && isCollapsed(area)) expand(area);
+      box.click(); // le clic passe par les gestionnaires d'APEX
+    }
+    return done();
+  }
+
+  function done() {
+    unhighlighted = true;
+    setTimeout(collapseBack, 500); // le temps qu'APEX prenne la case en compte
     return true;
   }
 
-  function highlightWhenReady() {
-    if (highlighted || !settings.autoHighlight || highlight()) return;
+  function unhighlightWhenReady() {
+    if (unhighlighted || !settings.autoHighlight || unhighlight()) return;
     const observer = new MutationObserver(() => {
-      if (!settings.autoHighlight || highlight()) observer.disconnect();
+      if (!settings.autoHighlight || unhighlight()) observer.disconnect();
     });
     observer.observe(document.documentElement, { childList: true, subtree: true });
     setTimeout(() => observer.disconnect(), WAIT_GRID_MS);
@@ -105,7 +156,7 @@
   function apply(next) {
     const turnedOn = next.autoHighlight && !settings.autoHighlight;
     settings = { ...settings, ...next };
-    if (turnedOn) highlightWhenReady();
+    if (turnedOn) unhighlightWhenReady();
   }
 
   chrome.storage.local.get('craSettings').then(({ craSettings }) => apply(craSettings || {}));

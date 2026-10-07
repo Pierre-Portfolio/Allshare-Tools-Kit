@@ -1,15 +1,18 @@
 // Capsule : sessions d'onglets sauvegardées (repliées au départ), puis bouton
 // « Sauvegarder cette session » (titre + commentaire facultatif).
-// Une session cochée n'est plus active (barrée) ; filtre Toutes / Actives / Inactives ;
-// l'ordre des sessions se change par glisser-déposer ; titre modifiable ; pages retirées (×) ou ajoutées.
+// Une session cochée n'est plus active (barrée, rangée après les sessions actives) ; recherche et filtre
+// Toutes / Actives / Inactives ; l'ordre des sessions se change par glisser-déposer ; titre modifiable ;
+// pages retirées (×) ou ajoutées.
 import {
   getCapsules,
   saveCapsule,
   updateCapsule,
+  setDone,
   moveCapsule,
   deleteCapsule,
   reopenCapsule,
   filterCapsules,
+  searchCapsules,
   reorder,
   toUrl,
   addTab,
@@ -52,18 +55,26 @@ async function load() {
 }
 
 function render() {
-  const shown = filterCapsules(capsules, filter);
+  const query = $('capSearch').value.trim();
+  const filtered = filterCapsules(capsules, filter);
+  const shown = searchCapsules(filtered, query);
   const inactive = capsules.filter((c) => c.done).length;
   const counts = { all: capsules.length, active: capsules.length - inactive, inactive };
   $('savedCount').textContent = capsules.length ? `(${capsules.length})` : '';
   $('savedEmpty').hidden = capsules.length > 0;
   $('capFilter').hidden = !capsules.length;
+  $('capSearch').hidden = !capsules.length;
   for (const b of $('capFilter').querySelectorAll('[data-filter]')) {
     b.textContent = `${FILTERS[b.dataset.filter]} (${counts[b.dataset.filter]})`;
     b.setAttribute('aria-checked', String(b.dataset.filter === filter));
   }
   $('filterEmpty').hidden = !capsules.length || shown.length > 0;
-  $('filterEmpty').textContent = filter === 'active' ? 'Aucune session active.' : 'Aucune session inactive.';
+  $('filterEmpty').textContent =
+    filtered.length && query
+      ? `Aucune session ne correspond à « ${query} ».`
+      : filter === 'active'
+        ? 'Aucune session active.'
+        : 'Aucune session inactive.';
   // Sessions dépliées : elles le restent après un rechargement de la liste
   const open = new Set([...$('capsules').querySelectorAll('.capsule[open]')].map((d) => d.parentElement.dataset.id));
   $('capsules').replaceChildren(...shown.map((c) => item(c, open.has(c.id))));
@@ -244,7 +255,7 @@ $('capsules').addEventListener('submit', async (e) => {
 
 $('capsules').addEventListener('change', (e) => {
   const box = e.target.closest('[data-done]');
-  if (box) updateCapsule(box.dataset.done, { done: box.checked });
+  if (box) setDone(box.dataset.done, box.checked);
 });
 
 // Saisie (adresse, titre) : la session ne se déplace pas quand on sélectionne le texte du champ
@@ -301,6 +312,8 @@ $('capsules').addEventListener('keyup', (e) => {
 $('capsules').addEventListener('focusout', (e) => {
   if (e.target.matches('.cap-title-input')) endRename(e.target, true);
 });
+
+$('capSearch').addEventListener('input', render);
 
 $('capFilter').addEventListener('click', (e) => {
   const b = e.target.closest('[data-filter]');

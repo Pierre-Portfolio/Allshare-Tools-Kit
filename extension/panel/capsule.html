@@ -22,6 +22,15 @@
         <span>Mes sessions</span>
         <span id="savedCount" class="muted"></span>
       </summary>
+      <input
+        id="capSearch"
+        type="search"
+        class="cap-search"
+        placeholder="Rechercher une session (titre, client, page…)"
+        aria-label="Rechercher une session"
+        spellcheck="false"
+        hidden
+      />
       <div id="capFilter" class="segmented cap-filter" role="radiogroup" aria-label="Filtrer les sessions" hidden>
         <button type="button" role="radio" data-filter="all">Toutes</button>
         <button type="button" role="radio" data-filter="active">Actives</button>

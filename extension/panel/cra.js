@@ -1,7 +1,7 @@
 // CRA (panneau latéral) : capsules rouvertes ou sauvegardées le jour choisi (aujourd'hui par défaut),
-// et réglages des automatismes de la page de saisie du C.R.A (content/cra.js).
+// avec leur temps d'ouverture, et réglages des automatismes de la page de saisie du C.R.A (content/cra.js).
 import { getCapsules, describeTabs } from '../lib/capsule.js';
-import { openedOn, getCraSettings, saveCraSettings } from '../lib/cra.js';
+import { openedOn, fmtOpenTime, getCraSettings, saveCraSettings } from '../lib/cra.js';
 
 const $ = (id) => document.getElementById(id);
 const fmtTime = (ts) => new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
@@ -32,7 +32,7 @@ async function renderList() {
     ? "Aucune capsule ouverte aujourd'hui : elles apparaissent ici quand vous les rouvrez ou les sauvegardez."
     : 'Aucune capsule ouverte ce jour-là.';
   $('craList').replaceChildren(
-    ...rows.map(({ capsule: c, events }) =>
+    ...rows.map(({ capsule: c, events, open, live }) =>
       el(
         'li',
         { className: c.done ? 'cra-item done' : 'cra-item' },
@@ -42,17 +42,27 @@ async function renderList() {
           el('strong', { textContent: c.title }),
           c.client ? el('span', { className: 'tag', textContent: c.client, title: 'Client associé' }) : null,
         ),
-        el('small', {
-          className: 'cra-times',
-          textContent: [
-            ...events.map((e) => fmtTime(e.ts) + (e.saved ? ' (sauvegarde)' : '')),
-            describeTabs(c.tabs),
-          ].join(' · '),
-        }),
+        el(
+          'small',
+          { className: 'cra-times' },
+          [...events.map((e) => fmtTime(e.ts) + (e.saved ? ' (sauvegarde)' : '')), describeTabs(c.tabs)].join(' · '),
+          open > 0 ? ' · ' : null,
+          open > 0
+            ? el('b', {
+                className: 'cra-open',
+                textContent: `ouverte ${fmtOpenTime(open)}${live ? ' (en cours)' : ''}`,
+                title:
+                  'Temps d’ouverture dans la journée : de la sauvegarde ou de la réouverture à la fermeture de sa fenêtre',
+              })
+            : null,
+        ),
       ),
     ),
   );
 }
+
+// Temps d'ouverture des capsules encore ouvertes : mis à jour chaque minute
+setInterval(renderList, 60000);
 
 $('craDay').value = isoDay(new Date());
 $('craDay').addEventListener('change', renderList);

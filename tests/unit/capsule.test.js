@@ -8,6 +8,10 @@ import {
   host,
   clientNames,
   filterCapsules,
+  searchCapsules,
+  placeDone,
+  closeSpans,
+  anyOpen,
   reorder,
   toUrl,
   addTab,
@@ -69,6 +73,91 @@ test('filtre : toutes, actives (non cochées) ou inactives (cochées)', () => {
   assert.deepEqual(ids(filterCapsules(caps, 'all')), ['a', 'b', 'c']);
   assert.deepEqual(ids(filterCapsules(caps, 'active')), ['a', 'c']);
   assert.deepEqual(ids(filterCapsules(caps, 'inactive')), ['b']);
+});
+
+test('recherche : titre, client, commentaire ou page, tous les mots, sans accents ni majuscules', () => {
+  const caps = [
+    { id: 'a', title: 'Ticket #4366 Stallergenes', client: '', comment: '', tabs: [] },
+    { id: 'b', title: 'Habilitation', client: 'Allianz', comment: 'Nouvel alternant', tabs: [] },
+    { id: 'c', title: 'Recette', client: 'CA Immo', comment: '', tabs: [tab('https://app.hubspot.com/x', 'Aide')] },
+  ];
+  const ids = (q) => searchCapsules(caps, q).map((c) => c.id);
+  assert.deepEqual(ids(''), ['a', 'b', 'c'], 'recherche vide : toutes');
+  assert.deepEqual(ids('  stallergènes '), ['a'], 'accents et majuscules ignorés');
+  assert.deepEqual(ids('allianz alternant'), ['b'], 'client et commentaire');
+  assert.deepEqual(ids('hubspot'), ['c'], 'adresse d’une page');
+  assert.deepEqual(ids('immo aide'), ['c'], 'client et titre d’une page');
+  assert.deepEqual(ids('allianz hubspot'), [], 'tous les mots');
+});
+
+test('session cochée : rangée juste après la dernière session active ; décochée : remonte avec les actives', () => {
+  const caps = [{ id: 'a' }, { id: 'b' }, { id: 'c', done: false }, { id: 'x', done: true }, { id: 'y', done: true }];
+  const ids = (list) => list.map((c) => c.id + (c.done ? '*' : '')).join(' ');
+  assert.equal(ids(placeDone(caps, 'a', true)), 'b c a* x* y*', 'sous la dernière active, au-dessus des inactives');
+  assert.equal(ids(placeDone(caps, 'c', true)), 'a b c* x* y*', 'déjà sous la dernière active');
+  assert.equal(ids(placeDone(caps, 'y', false)), 'a b c y x*', 'décochée : à la suite des actives');
+  assert.equal(
+    ids(placeDone([{ id: 'x', done: true }, { id: 'a' }], 'a', true)),
+    'x* a*',
+    'aucune autre active : sur place',
+  );
+  assert.equal(
+    ids(
+      placeDone(
+        [
+          { id: 'x', done: true },
+          { id: 'y', done: true },
+        ],
+        'y',
+        false,
+      ),
+    ),
+    'y x*',
+    'seule active : en tête',
+  );
+  assert.equal(placeDone(caps, 'z', true), caps, 'session introuvable');
+  assert.equal(ids(caps), 'a b c x* y*', 'liste d’origine intacte');
+});
+
+test('temps d’ouverture : fin des périodes quand leurs fenêtres se ferment', () => {
+  const caps = [
+    {
+      id: 'a',
+      spans: [
+        { from: 10, to: 20 },
+        { from: 30, wins: [1, 2] },
+      ],
+    },
+    { id: 'b', spans: [{ from: 40, wins: [3] }] },
+    { id: 'c' },
+  ];
+  assert.ok(anyOpen(caps));
+  const one = closeSpans(caps, (w) => w !== 1, 50);
+  assert.deepEqual(one[0].spans[1], { from: 30, wins: [2] }, 'encore une fenêtre ouverte');
+  assert.equal(one[1], caps[1], 'autre capsule inchangée');
+  const two = closeSpans(one, (w) => w !== 2, 60);
+  assert.deepEqual(
+    two[0].spans,
+    [
+      { from: 10, to: 20 },
+      { from: 30, to: 60 },
+    ],
+    'dernière fenêtre fermée',
+  );
+  assert.equal(
+    closeSpans(two, (w) => w !== 9, 70),
+    null,
+    'fenêtre sans capsule : rien ne change',
+  );
+  const restart = closeSpans(two, () => false, 35);
+  assert.deepEqual(restart[1].spans, [{ from: 40, to: 40 }], 'Chrome redémarré : jamais avant le début');
+  assert.ok(!anyOpen(restart));
+  assert.deepEqual(
+    closeSpans([{ id: 'd', spans: [{ from: 5 }] }], () => true, 9)[0].spans,
+    [{ from: 5, to: 9 }],
+    'sans fenêtre',
+  );
+  assert.deepEqual(caps[0].spans[1].wins, [1, 2], 'liste d’origine intacte');
 });
 
 test('glisser-déposer : session placée avant ou après une autre', () => {

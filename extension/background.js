@@ -1,4 +1,5 @@
-// Allshare Tools Kit — service worker : mesures Insight, badge de l'icône, raccourci clavier.
+// Allshare Tools Kit — service worker : mesures Insight, badge de l'icône, raccourci clavier,
+// temps d'ouverture des capsules (fin notée à la fermeture de leurs fenêtres, voir lib/capsule.js).
 //
 // Une mesure se déroule ainsi (état « session » dans chrome.storage.session) :
 //   armed      le formulaire a été validé : les scripts de mesure sont injectés
@@ -22,6 +23,7 @@ import {
   migrateNetworkDefault,
 } from './lib/storage.js';
 import { canonical, normName } from './lib/names.js';
+import { getCapsules, closeOpenSpans, anyOpen } from './lib/capsule.js';
 import { urlEnd } from './lib/urls.js';
 import { NETWORK_LABELS } from './lib/format.js';
 
@@ -434,6 +436,39 @@ chrome.storage.onChanged.addListener((changes, area) => {
   );
 });
 
+// ---------------------------------------------------------------- Capsule : temps d'ouverture
+
+const ALIVE_ALARM = 'capsule-alive';
+
+// Mises à jour des capsules sérialisées : deux fenêtres fermées ensemble ne s'écrasent pas
+let capsuleChain = Promise.resolve();
+function closeCapsuleSpans(isOpen, ts) {
+  capsuleChain = capsuleChain
+    .then(async () => closeOpenSpans(isOpen, typeof ts === 'function' ? await ts() : ts))
+    .catch((e) => console.error('[Capsule] fermeture', e));
+  return capsuleChain;
+}
+
+/** Fin d'une période restée ouverte sans que sa fenêtre soit vue se fermer : dernier relevé de Chrome. */
+const lastAlive = async () => (await chrome.storage.local.get('capsuleAlive')).capsuleAlive || 0;
+
+chrome.windows.onRemoved.addListener((windowId) => closeCapsuleSpans((w) => w !== windowId, Date.now()));
+
+// Relevé chaque minute tant qu'une capsule est ouverte : si Chrome est quitté, ses périodes se terminent là
+async function syncAliveAlarm() {
+  const open = anyOpen(await getCapsules());
+  if (!open) await chrome.alarms.clear(ALIVE_ALARM);
+  else if (!(await chrome.alarms.get(ALIVE_ALARM))) await chrome.alarms.create(ALIVE_ALARM, { periodInMinutes: 1 });
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === ALIVE_ALARM) chrome.storage.local.set({ capsuleAlive: Date.now() });
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.capsules) syncAliveAlarm();
+});
+
 // Raccourci clavier : lance la mesure avec les valeurs du formulaire.
 chrome.commands.onCommand.addListener(async (command, tab) => {
   if (command !== 'arm-measure') return;
@@ -468,6 +503,15 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   if (details && details.reason === 'update') {
     await migrateNetworkDefault(details.previousVersion).catch((e) => console.error('[Insight] réseau', e));
   }
+  // Extension rechargée : les fenêtres fermées entre-temps n'ont pas été vues
+  const windows = new Set((await chrome.windows.getAll()).map((w) => w.id));
+  await closeCapsuleSpans((w) => windows.has(w), lastAlive);
+  await syncAliveAlarm();
   await boot();
 });
-chrome.runtime.onStartup.addListener(boot);
+chrome.runtime.onStartup.addListener(async () => {
+  // Chrome redémarré : les fenêtres de la dernière fois n'existent plus
+  await closeCapsuleSpans(() => false, lastAlive);
+  await syncAliveAlarm();
+  await boot();
+});

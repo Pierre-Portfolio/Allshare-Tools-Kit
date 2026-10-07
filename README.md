@@ -14,7 +14,7 @@ Extension Chrome qui réunit, dans un **panneau latéral**, cinq outils pour les
 2. **Insight** : la mesure du temps entre **le clic** et **l'affichage complet** d'une page, par client, SID, version, page et réseau (**Ethernet** ou **WiFi**), avec exports Excel et CSV ;
 3. **Training** : des formations complètes, avec exercices corrigés et progression enregistrée, en trois modules : **Métier RH**, **OLAP** et **Oracle APEX** ;
 4. **Prisme** : l'inspection d'un fichier CSV (encodage, séparateurs, colonnes décalées, accents cassés…) et sa conversion en ANSI ou en UTF-8 ;
-5. **CRA** : pour remplir le compte rendu d'activité, la liste des **capsules ouvertes dans la journée** et deux automatismes de la page de saisie du C.R.A (**Save** cliqué en quittant une ligne remplie, case de l'**étoile jaune** cochée à l'arrivée).
+5. **CRA** : pour remplir le compte rendu d'activité, la liste des **capsules ouvertes dans la journée** avec leur **temps d'ouverture**, et deux automatismes de la page de saisie du C.R.A (**Save** cliqué en quittant une ligne remplie, case de l'**étoile jaune** décochée à l'arrivée).
 
 À chaque ouverture, le panneau demande **Quels outils ?**. Tout reste **dans le navigateur** : aucune donnée n'est envoyée sur Internet. En bas de l'accueil, **Exporter mes données Tools Kit** les enregistre toutes dans un fichier, à réimporter après une réinstallation ou sur un autre poste.
 
@@ -34,7 +34,8 @@ Extension Chrome qui réunit, dans un **panneau latéral**, cinq outils pour les
 - **Mes sessions** : titre, client, nombre d'onglets et date ; **Rouvrir** recrée une fenêtre avec tous les onglets (épinglés compris), un clic sur un lien n'ouvre que celui-là
 - **✎ Renommer** (session dépliée) : le titre devient un champ, **Entrée** ou un clic ailleurs enregistre, **Échap** annule
 - **Pages d'une session** modifiables une fois la session dépliée : **×** retire une page ; **Ajouter** une adresse saisie (`exemple.fr/page` devient `https://exemple.fr/page`) ou **＋ Ajouter l'onglet affiché** dans la fenêtre ; une page déjà présente n'est pas ajoutée deux fois
-- **Case à cocher** à gauche de chaque session : cochée, la session n'est **plus active** et apparaît **barrée** ; filtre **Toutes / Actives / Inactives** au-dessus de la liste
+- **Rechercher une session** : champ au-dessus de la liste ; titre, client, commentaire, titre ou adresse d'une page, tous les mots tapés, sans tenir compte des accents ni des majuscules
+- **Case à cocher** à gauche de chaque session : cochée, la session n'est **plus active**, apparaît **barrée** et **descend juste en dessous de la dernière session active** (décochée, elle remonte à la suite des sessions actives) ; filtre **Toutes / Actives / Inactives** au-dessus de la liste
 - **Glisser-déposer** : l'ordre des sessions se change en les faisant glisser les unes au-dessus ou en dessous des autres ; il est gardé, y compris par l'export / import de « Mes données »
 - Seules les pages web sont enregistrées (http, https, fichiers locaux), pas les pages internes de Chrome ni la navigation privée
 
@@ -58,10 +59,11 @@ Extension Chrome qui réunit, dans un **panneau latéral**, cinq outils pour les
 - **Exporter en ANSI** ou **en UTF-8** (avec BOM), option CRLF ; les 10 derniers fichiers restent disponibles
 
 ### CRA : aide à la saisie du C.R.A (`panel/cra.html`, `content/cra.js`)
-- **Capsules ouvertes** : les sessions de Capsule **rouvertes** (Rouvrir, Tout rouvrir) ou **sauvegardées** dans la journée, avec les heures et le nombre d'onglets, dans l'ordre de la première ouverture ; un autre jour se choisit dans le calendrier
+- **Capsules ouvertes** : les sessions de Capsule **rouvertes** (Rouvrir, Tout rouvrir) ou **sauvegardées** dans la journée (ou restées ouvertes depuis la veille), avec les heures et le nombre d'onglets, dans l'ordre de la première ouverture ; un autre jour se choisit dans le calendrier
+- **Temps d'ouverture** en fin de ligne (« ouverte 1 h 05 », « (en cours) » si elle l'est encore) : une capsule est ouverte de sa sauvegarde ou de sa réouverture jusqu'à la **fermeture de sa fenêtre** ; deux ouvertures qui se chevauchent ne comptent pas double. Si Chrome est quitté, l'ouverture s'arrête à la dernière minute où il tournait. Compté à partir de cette version : les ouvertures plus anciennes n'ont pas de durée
 - Sur la page de saisie du C.R.A (adresses qui commencent par `https://dsb-cra.allshare-scenario.fr/apex/r/allshare_wks/xaas/saisie-cra?`), deux cases à cocher :
   - **Enregistrer chaque ligne remplie** : quand on quitte une ligne modifiée de la grille (autre ligne, bouton Add Row, reste de la page), le bouton **Save** est cliqué ; ouvrir une liste de valeurs ou un calendrier ne compte pas, et un Save déjà en cours (ou cliqué à la main) n'est pas relancé
-  - **Cocher l'étoile jaune en arrivant** : la case du surlignage (étoile jaune) de la grille est cochée à l'ouverture de la page, si elle ne l'est pas
+  - **Décocher l'étoile jaune en arrivant** : la case du surlignage (étoile jaune) de la grille est décochée à l'ouverture de la page, si elle est cochée ; quand les réglages de la grille sont repliés, ils sont dépliés le temps de la décocher, puis repliés
 - Réglages pris en compte aussitôt, sans recharger la page ; ils font partie de « Mes données »
 
 ### Mes données : sauvegarde complète (accueil, `lib/backup.js`)

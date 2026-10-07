@@ -3,11 +3,16 @@
 // chrome.storage.local
 //   capsules  sessions sauvegardées, dans l'ordre d'affichage (une nouvelle session arrive en tête,
 //             l'ordre se change ensuite par glisser-déposer) :
-//             [{ id, ts, title, client, comment, done, opens, tabs: [{ url, title, win, pinned }] }]
+//             [{ id, ts, title, client, comment, done, opens, spans, tabs: [{ url, title, win, pinned }] }]
 //             (client : facultatif, nom d'un client d'Insight ou saisi librement)
-//             (done : session cochée, plus active : barrée dans la liste)
+//             (done : session cochée, plus active : barrée dans la liste, rangée après les sessions actives)
 //             (opens : instants des réouvertures, les MAX_OPENS dernières : capsules du jour dans CRA)
+//             (spans : périodes d'ouverture [{ from, to, wins }], de la sauvegarde ou d'une réouverture jusqu'à
+//              la fermeture de ses fenêtres Chrome ; tant que la période dure, pas de `to` et `wins` liste les
+//              fenêtres encore ouvertes ; temps d'ouverture affiché dans CRA, fin notée par background.js)
 //             (win : numéro de la fenêtre d'origine, pour rouvrir fenêtre par fenêtre)
+//   capsuleAlive  dernier instant où Chrome tournait avec une capsule ouverte (relevé chaque minute) :
+//                 fin des périodes restées ouvertes quand Chrome a été quitté
 
 import { newId } from './storage.js';
 import { normName, nameKey, compareNames } from './names.js';
@@ -88,6 +93,66 @@ export function addTab(tabs, { url, title, pinned }) {
   return [...tabs, { url, title: normName(title) || url, pinned: !!pinned, win }];
 }
 
+/** Texte comparé sans accents ni majuscules. */
+const fold = (s) =>
+  String(s || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+/**
+ * Recherche : sessions dont le titre, le client, le commentaire ou une page (titre, adresse) contiennent
+ * tous les mots cherchés, sans tenir compte des accents ni des majuscules. Fonction pure.
+ */
+export function searchCapsules(capsules, query) {
+  const words = fold(query).split(/\s+/).filter(Boolean);
+  if (!words.length) return capsules;
+  return capsules.filter((c) => {
+    const text = fold([c.title, c.client, c.comment, ...c.tabs.flatMap((t) => [t.title, t.url])].join('\n'));
+    return words.every((w) => text.includes(w));
+  });
+}
+
+/**
+ * Session cochée (plus active) ou décochée : la case est notée et la session se range juste après la
+ * dernière session active ; les sessions actives restent ainsi au-dessus des autres. Cochée alors
+ * qu'aucune autre n'est active, elle ne bouge pas. Fonction pure.
+ */
+export function placeDone(capsules, id, done) {
+  const moved = capsules.find((c) => c.id === id);
+  if (!moved) return capsules;
+  const updated = { ...moved, done };
+  const rest = capsules.filter((c) => c.id !== id);
+  const at = rest.findLastIndex((c) => !c.done) + 1;
+  if (done && !at) return capsules.map((c) => (c === moved ? updated : c));
+  rest.splice(at, 0, updated);
+  return rest;
+}
+
+/**
+ * Fin des périodes d'ouverture qui n'ont plus de fenêtre : `isOpen(windowId)` dit si une fenêtre
+ * est encore ouverte ; une période terminée l'est à `ts` (jamais avant son début). Fonction pure.
+ * @returns {object[]|null} nouvelle liste, ou null si rien ne change
+ */
+export function closeSpans(capsules, isOpen, ts) {
+  let changed = false;
+  const next = capsules.map((c) => {
+    let mine = false;
+    const spans = (c.spans || []).map((s) => {
+      const wins = (s.wins || []).filter(isOpen);
+      if (s.to || (wins.length && wins.length === s.wins.length)) return s; // sans fenêtre : terminée
+      mine = true;
+      return wins.length ? { ...s, wins } : { from: s.from, to: Math.max(s.from, ts) };
+    });
+    changed ||= mine;
+    return mine ? { ...c, spans } : c;
+  });
+  return changed ? next : null;
+}
+
+/** Une capsule au moins est-elle ouverte en ce moment ? */
+export const anyOpen = (capsules) => capsules.some((c) => (c.spans || []).some((s) => !s.to));
+
 /** Sessions affichées pour un filtre : 'all' (toutes), 'active' (non cochées) ou 'inactive' (cochées). */
 export function filterCapsules(capsules, filter) {
   if (filter === 'active') return capsules.filter((c) => !c.done);
@@ -137,24 +202,35 @@ export async function getCapsules() {
   return (await chrome.storage.local.get('capsules')).capsules || [];
 }
 
-/** Enregistre des onglets (par défaut ceux ouverts) sous un titre ; client et commentaire facultatifs. */
+/**
+ * Enregistre des onglets (par défaut ceux ouverts) sous un titre ; client et commentaire facultatifs.
+ * La capsule est ouverte dans cette fenêtre jusqu'à sa fermeture (temps d'ouverture dans CRA).
+ */
 export async function saveCapsule({ title, client, comment, tabs }) {
+  const ts = Date.now();
+  const win = await chrome.windows.getCurrent();
   const capsule = {
     id: newId(),
-    ts: Date.now(),
+    ts,
     title: normName(title),
     client: normName(client),
     comment: String(comment || '').trim(),
+    spans: [{ from: ts, wins: [win.id] }],
     tabs: tabs || (await currentTabs()),
   };
   await chrome.storage.local.set({ capsules: [capsule, ...(await getCapsules())] });
   return capsule;
 }
 
-/** Modifie une session : { done } (cochée, plus active) ou { tabs } (page retirée ou ajoutée). */
+/** Modifie une session : { title } (renommée) ou { tabs } (page retirée ou ajoutée). */
 export async function updateCapsule(id, patch) {
   const capsules = (await getCapsules()).map((c) => (c.id === id ? { ...c, ...patch } : c));
   await chrome.storage.local.set({ capsules });
+}
+
+/** Session cochée (plus active) ou décochée : rangée juste après la dernière session active. */
+export async function setDone(id, done) {
+  await chrome.storage.local.set({ capsules: placeDone(await getCapsules(), id, done) });
 }
 
 /** Glisser-déposer : place la session `id` avant (ou après) la session `targetId`. */
@@ -172,6 +248,7 @@ export async function deleteCapsule(id) {
  */
 export async function reopenCapsule(capsule) {
   let opened = 0;
+  const wins = [];
   for (const group of byWindow(capsule.tabs)) {
     let windowId = null;
     for (const t of group) {
@@ -179,6 +256,7 @@ export async function reopenCapsule(capsule) {
         if (windowId === null) {
           const w = await chrome.windows.create({ url: t.url, focused: true });
           windowId = w.id;
+          wins.push(w.id);
           if (t.pinned && w.tabs && w.tabs[0]) await chrome.tabs.update(w.tabs[0].id, { pinned: true });
         } else {
           await chrome.tabs.create({ windowId, url: t.url, pinned: t.pinned, active: false });
@@ -189,15 +267,30 @@ export async function reopenCapsule(capsule) {
       }
     }
   }
-  if (opened) await recordOpen(capsule.id);
+  if (opened) await recordOpen(capsule.id, wins);
   return opened;
 }
 
-/** Note une réouverture de la session (liste des capsules du jour dans CRA). */
-export async function recordOpen(id, ts = Date.now()) {
+/**
+ * Note une réouverture de la session (liste des capsules du jour dans CRA) : elle est ouverte
+ * jusqu'à la fermeture des fenêtres `wins`.
+ */
+export async function recordOpen(id, wins, ts = Date.now()) {
   await chrome.storage.local.set({
     capsules: (await getCapsules()).map((c) =>
-      c.id === id ? { ...c, opens: [...(c.opens || []), ts].slice(-MAX_OPENS) } : c,
+      c.id === id
+        ? {
+            ...c,
+            opens: [...(c.opens || []), ts].slice(-MAX_OPENS),
+            spans: [...(c.spans || []), { from: ts, wins }].slice(-MAX_OPENS),
+          }
+        : c,
     ),
   });
+}
+
+/** Fenêtres fermées (ou perdues au redémarrage de Chrome) : fin des périodes d'ouverture concernées. */
+export async function closeOpenSpans(isOpen, ts = Date.now()) {
+  const capsules = closeSpans(await getCapsules(), isOpen, ts);
+  if (capsules) await chrome.storage.local.set({ capsules });
 }
