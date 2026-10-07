@@ -536,7 +536,7 @@ try {
   await tools.waitForURL(/\/panel\/panel\.html$/);
   await tools.click('.back');
   await tools.waitForURL(/\/panel\/home\.html\?choose$/);
-  assert.deepEqual(await tools.locator('.tool strong').allTextContents(), ['Training', 'Capsule', 'Insight', 'Prisme']);
+  assert.deepEqual(await tools.locator('.tool strong').allTextContents(), ['Capsule', 'Insight', 'Prisme', 'Training']);
   assert.equal((await tools.textContent('.brandline')).trim(), 'Allshare Tools Kit');
   await tools.waitForFunction(() => document.querySelector('#insightCount').textContent !== '');
   const insightCount = await tools.textContent('#insightCount');
