@@ -655,6 +655,41 @@ try {
   assert.equal(await tools.isChecked('[data-id="cap1"] .cap-done'), true);
   await tools.screenshot({ path: join(out, 'capsule-liste.png') });
   console.log('  Capsule : session cochée et barrée, filtre, ordre changé par glisser-déposer');
+  // Pages d'une session : ajoutées (adresse saisie, onglet affiché) puis retirée
+  const pagesOf = async (id) => (await storedCaps()).find((c) => c.id === id).tabs.map((t) => t.url);
+  const waitPages = async (id, n) => {
+    for (let i = 0; i < 50 && (await pagesOf(id)).length !== n; i++) await sleep(100);
+  };
+  const toastIs = (re) =>
+    tools.waitForFunction((src) => new RegExp(src).test(document.getElementById('toast').textContent), re.source);
+  const addInput = '[data-id="cap0"] .cap-add input';
+  await tools.click('[data-id="cap0"] .cap-title');
+  await tools.fill(addInput, 'chrome://settings');
+  await tools.press(addInput, 'Enter');
+  await toastIs(/^Adresse non valide/);
+  await tools.fill(addInput, `${base}/appli1/b`);
+  await tools.click('[data-id="cap0"] .cap-add [type="submit"]');
+  await waitPages('cap0', 2);
+  assert.deepEqual(await pagesOf('cap0'), [`${base}/appli1/a`, `${base}/appli1/b`], 'adresse ajoutée');
+  await tools.waitForSelector('[data-id="cap0"] .cap-links li >> nth=1');
+  assert.notEqual(await tools.getAttribute('[data-id="cap0"] .capsule', 'open'), null, 'session toujours dépliée');
+  assert.equal(await tools.inputValue(addInput), '', 'champ vidé');
+  await tools.fill(addInput, `${base}/appli1/b`);
+  await tools.press(addInput, 'Enter');
+  await toastIs(/déjà dans la session/);
+  // Onglet affiché dans la fenêtre du panneau
+  const shownUrl = `${base}/appli1/c`;
+  const shownTab = await tools.evaluate((url) => chrome.tabs.create({ url, active: true }).then((t) => t.id), shownUrl);
+  await tools.click('[data-id="cap0"] [data-add-current]');
+  await waitPages('cap0', 3);
+  await tools.evaluate((id) => chrome.tabs.remove(id), shownTab);
+  assert.deepEqual(await pagesOf('cap0'), [`${base}/appli1/a`, `${base}/appli1/b`, shownUrl], 'onglet affiché ajouté');
+  await tools.click('[data-id="cap0"] .cap-links li >> nth=0 >> .cap-remove');
+  await waitPages('cap0', 2);
+  assert.deepEqual(await pagesOf('cap0'), [`${base}/appli1/b`, shownUrl], 'page retirée');
+  await tools.waitForFunction(() => document.querySelectorAll('[data-id="cap0"] .cap-links li').length === 2);
+  await tools.screenshot({ path: join(out, 'capsule-pages.png') });
+  console.log('  Capsule : pages ajoutées (adresse, onglet affiché) et retirée');
 
   // 12. Prisme : CSV refusé, fichier propre, exemple avec erreurs, export, tableau de bord
   await tools.setViewportSize({ width: 380, height: 1000 });

@@ -288,6 +288,58 @@
   min-width: 0;
 }
 
+/* Page d'une session : lien et domaine, bouton × pour la retirer */
+.cap-link {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 6px;
+}
+
+.cap-remove {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  border: none;
+  background: none;
+  padding: 0 4px;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--muted);
+}
+
+.cap-remove:hover {
+  color: #dc2626;
+}
+
+.capsule > .cap-none {
+  margin: 0 10px 8px;
+}
+
+/* Ajout d'une page : adresse saisie ou onglet affiché */
+.cap-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 6px;
+  margin: 0 10px 8px;
+}
+
+.cap-add input {
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: 12.5px;
+}
+
+.cap-add button {
+  padding: 4px 10px;
+  font-size: 12.5px;
+}
+
+.cap-add button.link {
+  grid-column: 1 / -1;
+  justify-self: start;
+  padding: 2px 0;
+}
+
 .cap-links a {
   display: block;
   overflow: hidden;

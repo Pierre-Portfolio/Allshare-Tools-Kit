@@ -1,16 +1,19 @@
 // Capsule : sessions d'onglets sauvegardées (repliées au départ), puis bouton
 // « Sauvegarder cette session » (titre + commentaire facultatif).
 // Une session cochée n'est plus active (barrée) ; filtre Toutes / Actives / Inactives ;
-// l'ordre des sessions se change par glisser-déposer.
+// l'ordre des sessions se change par glisser-déposer ; pages retirées (×) ou ajoutées dans une session.
 import {
   getCapsules,
   saveCapsule,
-  setCapsuleDone,
+  updateCapsule,
   moveCapsule,
   deleteCapsule,
   reopenCapsule,
   filterCapsules,
   reorder,
+  toUrl,
+  addTab,
+  activeTab,
   currentTabs,
   describeTabs,
   host,
@@ -101,21 +104,53 @@ function item(c, open) {
           className: 'reopen',
           textContent: 'Rouvrir',
           title: 'Rouvrir tous les onglets',
+          disabled: !c.tabs.length,
           dataset: { open: c.id },
         }),
       ),
       c.comment ? el('p', { className: 'cap-comment', textContent: c.comment }) : null,
+      c.tabs.length
+        ? el(
+            'ol',
+            { className: 'cap-links' },
+            ...c.tabs.map((t, i) =>
+              el(
+                'li',
+                {},
+                el(
+                  'div',
+                  { className: 'cap-link' },
+                  el('a', { href: t.url, textContent: t.title, title: t.url, dataset: { url: t.url } }),
+                  el('small', { textContent: host(t.url) }),
+                  el('button', {
+                    type: 'button',
+                    className: 'cap-remove',
+                    textContent: '×',
+                    title: 'Retirer cette page de la session',
+                    dataset: { remove: String(i) },
+                  }),
+                ),
+              ),
+            ),
+          )
+        : el('p', { className: 'hint cap-none', textContent: 'Aucune page dans cette session.' }),
       el(
-        'ol',
-        { className: 'cap-links' },
-        ...c.tabs.map((t) =>
-          el(
-            'li',
-            {},
-            el('a', { href: t.url, textContent: t.title, title: t.url, dataset: { url: t.url } }),
-            el('small', { textContent: host(t.url) }),
-          ),
-        ),
+        'form',
+        { className: 'cap-add', autocomplete: 'off', noValidate: true },
+        el('input', {
+          type: 'text',
+          placeholder: 'Adresse à ajouter (https://…)',
+          title: 'Adresse de la page à ajouter à la session',
+          spellcheck: false,
+        }),
+        el('button', { type: 'submit', textContent: 'Ajouter' }),
+        el('button', {
+          type: 'button',
+          className: 'link',
+          textContent: '＋ Ajouter l’onglet affiché',
+          title: 'Ajouter la page affichée dans cette fenêtre',
+          dataset: { addCurrent: c.id },
+        }),
       ),
       el(
         'div',
@@ -124,6 +159,7 @@ function item(c, open) {
           type: 'button',
           className: 'primary',
           textContent: `↗ Tout rouvrir (${c.tabs.length})`,
+          disabled: !c.tabs.length,
           dataset: { open: c.id },
         }),
         el('button', { type: 'button', className: 'link danger', textContent: 'Supprimer', dataset: { del: c.id } }),
@@ -132,10 +168,26 @@ function item(c, open) {
   );
 }
 
+/** Ajoute une page à une session ; false si elle y est déjà. */
+async function addPage(c, tab) {
+  const tabs = addTab(c.tabs, tab);
+  if (!tabs) {
+    toast('Cette page est déjà dans la session');
+    return false;
+  }
+  await updateCapsule(c.id, { tabs });
+  toast(`Page ajoutée : ${tabs[tabs.length - 1].title}`);
+  return true;
+}
+
+const capsuleOf = (node) => capsules.find((c) => c.id === node.closest('.cap-item').dataset.id);
+
 $('capsules').addEventListener('click', async (e) => {
   const link = e.target.closest('[data-url]');
   const open = e.target.closest('[data-open]');
   const del = e.target.closest('[data-del]');
+  const remove = e.target.closest('[data-remove]');
+  const addCurrent = e.target.closest('[data-add-current]');
   if (link) {
     e.preventDefault();
     chrome.tabs.create({ url: link.dataset.url });
@@ -150,12 +202,43 @@ $('capsules').addEventListener('click', async (e) => {
     if (!c || !confirm(`Supprimer la session « ${c.title} » ?`)) return;
     await deleteCapsule(c.id);
     toast('Session supprimée');
+  } else if (remove) {
+    const c = capsuleOf(remove);
+    const i = Number(remove.dataset.remove);
+    if (!c || !c.tabs[i]) return;
+    await updateCapsule(c.id, { tabs: c.tabs.filter((_, k) => k !== i) });
+    toast(`Page retirée : ${c.tabs[i].title}`);
+  } else if (addCurrent) {
+    const c = capsuleOf(addCurrent);
+    const tab = await activeTab();
+    if (!tab) return toast('L’onglet affiché ne peut pas être ajouté (page interne de Chrome)');
+    if (c) await addPage(c, tab);
   }
+});
+
+$('capsules').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const input = e.target.querySelector('input');
+  const url = toUrl(input.value);
+  if (!url) {
+    toast('Adresse non valide : une page web (https://…) ou un fichier local');
+    return input.focus();
+  }
+  const c = capsuleOf(e.target);
+  if (c && (await addPage(c, { url }))) input.value = '';
 });
 
 $('capsules').addEventListener('change', (e) => {
   const box = e.target.closest('[data-done]');
-  if (box) setCapsuleDone(box.dataset.done, box.checked);
+  if (box) updateCapsule(box.dataset.done, { done: box.checked });
+});
+
+// Saisie d'une adresse : la session ne se déplace pas quand on sélectionne le texte du champ
+$('capsules').addEventListener('focusin', (e) => {
+  if (e.target.matches('.cap-add input')) e.target.closest('.cap-item').draggable = false;
+});
+$('capsules').addEventListener('focusout', (e) => {
+  if (e.target.matches('.cap-add input')) e.target.closest('.cap-item').draggable = true;
 });
 
 $('capFilter').addEventListener('click', (e) => {

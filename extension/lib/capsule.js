@@ -60,6 +60,31 @@ export function clientNames(apps, measures) {
   return [...names.values()].sort(compareNames);
 }
 
+/**
+ * Adresse saisie pour ajouter une page : « exemple.fr/x » devient « https://exemple.fr/x ».
+ * @returns {string} adresse complète, ou '' si elle ne peut pas être rouverte (chrome://, invalide…)
+ */
+export function toUrl(text) {
+  const s = String(text || '').trim();
+  if (!s) return '';
+  try {
+    const url = new URL(/^[a-z][\w+.-]*:\/\//i.test(s) ? s : `https://${s}`).href;
+    return isSavable(url) ? url : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Ajoute une page en fin de session, dans sa dernière fenêtre. Fonction pure.
+ * @returns {object[]|null} nouveaux onglets, ou null si la page y est déjà
+ */
+export function addTab(tabs, { url, title, pinned }) {
+  if (tabs.some((t) => t.url === url)) return null;
+  const win = tabs.length ? tabs[tabs.length - 1].win : 0;
+  return [...tabs, { url, title: normName(title) || url, pinned: !!pinned, win }];
+}
+
 /** Sessions affichées pour un filtre : 'all' (toutes), 'active' (non cochées) ou 'inactive' (cochées). */
 export function filterCapsules(capsules, filter) {
   if (filter === 'active') return capsules.filter((c) => !c.done);
@@ -93,6 +118,13 @@ export function host(url) {
 
 // ---------------------------------------------------------------- Navigateur
 
+/** Onglet affiché dans la fenêtre du panneau, ou null s'il ne peut pas être sauvegardé (page interne…). */
+export async function activeTab() {
+  const [t] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const url = t && (t.url || t.pendingUrl);
+  return isSavable(url) ? { url, title: t.title, pinned: !!t.pinned } : null;
+}
+
 /** Onglets de la fenêtre où le panneau est ouvert (les autres fenêtres ne sont pas sauvegardées). */
 export async function currentTabs() {
   return snapshot([await chrome.windows.getCurrent({ populate: true })]);
@@ -116,9 +148,9 @@ export async function saveCapsule({ title, client, comment, tabs }) {
   return capsule;
 }
 
-/** Coche (session plus active, barrée) ou décoche une session. */
-export async function setCapsuleDone(id, done) {
-  const capsules = (await getCapsules()).map((c) => (c.id === id ? { ...c, done: !!done } : c));
+/** Modifie une session : { done } (cochée, plus active) ou { tabs } (page retirée ou ajoutée). */
+export async function updateCapsule(id, patch) {
+  const capsules = (await getCapsules()).map((c) => (c.id === id ? { ...c, ...patch } : c));
   await chrome.storage.local.set({ capsules });
 }
 

@@ -9,6 +9,8 @@ import {
   clientNames,
   filterCapsules,
   reorder,
+  toUrl,
+  addTab,
 } from '../../extension/lib/capsule.js';
 
 const tab = (url, title = '', pinned = false) => ({ url, title, pinned });
@@ -79,4 +81,30 @@ test('glisser-déposer : session placée avant ou après une autre', () => {
   assert.equal(reorder(caps, 'b', 'b'), caps, 'sur elle-même');
   assert.equal(reorder(caps, 'x', 'a'), caps, 'session introuvable');
   assert.equal(ids(caps), 'abcd', 'liste d’origine intacte');
+});
+
+test('adresse saisie pour ajouter une page', () => {
+  assert.equal(toUrl('  exemple.fr/page?x=1 '), 'https://exemple.fr/page?x=1', 'https:// ajouté');
+  assert.equal(toUrl('localhost:8080/app'), 'https://localhost:8080/app');
+  assert.equal(toUrl('http://srv/app'), 'http://srv/app');
+  assert.equal(toUrl('file:///C:/rapport.html'), 'file:///C:/rapport.html');
+  assert.equal(toUrl('chrome://settings/'), '', 'page interne de Chrome');
+  assert.equal(toUrl('javascript:alert(1)'), '', 'adresse invalide');
+  assert.equal(toUrl('   '), '');
+});
+
+test('page ajoutée en fin de session, dans sa dernière fenêtre, sans doublon', () => {
+  const tabs = [
+    { url: 'https://a.fr/', title: 'A', pinned: true, win: 0 },
+    { url: 'https://b.fr/', title: 'B', pinned: false, win: 1 },
+  ];
+  assert.deepEqual(addTab(tabs, { url: 'https://c.fr/', title: '  Page   C ' }).slice(2), [
+    { url: 'https://c.fr/', title: 'Page C', pinned: false, win: 1 },
+  ]);
+  assert.deepEqual(addTab(tabs, { url: 'https://d.fr/' })[2].title, 'https://d.fr/', 'sans titre : l’adresse');
+  assert.equal(addTab(tabs, { url: 'https://a.fr/', title: 'A bis' }), null, 'déjà dans la session');
+  assert.deepEqual(addTab([], { url: 'https://a.fr/', title: 'A', pinned: true }), [
+    { url: 'https://a.fr/', title: 'A', pinned: true, win: 0 },
+  ]);
+  assert.equal(tabs.length, 2, 'liste d’origine intacte');
 });
