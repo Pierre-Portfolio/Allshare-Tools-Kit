@@ -7,7 +7,7 @@
 // IndexedDB « prisme », magasin « files » : contenu de chaque fichier { id, bytes }
 //   (hors de chrome.storage.local : les mesures d'Insight y sont relues en entier à chaque affichage)
 
-import { newId } from './storage.js';
+import { newId, withLock } from './storage.js';
 import { fingerprint, summarize } from './prisme.js';
 
 export const MAX_FILES = 10;
@@ -20,10 +20,12 @@ export async function getPrismeSettings() {
   return { ...DEFAULT_PRISME_SETTINGS, ...prismeSettings };
 }
 
-export async function savePrismeSettings(patch) {
-  const next = { ...(await getPrismeSettings()), ...patch };
-  await chrome.storage.local.set({ prismeSettings: next });
-  return next;
+export function savePrismeSettings(patch) {
+  return withLock('prismeSettings', async () => {
+    const next = { ...(await getPrismeSettings()), ...patch };
+    await chrome.storage.local.set({ prismeSettings: next });
+    return next;
+  });
 }
 
 // ---------------------------------------------------------------- Contenu (IndexedDB)
@@ -70,7 +72,11 @@ export async function getFiles() {
  * remonte simplement en tête). Au-delà de MAX_FILES, les plus anciens sont oubliés.
  * @returns {Promise<object>} l'entrée enregistrée
  */
-export async function addFile(name, bytes, res) {
+export function addFile(name, bytes, res) {
+  return withLock('prismeFiles', () => addFileUnlocked(name, bytes, res));
+}
+
+async function addFileUnlocked(name, bytes, res) {
   const files = await getFiles();
   const hash = fingerprint(bytes);
   const same = files.find((f) => f.hash === hash && f.name === name && f.size === bytes.length);
@@ -90,27 +96,33 @@ export async function addFile(name, bytes, res) {
 }
 
 /** Remet un fichier en tête (fichier en cours), avec son résumé recalculé si fourni. */
-export async function touchFile(id, res) {
-  const files = await getFiles();
-  const f = files.find((x) => x.id === id);
-  if (!f) return null;
-  const entry = { ...f, ts: Date.now(), ...(res ? { summary: summarize(res) } : {}) };
-  await chrome.storage.local.set({ prismeFiles: [entry, ...files.filter((x) => x.id !== id)] });
-  return entry;
-}
-
-/** Met à jour le résumé d'un fichier sans changer l'ordre (ex. encodage attendu modifié). */
-export async function updateSummary(id, res) {
-  const files = await getFiles();
-  if (!files.some((f) => f.id === id)) return;
-  await chrome.storage.local.set({
-    prismeFiles: files.map((f) => (f.id === id ? { ...f, summary: summarize(res) } : f)),
+export function touchFile(id, res) {
+  return withLock('prismeFiles', async () => {
+    const files = await getFiles();
+    const f = files.find((x) => x.id === id);
+    if (!f) return null;
+    const entry = { ...f, ts: Date.now(), ...(res ? { summary: summarize(res) } : {}) };
+    await chrome.storage.local.set({ prismeFiles: [entry, ...files.filter((x) => x.id !== id)] });
+    return entry;
   });
 }
 
-export async function deleteFile(id) {
-  await tx('readwrite', (s) => s.delete(id));
-  await chrome.storage.local.set({ prismeFiles: (await getFiles()).filter((f) => f.id !== id) });
+/** Met à jour le résumé d'un fichier sans changer l'ordre (ex. encodage attendu modifié). */
+export function updateSummary(id, res) {
+  return withLock('prismeFiles', async () => {
+    const files = await getFiles();
+    if (!files.some((f) => f.id === id)) return;
+    await chrome.storage.local.set({
+      prismeFiles: files.map((f) => (f.id === id ? { ...f, summary: summarize(res) } : f)),
+    });
+  });
+}
+
+export function deleteFile(id) {
+  return withLock('prismeFiles', async () => {
+    await tx('readwrite', (s) => s.delete(id));
+    await chrome.storage.local.set({ prismeFiles: (await getFiles()).filter((f) => f.id !== id) });
+  });
 }
 
 // ---------------------------------------------------------------- Navigateur

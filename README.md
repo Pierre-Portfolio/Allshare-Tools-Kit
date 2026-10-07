@@ -44,7 +44,7 @@ Extension Chrome qui réunit, dans un **panneau latéral**, cinq outils pour les
 - **Mesure** : le chrono part **au clic** sur le lien de la page à mesurer et s'arrête quand la page est **complètement affichée** ; pages classiques comme applications sans rechargement (Angular, React…)
 - **Résultat** : **↻ Relancer en WiFi** (même page, l'autre réseau : l'onglet revient seul à la page de départ), **↻ Refaire en Ethernet** (une mesure de plus), **Page suivante →** (la prochaine page non mesurée est choisie **et l'enregistrement relancé aussitôt** : il ne reste qu'à cliquer sur cette page dans l'application ; **Annuler** ramène au formulaire)
 - **Détail du chargement** : redirection, DNS, connexion, **attente serveur (requêtes SQL comprises)**, téléchargement, DOM, load, appels AJAX, requêtes les plus lentes
-- **Pour aller plus vite** : auto-complétion, client proposé d'après l'onglet, SID et version repris de la dernière mesure, avancement Ethernet / WiFi de la ligne client, raccourci <kbd>Alt</kbd>+<kbd>Maj</kbd>+<kbd>M</kbd>
+- **Pour aller plus vite** : auto-complétion, client proposé d'après l'onglet, SID et version repris de la dernière mesure, avancement Ethernet / WiFi de la ligne client, raccourci <kbd>Alt</kbd>+<kbd>Maj</kbd>+<kbd>M</kbd> (le panneau s'ouvre sur Insight : mesure prête, ou formulaire à compléter)
 - **Tableau de bord et exports** : grille clients × pages (vues Ethernet + WiFi, Ethernet, WiFi, Écart), tri, recherche, filtres « Incomplets » et « Anomalies », détail d'un client, suppressions ; exports **Excel** ou **CSV** en une ligne (tout, une page, un client, détail des temps), avec URL complète et fin d'URL en option
 - **Modifier une ligne** (menu ⋯ ou détail du client) : client, SID et version ; toutes les mesures de la ligne suivent (regroupées si la ligne existe déjà, client renommé dans le référentiel s'il n'a pas d'autre ligne)
 - **Relancer une mesure** : **double-clic sur une case** du tableau de bord (ou du détail d'un client) → la page de départ s'ouvre dans un nouvel onglet avec l'enregistrement lancé, il ne reste qu'à cliquer sur la page ; l'ancienne mesure est remplacée quand la nouvelle est enregistrée (case à décocher pour la garder). Sur une case **N/A**, la page est mesurée pour la première fois
@@ -56,12 +56,12 @@ Extension Chrome qui réunit, dans un **panneau latéral**, cinq outils pour les
 - **Verdict** : erreurs et alertes, encodage, séparateur, fins de ligne, lignes, colonnes, 5 principales anomalies
 - **53 contrôles** classés en erreur, alerte ou info : encodage, structure, guillemets, contenu (accents cassés, espaces insécables, formules…), cohérence des colonnes, fins de ligne
 - **Tableau de bord** : résumé, 4 vues (Détails, Données brutes, Visuel d'Excel, CSV brut) et **inspecteur de cellule** (caractères un par un, octets ANSI et UTF-8)
-- **Exporter en ANSI** ou **en UTF-8** (avec BOM), option CRLF ; les 10 derniers fichiers restent disponibles
+- **Exporter en ANSI** ou **en UTF-8** (avec BOM), option CRLF ; un fichier à **encodage mixte** (lignes UTF-8 dans un fichier ANSI) est lu ligne par ligne, et la conversion répare ses accents ; les 10 derniers fichiers restent disponibles
 
 ### CRA : aide à la saisie du C.R.A (`panel/cra.html`, `content/cra.js`)
 - **Capsules ouvertes** : les sessions de Capsule **rouvertes** (Rouvrir, Tout rouvrir) ou **sauvegardées** dans la journée (ou restées ouvertes depuis la veille), avec les heures et le nombre d'onglets, dans l'ordre de la première ouverture ; un autre jour se choisit dans le calendrier
 - **Temps d'ouverture** en fin de ligne (« ouverte 1 h 05 », « (en cours) » si elle l'est encore) : une capsule est ouverte de sa sauvegarde ou de sa réouverture jusqu'à la **fermeture de sa fenêtre** ; deux ouvertures qui se chevauchent ne comptent pas double. Si Chrome est quitté, l'ouverture s'arrête à la dernière minute où il tournait. Compté à partir de cette version : les ouvertures plus anciennes n'ont pas de durée
-- Sur la page de saisie du C.R.A (adresses qui commencent par `https://dsb-cra.allshare-scenario.fr/apex/r/allshare_wks/xaas/saisie-cra?`), deux cases à cocher :
+- Sur la page de saisie du C.R.A (`https://dsb-cra.allshare-scenario.fr/apex/r/allshare_wks/xaas/saisie-cra`, avec ou sans paramètres), deux cases à cocher :
   - **Enregistrer chaque ligne remplie** : quand on quitte une ligne modifiée de la grille (autre ligne, bouton Add Row, reste de la page), le bouton **Save** est cliqué ; ouvrir une liste de valeurs ou un calendrier ne compte pas, et un Save déjà en cours (ou cliqué à la main) n'est pas relancé
   - **Décocher l'étoile jaune en arrivant** : la case du surlignage (étoile jaune) de la grille est décochée à l'ouverture de la page, si elle est cochée ; quand les réglages de la grille sont repliés, ils sont dépliés le temps de la décocher, puis repliés
 - Réglages pris en compte aussitôt, sans recharger la page ; ils font partie de « Mes données »
@@ -104,7 +104,8 @@ Avant de **supprimer** l'extension (nouvelle version installée à la place, cha
 
 ```bash
 npm test               # tests unitaires (Node 18+, aucune dépendance)
-npm install            # installe Playwright pour le test de bout en bout
+npm ci                 # installe Playwright (version figée par package-lock.json)
+npx playwright install chromium   # une fois : le Chromium de cette version de Playwright
 npm run test:e2e       # charge l'extension dans Chromium et déroule le parcours complet
 npm run zip            # crée allshare-tools-kit.zip (dossier extension/)
 ```

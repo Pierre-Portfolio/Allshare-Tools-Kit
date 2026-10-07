@@ -92,13 +92,20 @@ async function renderPages() {
   );
 }
 
-// Temps d'ouverture des capsules et des pages encore ouvertes : mis à jour chaque minute
+// Temps d'ouverture des capsules et des pages encore ouvertes : mis à jour chaque minute.
+// Après minuit, le calendrier resté sur « aujourd'hui » passe au nouveau jour.
+let today = isoDay(new Date());
 setInterval(() => {
+  const now = isoDay(new Date());
+  if (now !== today) {
+    if ($('craDay').value === today) $('craDay').value = now;
+    today = now;
+  }
   renderList();
   renderPages();
 }, 60000);
 
-$('craDay').value = isoDay(new Date());
+$('craDay').value = today;
 $('craDay').addEventListener('change', renderList);
 
 // ---------------------------------------------------------------- Réglages

@@ -244,13 +244,16 @@ $('capsules').addEventListener('click', async (e) => {
 $('capsules').addEventListener('submit', async (e) => {
   e.preventDefault();
   const input = e.target.querySelector('input');
-  const url = toUrl(input.value);
+  const typed = input.value;
+  const url = toUrl(typed);
   if (!url) {
     toast('Adresse non valide : une page web (https://…) ou un fichier local');
     return input.focus();
   }
   const c = capsuleOf(e.target);
-  if (c && (await addPage(c, { url }))) input.value = '';
+  if (!c) return;
+  input.value = ''; // avant l'enregistrement : la liste rechargée affiche la page ajoutée
+  if (!(await addPage(c, { url }))) input.value = typed;
 });
 
 $('capsules').addEventListener('change', (e) => {
@@ -291,7 +294,11 @@ async function endRename(input, save) {
   renaming = null;
   const c = capsuleOf(input);
   const title = normName(input.value);
-  if (!save || !c || !title || title === c.title) return render();
+  if (!save || !c || !title || title === c.title) {
+    if (!staleList) return render();
+    staleList = false;
+    return load(); // la liste a changé pendant la saisie
+  }
   await updateCapsule(c.id, { title });
   toast(`Session renommée : ${title}`);
 }
@@ -430,8 +437,23 @@ $('saveForm').addEventListener('submit', async (e) => {
   toast(`« ${c.title} » sauvegardée : ${describeTabs(c.tabs)}`);
 });
 
+// Liste rechargée à chaque changement (autre panneau, fenêtre de capsule fermée…), sauf pendant une
+// saisie dans la liste (titre en cours de modification, adresse tapée) : elle le sera à la sortie du champ.
+let staleList = false;
+const typing = () => {
+  const a = document.activeElement;
+  return !!a && (a === renaming || (a.matches('.cap-add input') && a.value.trim() !== ''));
+};
+$('capsules').addEventListener('focusout', (e) => {
+  if (!staleList || !e.target.matches('input[type="text"]')) return;
+  staleList = false;
+  setTimeout(load); // après l'enregistrement d'un titre (endRename)
+});
+
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.capsules) load();
+  if (area !== 'local' || !changes.capsules) return;
+  if (typing()) staleList = true;
+  else load();
 });
 
 load();

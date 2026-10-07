@@ -194,6 +194,16 @@ try {
     }
   }
 
+  /** Valeur lue dans le service worker une fois égale à `expected` (les réglages s'écrivent après l'affichage). */
+  async function waitStored(fn, expected, label, timeout = 5000) {
+    let value;
+    for (const end = Date.now() + timeout; Date.now() < end; await sleep(100)) {
+      value = await storage(fn);
+      if (value === expected) return;
+    }
+    assert.equal(value, expected, label);
+  }
+
   for (const p of context.pages()) if (p.url().startsWith('chrome-extension://')) await p.close();
   const session = () => storage(async () => (await chrome.storage.session.get('session')).session || null);
   async function waitSession(pred, label, timeout = 15000) {
@@ -462,7 +472,7 @@ try {
     (sel) => /^[\d\u202f]+$/.test(document.querySelector(sel).textContent.trim()),
     ethClients,
   );
-  assert.equal(await storage(async () => (await chrome.storage.local.get('settings')).settings.unit), 'ms');
+  await waitStored(async () => (await chrome.storage.local.get('settings')).settings.unit, 'ms', 'unité enregistrée');
   await report.click('#units [data-unit="s"]');
   await report.waitForFunction((sel) => /,\d\d$/.test(document.querySelector(sel).textContent.trim()), ethClients);
 
@@ -569,10 +579,15 @@ try {
   const ficheInput = options.locator('#pageRows input[aria-label="Nom de la page Fiche client"]');
   await ficheInput.fill('Détail client');
   await ficheInput.press('Tab');
-  await options.waitForFunction(async () => {
-    const all = await chrome.storage.local.get(null);
-    return Object.keys(all).some((k) => k.startsWith('m_') && all[k].page === 'Détail client');
-  });
+  // waitForFunction ne sait pas attendre une fonction async (une promesse est « vraie ») : attente côté Node
+  const renamed = () =>
+    storage(async () => {
+      const all = await chrome.storage.local.get(null);
+      return Object.keys(all).some((k) => k.startsWith('m_') && all[k].page === 'Détail client');
+    });
+  for (let end = Date.now() + 10000; !(await renamed()); await sleep(100)) {
+    if (Date.now() > end) throw new Error('mesures de la page renommée attendues');
+  }
   const pagesNow = await storage(async () => (await chrome.storage.local.get('pages')).pages.map((p) => p.name));
   assert.ok(pagesNow.includes('Détail client') && !pagesNow.includes('Fiche client'), 'page renommée');
   console.log('  Référentiel :', JSON.stringify(pagesNow));
@@ -580,9 +595,16 @@ try {
   // 11. Accueil « Quels outils ? » puis Capsule : sauvegarde des onglets ouverts, réouverture, suppression
   const tools = await context.newPage();
   await tools.setViewportSize({ width: 380, height: 640 });
-  await storage(() => chrome.storage.session.set({ panelTool: 'insight' })); // raccourci clavier : Insight direct
+  // Raccourci clavier avec un formulaire incomplet : Insight direct
+  await storage(() => chrome.storage.session.set({ panelTool: { tool: 'insight', at: Date.now() } }));
   await tools.goto(`chrome-extension://${extId}/panel/home.html`);
   await tools.waitForURL(/\/panel\/panel\.html$/);
+  for (let i = 0; i < 50 && (await storage(() => chrome.storage.session.get('panelTool'))).panelTool; i++)
+    await sleep(100);
+  assert.ok(
+    !(await storage(() => chrome.storage.session.get('panelTool'))).panelTool,
+    'demande du raccourci satisfaite',
+  );
   await tools.click('.back');
   await tools.waitForURL(/\/panel\/home\.html\?choose$/);
   assert.deepEqual(await tools.locator('.tool strong').allTextContents(), [
@@ -827,12 +849,16 @@ try {
   await tools.click('#demo');
   await tools.waitForFunction(() => document.querySelector('#resName').textContent === 'exemple_avec_erreurs.csv');
   assert.equal(await tools.getAttribute('#resVerdict', 'class'), 'v-verdict error');
-  assert.match(await tools.textContent('#resVerdict'), /10 erreurs · 15 alertes/);
+  assert.match(await tools.textContent('#resVerdict'), /7 erreurs · 15 alertes/);
   assert.equal(await tools.locator('#resIssues .v-issue').count(), 5);
   // Encodage attendu partagé avec le tableau de bord
   await tools.click('[data-expected="utf8"]');
   await tools.waitForFunction(() => document.querySelector('[data-expected="utf8"]').ariaChecked === 'true');
-  assert.equal((await storage(() => chrome.storage.local.get('prismeSettings'))).prismeSettings.expected, 'utf8');
+  await waitStored(
+    async () => (await chrome.storage.local.get('prismeSettings')).prismeSettings?.expected,
+    'utf8',
+    'encodage attendu enregistré',
+  );
   await tools.click('[data-expected="ansi"]');
   // Export ANSI, fins de ligne Windows
   const [exp] = await Promise.all([tools.waitForEvent('download'), tools.click('#expAnsi')]);
@@ -1173,10 +1199,11 @@ try {
   await tools.setInputFiles('#importAllFile', kitPath);
   await tools.waitForFunction(() => /^Données importées : /.test(document.querySelector('#dataStatus').textContent));
   // Identifiants des clients et des pages recréés, listes vides absentes : sans importance
+  // capsuleAlive (dernier relevé de Chrome) est propre au poste de la sauvegarde : jamais repris
   const comparable = (s) =>
     Object.fromEntries(
       Object.entries(s)
-        .filter(([, v]) => !(Array.isArray(v) && !v.length))
+        .filter(([k, v]) => !(Array.isArray(v) && !v.length) && k !== 'capsuleAlive')
         .map(([k, v]) => [k, k === 'apps' || k === 'pages' ? v.map(({ id, ...rest }) => rest) : v]),
     );
   const kitAfter = await storage(() => chrome.storage.local.get(null));

@@ -4,11 +4,41 @@
 // chaque requête au script de mesure (content.js) via deux évènements DOM :
 // « insight:net-start » et « insight:net-end ». Le comportement de la page
 // n'est pas modifié.
+//
+// Une requête fetch se termine quand son corps est entièrement reçu (la promesse de fetch
+// se résout dès les en-têtes), comme XMLHttpRequest avec « loadend ».
+// Hors mesure, le script ne fait rien : content.js envoie « insight:stop » quand aucune mesure
+// ne concerne l'onglet (ou qu'elle est finie) et « insight:watch » quand une mesure reprend.
 (() => {
   if (window.__insightPageHook) return;
   Object.defineProperty(window, '__insightPageHook', { value: true });
 
-  const emit = (type) => document.dispatchEvent(new Event(type));
+  let watching = true;
+  document.addEventListener('insight:stop', () => {
+    watching = false;
+  });
+  document.addEventListener('insight:watch', () => {
+    watching = true;
+  });
+
+  const emit = (type) => watching && document.dispatchEvent(new Event(type));
+
+  /** Fin de la requête : corps lu jusqu'au bout sur une copie (flux d'évènements : dès les en-têtes). */
+  function endWithBody(response) {
+    const type = (response.headers && response.headers.get('content-type')) || '';
+    let reader = null;
+    try {
+      if (watching && response.body && !response.bodyUsed && !/event-stream/i.test(type)) {
+        reader = response.clone().body.getReader();
+      }
+    } catch {
+      reader = null;
+    }
+    if (!reader) return emit('insight:net-end');
+    const end = () => emit('insight:net-end');
+    const pump = () => reader.read().then(({ done }) => (done ? end() : pump()), end);
+    pump();
+  }
 
   const nativeFetch = window.fetch;
   if (typeof nativeFetch === 'function') {
@@ -21,10 +51,7 @@
         emit('insight:net-end');
         throw e;
       }
-      promise.then(
-        () => emit('insight:net-end'),
-        () => emit('insight:net-end'),
-      );
+      promise.then(endWithBody, () => emit('insight:net-end'));
       return promise;
     };
   }

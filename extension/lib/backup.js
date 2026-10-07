@@ -12,9 +12,11 @@
 // L'import fusionne : rien n'est effacé sur le poste, une donnée déjà présente est ignorée
 // (réimporter le même fichier ne crée pas de doublon) et les réglages du fichier sont repris.
 
-import { MEASURE_PREFIX, mergeInsight, isMeasureKey } from './storage.js';
+import { MEASURE_PREFIX, DEFAULT_SETTINGS, mergeInsight, isMeasureKey } from './storage.js';
 import { mergeProgress, normalize } from './training.js';
-import { MAX_FILES, getFileBytes, putFileBytes, deleteFileBytes } from './prisme-files.js';
+import { MAX_FILES, DEFAULT_PRISME_SETTINGS, getFileBytes, putFileBytes, deleteFileBytes } from './prisme-files.js';
+import { closeSpans, isSavable } from './capsule.js';
+import { DEFAULT_CRA } from './cra.js';
 
 export const BACKUP_FORMAT = 'allshare-tools-kit';
 
@@ -22,6 +24,15 @@ export const BACKUP_FORMAT = 'allshare-tools-kit';
 const SETTINGS_KEYS = ['settings', 'prismeSettings', 'craSettings', 'draft'];
 /** Données fusionnées une à une (les autres clés ne sont reprises que si le poste ne les a pas). */
 const MERGED_KEYS = ['apps', 'pages', 'capsules', 'prismeFiles', 'training', ...SETTINGS_KEYS];
+/** Propres au poste qui a fait la sauvegarde : jamais reprises. */
+const LOCAL_KEYS = ['capsuleAlive'];
+/** Valeurs par défaut des réglages : une valeur du fichier d'un autre type est ignorée. */
+const SETTINGS_DEFAULTS = {
+  settings: DEFAULT_SETTINGS,
+  prismeSettings: DEFAULT_PRISME_SETTINGS,
+  craSettings: DEFAULT_CRA,
+  draft: { app: '', sid: '', version: '', page: '', specific: false },
+};
 
 const isObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const list = (v) => (Array.isArray(v) ? v : []);
@@ -33,6 +44,30 @@ const answersOf = (training) => {
   const p = normalize(training);
   return Object.keys(p.qcm).length + Object.keys(p.open).length;
 };
+
+/** Réglages du fichier dont le type est celui attendu (les clés d'une version future sont reprises). */
+function validSettings(values, defaults) {
+  return Object.fromEntries(
+    Object.entries(values).filter(([key, v]) => {
+      if (!(key in defaults)) return true;
+      const type = typeof defaults[key];
+      return typeof v === type && (type !== 'number' || Number.isFinite(v));
+    }),
+  );
+}
+
+/**
+ * Sessions Capsule d'une sauvegarde : seules les adresses rouvrables sont gardées, et une période
+ * d'ouverture encore en cours ne continue que si sa fenêtre est ouverte sur ce poste (sinon elle se
+ * termine à la date de la sauvegarde) : les fenêtres d'un autre poste ne se fermeront jamais ici.
+ */
+function importedCapsules(capsules, isOpen, closedAt) {
+  const clean = capsules.map((c) => ({
+    ...c,
+    tabs: c.tabs.filter((t) => t && typeof t.url === 'string' && isSavable(t.url)),
+  }));
+  return closeSpans(clean, isOpen, closedAt) || clean;
+}
 
 // ---------------------------------------------------------------- Base64
 
@@ -121,10 +156,17 @@ export function describeCounts({ measures = 0, capsules = 0, files = 0, answers 
  * @param {object} local     chrome.storage.local du poste
  * @param {object} incoming  storage de la sauvegarde
  * @param {object} prismeContents  contenus des fichiers Prisme de la sauvegarde (un fichier sans contenu est ignoré)
+ * @param {{isOpen?: (windowId: number) => boolean, closedAt?: number}} windows
+ *          fenêtres ouvertes sur ce poste, et date de la sauvegarde (fin des périodes d'ouverture d'un autre poste)
  * @returns {{set: object, putFiles: string[], dropFiles: string[], added: object}}
  *          clés à écrire, fichiers Prisme à écrire puis à oublier, nombre d'éléments ajoutés
  */
-export function mergeBackup(local, incoming, prismeContents = {}) {
+export function mergeBackup(
+  local,
+  incoming,
+  prismeContents = {},
+  { isOpen = () => false, closedAt = Date.now() } = {},
+) {
   const set = {};
 
   const insight = mergeInsight(
@@ -138,7 +180,7 @@ export function mergeBackup(local, incoming, prismeContents = {}) {
   const localCaps = list(local.capsules);
   const capIds = new Set(localCaps.map((c) => c && c.id));
   const newCaps = list(incoming.capsules).filter((c) => c && c.id && !capIds.has(c.id) && Array.isArray(c.tabs));
-  if (newCaps.length) set.capsules = [...localCaps, ...newCaps];
+  if (newCaps.length) set.capsules = [...localCaps, ...importedCapsules(newCaps, isOpen, closedAt)];
 
   const localFiles = list(local.prismeFiles);
   const known = (f) =>
@@ -164,11 +206,18 @@ export function mergeBackup(local, incoming, prismeContents = {}) {
   }
 
   for (const key of SETTINGS_KEYS) {
-    if (isObject(incoming[key])) set[key] = { ...(isObject(local[key]) ? local[key] : {}), ...incoming[key] };
+    if (isObject(incoming[key])) {
+      set[key] = {
+        ...(isObject(local[key]) ? local[key] : {}),
+        ...validSettings(incoming[key], SETTINGS_DEFAULTS[key]),
+      };
+    }
   }
 
   for (const [key, value] of Object.entries(incoming)) {
-    if (!MERGED_KEYS.includes(key) && !isMeasureKey(key) && !(key in local)) set[key] = value;
+    if (MERGED_KEYS.includes(key) || LOCAL_KEYS.includes(key) || isMeasureKey(key) || key in local) continue;
+    // Pages allshare-scenario.fr du jour : temps repris, mais aucun onglet de l'autre poste n'est ouvert ici
+    set[key] = key === 'craPages' && isObject(value) ? { ...value, open: [] } : value;
   }
 
   return {
@@ -210,7 +259,12 @@ export async function exportAll(date = new Date()) {
 export async function importAll(data) {
   const backup = readBackup(data);
   const local = await chrome.storage.local.get(null);
-  const plan = mergeBackup(local, backup.storage, backup.prismeContents);
+  const windows = new Set((await chrome.windows.getAll()).map((w) => w.id));
+  const exportedAt = Date.parse(backup.exportedAt);
+  const plan = mergeBackup(local, backup.storage, backup.prismeContents, {
+    isOpen: (id) => windows.has(id),
+    closedAt: Number.isFinite(exportedAt) ? Math.min(exportedAt, Date.now()) : Date.now(),
+  });
   // Contenus d'abord : un fichier récent de Prisme a toujours ses octets
   for (const id of plan.putFiles) await putFileBytes(id, fromBase64(backup.prismeContents[id]));
   await chrome.storage.local.set(plan.set);

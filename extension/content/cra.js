@@ -1,6 +1,6 @@
 // CRA — page de saisie du C.R.A (Oracle APEX, grille interactive), monde isolé de l'extension.
 //
-// Déclaré dans le manifest pour les seules adresses commençant par CRA_PAGE (voir lib/cra.js).
+// Déclaré dans le manifest pour les adresses de la page de saisie (CRA_ORIGIN + CRA_PATH, voir lib/cra.js).
 // Réglages du module CRA (chrome.storage.local, craSettings), appliqués dès qu'ils changent :
 //  * autoHighlight : en arrivant sur la page, décoche la case de l'étoile jaune (surlignage des lignes,
 //                    dans les réglages de la grille) si elle est cochée ; repliés, les réglages sont
@@ -9,8 +9,10 @@
 //                    « Add Row », reste de la page), clique sur « Save ». Ouvrir une liste de valeurs,
 //                    un calendrier ou un menu ne compte pas comme quitter la ligne.
 (() => {
-  const CRA_PAGE = 'https://dsb-cra.allshare-scenario.fr/apex/r/allshare_wks/xaas/saisie-cra?';
-  if (!location.href.startsWith(CRA_PAGE) || window.__craContent) return;
+  const CRA_ORIGIN = 'https://dsb-cra.allshare-scenario.fr'; // = lib/cra.js
+  const CRA_PATH = '/apex/r/allshare_wks/xaas/saisie-cra'; // = lib/cra.js, avec ou sans paramètres
+  if (location.origin !== CRA_ORIGIN || location.pathname.replace(/\/+$/, '') !== CRA_PATH) return;
+  if (window.__craContent) return;
   window.__craContent = true;
 
   const HIGHLIGHT = 'input.a-IG-controlsCheckbox[data-setting="highlight"]';

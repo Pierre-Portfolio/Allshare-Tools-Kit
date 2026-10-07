@@ -44,12 +44,18 @@ let saveTimer = 0;
 function persist(now) {
   clearTimeout(saveTimer);
   const write = () => {
+    saveTimer = 0;
     lastWritten = JSON.stringify(progress);
     saveProgress(progress);
   };
   if (now) write();
   else saveTimer = setTimeout(write, 400);
 }
+
+// Onglet fermé ou masqué juste après une frappe : la saisie en attente est enregistrée tout de suite.
+const flush = () => saveTimer && persist(true);
+window.addEventListener('pagehide', flush);
+document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flush());
 
 // ---------------------------------------------------------------- Illustrations des modules
 

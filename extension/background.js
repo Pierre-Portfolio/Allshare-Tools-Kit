@@ -499,8 +499,17 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 // Raccourci clavier : lance la mesure avec les valeurs du formulaire.
-chrome.commands.onCommand.addListener(async (command, tab) => {
+chrome.commands.onCommand.addListener((command, tab) => {
   if (command !== 'arm-measure') return;
+  // Le panneau latéral ne s'ouvre qu'en réponse directe au raccourci : avant tout await. Il affiche
+  // Insight (mesure prête, ou formulaire et son erreur s'il est incomplet).
+  if (tab && chrome.sidePanel && chrome.sidePanel.open) {
+    chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
+  }
+  armFromShortcut(tab).catch((e) => console.error('[Insight] raccourci', e));
+});
+
+async function armFromShortcut(tab) {
   const target = tab || (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
   if (!target) return;
   const { draft } = await getConfig();
@@ -512,11 +521,9 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
     page: draft.page,
     specific: draft.specific,
   });
-  if (!res.ok && chrome.sidePanel && chrome.sidePanel.open) {
-    chrome.storage.session.set({ panelTool: 'insight' }); // ouvrir directement Insight, pas l'accueil
-    chrome.sidePanel.open({ windowId: target.windowId }).catch(() => {});
-  }
-});
+  // Formulaire incomplet : le panneau ouvert sur l'accueil passe directement sur Insight
+  if (!res.ok) await chrome.storage.session.set({ panelTool: { tool: 'insight', at: Date.now() } });
+}
 
 async function boot() {
   if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {

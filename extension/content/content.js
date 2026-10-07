@@ -93,6 +93,7 @@
   };
   document.addEventListener('insight:net-start', onNetStart);
   document.addEventListener('insight:net-end', onNetEnd);
+  document.dispatchEvent(new Event('insight:watch')); // script de page déjà là (mesure relancée dans cette page)
 
   // Ressources terminées pendant la mesure ; les appels fetch/XHR sont gardés pour le détail.
   const NET_TYPES = new Set(['fetch', 'xmlhttprequest']);
@@ -294,6 +295,7 @@
     if (resourceObserver) resourceObserver.disconnect();
     document.removeEventListener('insight:net-start', onNetStart);
     document.removeEventListener('insight:net-end', onNetEnd);
+    document.dispatchEvent(new Event('insight:stop')); // plus de mesure ici : le script de page ne fait plus rien
     window.removeEventListener('click', onUserAction, true);
     window.removeEventListener('keydown', onUserAction, true);
     window.removeEventListener('beforeunload', onLeave);

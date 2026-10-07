@@ -26,6 +26,32 @@ export const decodeAnsi = (bytes) =>
 export const isAnsiChar = (ch) => CP1252.has(ch);
 export const ansiByte = (ch) => CP1252.get(ch);
 
+const utf8Strict = new TextDecoder('utf-8', { fatal: true });
+
+/**
+ * Encodage mixte : chaque ligne est lue en UTF-8 si elle en est (séquences valides), sinon en ANSI.
+ * Lu d'un bloc en ANSI, le fichier garderait ses accents cassés jusque dans les exports.
+ */
+export function decodeMixed(bytes) {
+  let text = '';
+  let start = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    const b = bytes[i];
+    if (b !== 0x0a && b !== 0x0d && i < bytes.length - 1) continue;
+    const line = bytes.subarray(start, i + 1);
+    start = i + 1;
+    if (!line.some((x) => x >= 0x80)) text += decodeAnsi(line);
+    else {
+      try {
+        text += utf8Strict.decode(line);
+      } catch {
+        text += decodeAnsi(line);
+      }
+    }
+  }
+  return text;
+}
+
 /** Encode en Windows-1252 ; un caractère non convertible devient « ? » et est compté. */
 export function encodeAnsi(str) {
   const out = [];
@@ -410,7 +436,12 @@ export function decode(bytes, override = 'auto') {
   const decEnc = enc === 'ascii' || enc === 'mixed' ? 'windows-1252' : enc;
   const skip = enc.startsWith('utf-16') && r.bom ? 2 : r.bom === 'utf-8' && decEnc === 'utf-8' ? 3 : 0;
   const body = bytes.subarray(skip);
-  r.text = decEnc === 'windows-1252' ? decodeAnsi(body) : new TextDecoder(decEnc, { ignoreBOM: true }).decode(body);
+  r.text =
+    enc === 'mixed'
+      ? decodeMixed(body)
+      : decEnc === 'windows-1252'
+        ? decodeAnsi(body)
+        : new TextDecoder(decEnc, { ignoreBOM: true }).decode(body);
   r.label = enc === 'utf-8' && r.bom === 'utf-8' ? 'UTF-8 avec BOM' : ENCODING_LABELS[enc] || enc;
   return r;
 }

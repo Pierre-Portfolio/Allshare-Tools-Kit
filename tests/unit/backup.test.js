@@ -160,3 +160,50 @@ test('mergeBackup : fichiers Prisme, les plus récents gardés, fichier sans con
   assert.deepEqual(plan.dropFiles, [`l${MAX_FILES - 1}`], 'le plus ancien du poste est oublié');
   assert.equal(plan.added.files, 1);
 });
+
+test('mergeBackup : sessions et réglages d’un autre poste remis en ordre', () => {
+  const exportedAt = 5000;
+  const incoming = {
+    capsules: [
+      {
+        id: 'c1',
+        ts: 1000,
+        title: 'Ouverte sur l’autre poste',
+        tabs: [{ url: 'https://a.fr/', win: 0 }, { url: 'javascript:alert(1)', win: 0 }, null],
+        spans: [
+          { from: 1000, to: 2000 },
+          { from: 3000, wins: [7, 8] },
+        ],
+      },
+      { id: 'c2', ts: 1000, title: 'Ouverte ici', tabs: [], spans: [{ from: 4000, wins: [1] }] },
+    ],
+    settings: { quietMs: 'abc', maxWaitMs: Number.NaN, unit: 'ms', futur: 'gardé' },
+    craSettings: { autoSave: 'oui', autoHighlight: true },
+    draft: { app: 'Client A', specific: 1 },
+    craPages: {
+      day: '2026-10-07',
+      at: 4000,
+      pages: { k: { url: 'https://x.allshare-scenario.fr/', title: '', ms: 9 } },
+      open: ['k'],
+    },
+    capsuleAlive: 4500,
+  };
+  const { set } = mergeBackup({}, incoming, {}, { isOpen: (w) => w === 1, closedAt: exportedAt });
+  const [far, here] = set.capsules;
+  assert.deepEqual(far.tabs, [{ url: 'https://a.fr/', win: 0 }], 'adresses non rouvrables écartées');
+  assert.deepEqual(
+    far.spans,
+    [
+      { from: 1000, to: 2000 },
+      { from: 3000, to: exportedAt },
+    ],
+    'fenêtres d’un autre poste : terminée',
+  );
+  assert.deepEqual(here.spans, [{ from: 4000, wins: [1] }], 'fenêtre encore ouverte ici : en cours');
+  assert.deepEqual(set.settings, { unit: 'ms', futur: 'gardé' }, 'valeurs d’un autre type ignorées');
+  assert.deepEqual(set.craSettings, { autoHighlight: true });
+  assert.deepEqual(set.draft, { app: 'Client A' });
+  assert.deepEqual(set.craPages.open, [], 'aucun onglet de l’autre poste ouvert ici');
+  assert.equal(set.craPages.pages.k.ms, 9);
+  assert.ok(!('capsuleAlive' in set), 'propre au poste de la sauvegarde');
+});

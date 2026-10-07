@@ -14,7 +14,7 @@
 //   capsuleAlive  dernier instant où Chrome tournait avec une capsule (ou une page allshare-scenario.fr) ouverte,
 //                 relevé chaque minute : fin des périodes restées ouvertes quand Chrome a été quitté
 
-import { newId } from './storage.js';
+import { newId, withLock } from './storage.js';
 import { normName, nameKey, compareNames } from './names.js';
 
 export const MAX_OPENS = 100;
@@ -218,28 +218,36 @@ export async function saveCapsule({ title, client, comment, tabs }) {
     spans: [{ from: ts, wins: [win.id] }],
     tabs: tabs || (await currentTabs()),
   };
-  await chrome.storage.local.set({ capsules: [capsule, ...(await getCapsules())] });
+  await withLock('capsules', async () => chrome.storage.local.set({ capsules: [capsule, ...(await getCapsules())] }));
   return capsule;
 }
 
 /** Modifie une session : { title } (renommée) ou { tabs } (page retirée ou ajoutée). */
-export async function updateCapsule(id, patch) {
-  const capsules = (await getCapsules()).map((c) => (c.id === id ? { ...c, ...patch } : c));
-  await chrome.storage.local.set({ capsules });
+export function updateCapsule(id, patch) {
+  return withLock('capsules', async () => {
+    const capsules = (await getCapsules()).map((c) => (c.id === id ? { ...c, ...patch } : c));
+    await chrome.storage.local.set({ capsules });
+  });
 }
 
 /** Session cochée (plus active) ou décochée : rangée juste après la dernière session active. */
-export async function setDone(id, done) {
-  await chrome.storage.local.set({ capsules: placeDone(await getCapsules(), id, done) });
+export function setDone(id, done) {
+  return withLock('capsules', async () =>
+    chrome.storage.local.set({ capsules: placeDone(await getCapsules(), id, done) }),
+  );
 }
 
 /** Glisser-déposer : place la session `id` avant (ou après) la session `targetId`. */
-export async function moveCapsule(id, targetId, after = false) {
-  await chrome.storage.local.set({ capsules: reorder(await getCapsules(), id, targetId, after) });
+export function moveCapsule(id, targetId, after = false) {
+  return withLock('capsules', async () =>
+    chrome.storage.local.set({ capsules: reorder(await getCapsules(), id, targetId, after) }),
+  );
 }
 
-export async function deleteCapsule(id) {
-  await chrome.storage.local.set({ capsules: (await getCapsules()).filter((c) => c.id !== id) });
+export function deleteCapsule(id) {
+  return withLock('capsules', async () =>
+    chrome.storage.local.set({ capsules: (await getCapsules()).filter((c) => c.id !== id) }),
+  );
 }
 
 /**
@@ -275,22 +283,26 @@ export async function reopenCapsule(capsule) {
  * Note une réouverture de la session (liste des capsules du jour dans CRA) : elle est ouverte
  * jusqu'à la fermeture des fenêtres `wins`.
  */
-export async function recordOpen(id, wins, ts = Date.now()) {
-  await chrome.storage.local.set({
-    capsules: (await getCapsules()).map((c) =>
-      c.id === id
-        ? {
-            ...c,
-            opens: [...(c.opens || []), ts].slice(-MAX_OPENS),
-            spans: [...(c.spans || []), { from: ts, wins }].slice(-MAX_OPENS),
-          }
-        : c,
-    ),
-  });
+export function recordOpen(id, wins, ts = Date.now()) {
+  return withLock('capsules', async () =>
+    chrome.storage.local.set({
+      capsules: (await getCapsules()).map((c) =>
+        c.id === id
+          ? {
+              ...c,
+              opens: [...(c.opens || []), ts].slice(-MAX_OPENS),
+              spans: [...(c.spans || []), { from: ts, wins }].slice(-MAX_OPENS),
+            }
+          : c,
+      ),
+    }),
+  );
 }
 
 /** Fenêtres fermées (ou perdues au redémarrage de Chrome) : fin des périodes d'ouverture concernées. */
-export async function closeOpenSpans(isOpen, ts = Date.now()) {
-  const capsules = closeSpans(await getCapsules(), isOpen, ts);
-  if (capsules) await chrome.storage.local.set({ capsules });
+export function closeOpenSpans(isOpen, ts = Date.now()) {
+  return withLock('capsules', async () => {
+    const capsules = closeSpans(await getCapsules(), isOpen, ts);
+    if (capsules) await chrome.storage.local.set({ capsules });
+  });
 }

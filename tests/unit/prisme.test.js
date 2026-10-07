@@ -43,7 +43,9 @@ test('encodage : ASCII, ANSI, UTF-8 avec ou sans BOM, mixte, UTF-16', () => {
   const bom = decode(new Uint8Array([0xef, 0xbb, 0xbf, ...utf8('é;b\r\n')]));
   assert.equal(bom.label, 'UTF-8 avec BOM');
   assert.equal(bom.text, 'é;b\r\n');
-  assert.equal(decode(new Uint8Array([...ansi('é;1\r\n'), ...utf8('è;2\r\n')])).enc, 'mixed');
+  const mixed = decode(new Uint8Array([...ansi('é;1\r\n'), ...utf8('è;2\r\n'), ...ansi('à;3')]));
+  assert.equal(mixed.enc, 'mixed');
+  assert.equal(mixed.text, 'é;1\r\nè;2\r\nà;3', 'chaque ligne lue dans son encodage');
   const u16 = new Uint8Array([
     0xff,
     0xfe,
@@ -132,7 +134,8 @@ test('exemple avec erreurs : tous les contrôles attendus', () => {
     assert.ok(codes(res).includes(code), code);
   }
   assert.ok(!codes(res).includes('c1-control'), '0x89 de la ligne UTF-8 lu « ‰ » en Windows-1252, pas U+0089');
-  assert.deepEqual(res.counts, { error: 10, warning: 15, info: 7 });
+  assert.equal(res.recs[5].fields[1].v, 'Éclair café', 'ligne UTF-8 lue en UTF-8, sans accents cassés');
+  assert.deepEqual(res.counts, { error: 7, warning: 15, info: 7 });
   assert.equal(verdict(res), 'error');
   // Emplacements lisibles et ligne d'origine des doublons
   const dup = res.groups.get('dup-row').locs[0];
@@ -158,6 +161,9 @@ test('conversion ANSI / UTF-8 et fins de ligne', () => {
   assert.deepEqual([...u.bytes.slice(0, 3)], [0xef, 0xbb, 0xbf]);
   assert.equal(new TextDecoder().decode(u.bytes.slice(3)), 'Nom;Prix\nCafé;2€\nThé ✓;3\n');
   assert.equal(convertedName('mouvements.csv', a.suffix), 'mouvements_ANSI.csv');
+  // Fichier mixte (ligne UTF-8 dans un fichier ANSI) : la conversion répare la ligne UTF-8
+  const mixed = analyze(new Uint8Array([...ansi('Nom;Ville\r\nThé;Besançon\r\n'), ...utf8('Éclair;Orléans\r\n')]));
+  assert.equal(decodeAnsi(convert(mixed, 'ansi').bytes), 'Nom;Ville\r\nThé;Besançon\r\nÉclair;Orléans\r\n');
   assert.equal(convertedName('export', u.suffix), 'export_UTF8.csv');
 });
 

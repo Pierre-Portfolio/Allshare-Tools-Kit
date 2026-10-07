@@ -14,14 +14,12 @@ import { downloadBlob } from '../lib/export.js';
 const ACTIVE = ['armed', 'measuring', 'rearming'];
 const chosen = new URLSearchParams(location.search).has('choose'); // retour volontaire depuis un outil
 const isActive = (s) => !!(s && ACTIVE.includes(s.state));
+/** Raccourci clavier d'Insight avec un formulaire incomplet, il y a moins de 10 s : Insight plutôt que l'accueil. */
+const wantsInsight = (p) => !!(p && p.tool === 'insight' && Date.now() - p.at < 10000);
 
 async function init() {
   const { session, panelTool } = await chrome.storage.session.get(['session', 'panelTool']);
-  if (panelTool) {
-    // Panneau ouvert par le raccourci clavier d'Insight (formulaire incomplet)
-    await chrome.storage.session.remove('panelTool');
-    return location.replace('panel.html');
-  }
+  if (wantsInsight(panelTool)) return location.replace('panel.html');
   if (!chosen && isActive(session)) return location.replace('panel.html');
   await renderCounts();
 }
@@ -88,11 +86,13 @@ importFile.addEventListener('change', async (e) => {
   }
 });
 
-// Mesure lancée au raccourci clavier pendant que l'accueil est affiché : on passe sur Insight.
+// Mesure lancée au raccourci clavier pendant que l'accueil est affiché (ou formulaire incomplet) : on passe sur Insight.
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'session' && changes.session && !isActive(changes.session.oldValue)) {
-    if (isActive(changes.session.newValue)) location.replace('panel.html');
+  if (area !== 'session') return;
+  if (changes.session && !isActive(changes.session.oldValue) && isActive(changes.session.newValue)) {
+    location.replace('panel.html');
   }
+  if (changes.panelTool && wantsInsight(changes.panelTool.newValue)) location.replace('panel.html');
 });
 
 init();

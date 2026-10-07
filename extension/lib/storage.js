@@ -39,6 +39,16 @@ export const DEFAULT_SETTINGS = {
 
 export const MEASURE_PREFIX = 'm_';
 
+/**
+ * Lecture, modification puis écriture d'une clé de chrome.storage.local : les pages de l'extension et le
+ * service worker passent l'un après l'autre (verrou partagé), sans effacer l'écriture de l'autre.
+ * Sans Web Locks (tests Node), fn est simplement appelée.
+ */
+export function withLock(name, fn) {
+  const locks = globalThis.navigator && globalThis.navigator.locks;
+  return locks ? locks.request(`allshare:${name}`, fn) : fn();
+}
+
 export function newId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
@@ -78,16 +88,20 @@ export async function migrateNetworkDefault(previousVersion) {
   return true;
 }
 
-export async function saveSettings(patch) {
-  const { settings } = await getConfig();
-  const next = { ...settings, ...patch };
-  await chrome.storage.local.set({ settings: next });
-  return next;
+export function saveSettings(patch) {
+  return withLock('settings', async () => {
+    const { settings } = await getConfig();
+    const next = { ...settings, ...patch };
+    await chrome.storage.local.set({ settings: next });
+    return next;
+  });
 }
 
-export async function saveDraft(patch) {
-  const { draft } = await getConfig();
-  await chrome.storage.local.set({ draft: { ...draft, ...patch } });
+export function saveDraft(patch) {
+  return withLock('draft', async () => {
+    const { draft } = await getConfig();
+    await chrome.storage.local.set({ draft: { ...draft, ...patch } });
+  });
 }
 
 export const saveApps = (apps) => chrome.storage.local.set({ apps });
@@ -120,23 +134,29 @@ export function setSession(session) {
 // ---------------------------------------------------------------- Référentiel
 
 /** Ajoute l'application et la page au référentiel si elles n'y sont pas encore. */
-export async function ensureInCatalog(appName, pageName) {
-  const { apps, pages } = await getConfig();
-  const patch = {};
-  if (appName && !apps.some((a) => nameKey(a.name) === nameKey(appName))) {
-    patch.apps = [...apps, { id: newId(), name: normName(appName), baseUrls: [] }];
-  }
-  if (pageName && !pages.some((p) => nameKey(p.name) === nameKey(pageName))) {
-    patch.pages = [...pages, { id: newId(), name: normName(pageName), hidden: false }];
-  }
-  if (Object.keys(patch).length) await chrome.storage.local.set(patch);
+export function ensureInCatalog(appName, pageName) {
+  return withLock('catalog', async () => {
+    const { apps, pages } = await getConfig();
+    const patch = {};
+    if (appName && !apps.some((a) => nameKey(a.name) === nameKey(appName))) {
+      patch.apps = [...apps, { id: newId(), name: normName(appName), baseUrls: [] }];
+    }
+    if (pageName && !pages.some((p) => nameKey(p.name) === nameKey(pageName))) {
+      patch.pages = [...pages, { id: newId(), name: normName(pageName), hidden: false }];
+    }
+    if (Object.keys(patch).length) await chrome.storage.local.set(patch);
+  });
 }
 
 /**
  * Renomme une application ou une page partout (référentiel + mesures).
  * Si le nouveau nom existe déjà, les deux sont fusionnés.
  */
-export async function renameEverywhere(kind, oldName, newName) {
+export function renameEverywhere(kind, oldName, newName) {
+  return withLock('catalog', () => renameUnlocked(kind, oldName, newName));
+}
+
+async function renameUnlocked(kind, oldName, newName) {
   const field = kind === 'app' ? 'app' : 'page';
   const listKey = kind === 'app' ? 'apps' : 'pages';
   const name = normName(newName);
@@ -216,7 +236,11 @@ export function planLineEdit(apps, measures, line, next) {
 }
 
 /** Applique planLineEdit ; le brouillon du panneau suit s'il était sur cette ligne. */
-export async function editLine(line, next) {
+export function editLine(line, next) {
+  return withLock('catalog', () => withLock('draft', () => editLineUnlocked(line, next)));
+}
+
+async function editLineUnlocked(line, next) {
   const { apps, draft } = await getConfig();
   const plan = planLineEdit(apps, await getMeasures(), line, next);
   const same = (a, b) => nameKey(a) === nameKey(b);
@@ -241,8 +265,10 @@ export async function deleteClient(client, line = null) {
     .map((m) => m.id);
   if (ids.length) await deleteMeasures(ids);
   if (!line) {
-    const { apps } = await getConfig();
-    await saveApps(apps.filter((a) => !same(a.name, client)));
+    await withLock('catalog', async () => {
+      const { apps } = await getConfig();
+      await saveApps(apps.filter((a) => !same(a.name, client)));
+    });
   }
   return ids.length;
 }
@@ -251,8 +277,10 @@ export async function deleteClient(client, line = null) {
 export async function deletePage(page) {
   const ids = (await getMeasures()).filter((m) => nameKey(m.page) === nameKey(page)).map((m) => m.id);
   if (ids.length) await deleteMeasures(ids);
-  const { pages } = await getConfig();
-  await savePages(pages.filter((p) => nameKey(p.name) !== nameKey(page)));
+  await withLock('catalog', async () => {
+    const { pages } = await getConfig();
+    await savePages(pages.filter((p) => nameKey(p.name) !== nameKey(page)));
+  });
   return ids.length;
 }
 
@@ -308,14 +336,16 @@ export async function importBackup(data) {
   let incoming = { apps: data.apps || [], pages: data.pages || [], measures: data.measures };
   if (data.version === 1) incoming = { ...incoming, ...convertV1(incoming.apps, incoming.pages, incoming.measures) };
 
-  const { apps, pages } = await getConfig();
-  const merged = mergeInsight({ apps, pages, measures: await getMeasures() }, incoming);
-  await chrome.storage.local.set({
-    apps: merged.apps,
-    pages: merged.pages,
-    ...Object.fromEntries(merged.measures.map((m) => [MEASURE_PREFIX + m.id, m])),
+  return withLock('catalog', async () => {
+    const { apps, pages } = await getConfig();
+    const merged = mergeInsight({ apps, pages, measures: await getMeasures() }, incoming);
+    await chrome.storage.local.set({
+      apps: merged.apps,
+      pages: merged.pages,
+      ...Object.fromEntries(merged.measures.map((m) => [MEASURE_PREFIX + m.id, m])),
+    });
+    return { added: merged.measures.length, skipped: incoming.measures.length - merged.measures.length };
   });
-  return { added: merged.measures.length, skipped: incoming.measures.length - merged.measures.length };
 }
 
 /**

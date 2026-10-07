@@ -13,7 +13,11 @@ import {
   trackPages,
   pagesToday,
   MAX_GAP,
+  isCraPage,
+  CRA_ORIGIN,
+  CRA_PATH,
 } from '../../extension/lib/cra.js';
+import { readFileSync } from 'node:fs';
 
 const at = (h, m, day = 7) => new Date(2026, 9, day, h, m).getTime(); // octobre 2026, heure locale
 
@@ -162,4 +166,16 @@ test('pages du jour : temps gagné par les pages ouvertes, remis à zéro chaque
   assert.deepEqual(late.pages, { [tickets]: { url: tickets, title: 'Tickets', ms: min(1) } });
   assert.deepEqual(pagesToday({ ...s, open: [] }, at(9, 0, 8)), [], 'le lendemain : rien');
   assert.deepEqual(pagesToday(undefined), []);
+});
+
+test('page de saisie du C.R.A : avec ou sans paramètres, même adresse dans le manifest et le script', () => {
+  assert.ok(isCraPage(`${CRA_ORIGIN}${CRA_PATH}?session=4242`));
+  assert.ok(isCraPage(`${CRA_ORIGIN}${CRA_PATH}`), 'sans paramètres');
+  assert.ok(!isCraPage(`${CRA_ORIGIN}${CRA_PATH}-bis?session=1`) && !isCraPage(`${CRA_ORIGIN}/apex/r/x/autre-page`));
+  assert.ok(!isCraPage('https://autre.allshare-scenario.fr' + CRA_PATH) && !isCraPage('pas une adresse'));
+  const root = new URL('../../extension/', import.meta.url);
+  const manifest = JSON.parse(readFileSync(new URL('manifest.json', root), 'utf8'));
+  assert.deepEqual(manifest.content_scripts[0].matches, [`${CRA_ORIGIN}${CRA_PATH}*`]);
+  const script = readFileSync(new URL('content/cra.js', root), 'utf8');
+  assert.ok(script.includes(`'${CRA_ORIGIN}'`) && script.includes(`'${CRA_PATH}'`), 'content/cra.js à jour');
 });

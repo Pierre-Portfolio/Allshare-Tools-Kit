@@ -8,7 +8,17 @@ import {
   deleteMeasures,
   isMeasureKey,
 } from '../lib/storage.js';
-import { buildModel, cellStat, rate, coverage, missingPages, lineKey, lineLabel } from '../lib/report.js';
+import {
+  buildModel,
+  cellStat,
+  rate,
+  coverage,
+  missingPages,
+  lineKey,
+  lineLabel,
+  anomaly,
+  MIN_APPS_FOR_RATIO,
+} from '../lib/report.js';
 import { nameKey, normName, canonical, suggestApp, nextPage, compareNames } from '../lib/names.js';
 import { MENU, MENU_PAGES, MENU_TOP, fitLabel } from '../lib/menu.js';
 import { phases } from '../lib/timing.js';
@@ -308,16 +318,19 @@ function renderResult(s) {
     value.textContent = dur(r.duration);
     const stat = settings.stat;
     const mine = rate(model, line, s.page, s.network, stat, settings);
-    if (mine.ref && mine.ref.count >= 3) {
+    // Même règle que le tableau de bord et les exports : médiane des clients ou seuils absolus des Réglages
+    const level = anomaly(r.duration, mine.ref, settings) || '';
+    if (level) value.classList.add(level);
+    if (mine.ref && mine.ref.count >= MIN_APPS_FOR_RATIO && mine.ref.median > 0) {
       const ratio = r.duration / mine.ref.median;
-      const level = ratio >= settings.critRatio ? 'crit' : ratio >= settings.warnRatio ? 'warn' : '';
-      if (level) value.classList.add(level);
       facts.push(
         el('li', {
           className: level,
           textContent: `Médiane des ${mine.ref.count} clients : ${dur(mine.ref.median)} (× ${ratio.toLocaleString('fr-FR', { maximumFractionDigits: 1 })})`,
         }),
       );
+    } else if (level) {
+      facts.push(el('li', { className: level, textContent: 'Au-delà du seuil fixé dans les Réglages.' }));
     }
     if (mine.count > 1)
       facts.push(
@@ -327,11 +340,13 @@ function renderResult(s) {
       );
     const o = cellStat(model, line, s.page, other(s.network), stat);
     if (o.status === 'ok') {
-      const pct = Math.round(((r.duration - o.value) / o.value) * 100);
+      const pct = o.value > 0 ? Math.round(((r.duration - o.value) / o.value) * 100) : null;
       facts.push(
         el('li', {
-          className: Math.abs(pct) >= settings.gapPct ? 'warn' : '',
-          textContent: `${NETWORK_LABELS[other(s.network)]} : ${dur(o.value)} (${pct > 0 ? '+' : ''}${pct} % en ${NETWORK_LABELS[s.network]})`,
+          className: pct !== null && Math.abs(pct) >= settings.gapPct ? 'warn' : '',
+          textContent:
+            `${NETWORK_LABELS[other(s.network)]} : ${dur(o.value)}` +
+            (pct !== null ? ` (${pct > 0 ? '+' : ''}${pct} % en ${NETWORK_LABELS[s.network]})` : ''),
         }),
       );
     } else {
@@ -675,4 +690,5 @@ if (!fixedTabId) {
   chrome.tabs.onUpdated.addListener((_id, info) => info.url && !state.session && updateSuggestion());
 }
 
+chrome.storage.session.remove('panelTool'); // demande du raccourci clavier satisfaite
 load();

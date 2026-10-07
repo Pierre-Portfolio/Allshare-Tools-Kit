@@ -13,9 +13,24 @@
 // temps d'ouverture : capsules[].spans (de la sauvegarde ou d'une réouverture à la fermeture de ses fenêtres).
 
 import { normName } from './names.js';
+import { withLock } from './storage.js';
 
-/** Début des adresses de la page de saisie du C.R.A (Oracle APEX). */
-export const CRA_PAGE = 'https://dsb-cra.allshare-scenario.fr/apex/r/allshare_wks/xaas/saisie-cra?';
+/**
+ * Page de saisie du C.R.A (Oracle APEX), avec ou sans paramètres. Mêmes valeurs dans manifest.json
+ * (content_scripts) et content/cra.js, qui ne peut pas importer ce module (vérifié par les tests).
+ */
+export const CRA_ORIGIN = 'https://dsb-cra.allshare-scenario.fr';
+export const CRA_PATH = '/apex/r/allshare_wks/xaas/saisie-cra';
+
+/** Adresse de la page de saisie du C.R.A ? */
+export function isCraPage(url) {
+  try {
+    const u = new URL(url);
+    return u.origin === CRA_ORIGIN && u.pathname.replace(/\/+$/, '') === CRA_PATH;
+  } catch {
+    return false;
+  }
+}
 
 export const DEFAULT_CRA = { autoSave: false, autoHighlight: false };
 
@@ -176,8 +191,10 @@ export async function getCraSettings() {
   return { ...DEFAULT_CRA, ...(await chrome.storage.local.get('craSettings')).craSettings };
 }
 
-export async function saveCraSettings(patch) {
-  const craSettings = { ...(await getCraSettings()), ...patch };
-  await chrome.storage.local.set({ craSettings });
-  return craSettings;
+export function saveCraSettings(patch) {
+  return withLock('craSettings', async () => {
+    const craSettings = { ...(await getCraSettings()), ...patch };
+    await chrome.storage.local.set({ craSettings });
+    return craSettings;
+  });
 }
