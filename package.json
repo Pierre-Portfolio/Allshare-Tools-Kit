@@ -1,6 +1,6 @@
 {
   "name": "allshare-tools-kit",
-  "version": "3.13.0",
+  "version": "3.13.1",
   "private": true,
   "description": "Allshare Tools Kit : extension Chrome regroupant Training (Métier RH, OLAP, APEX), Capsule, Insight (temps de réponse clic → affichage complet), Prisme (inspecteur CSV) et CRA (capsules du jour, saisie du C.R.A).",
   "type": "module",

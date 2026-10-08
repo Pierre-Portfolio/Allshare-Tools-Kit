@@ -615,7 +615,11 @@ try {
     'Prisme',
     'CRA',
   ]);
-  assert.equal((await tools.textContent('.brandline')).trim(), 'Allshare Tools Kit');
+  assert.equal(
+    await tools.evaluate(() => document.body.firstElementChild.textContent.trim()),
+    'Quels outils ?',
+    'rien au-dessus de « Quels outils ? »',
+  );
   await tools.waitForFunction(() => document.querySelector('#insightCount').textContent !== '');
   const insightCount = await tools.textContent('#insightCount');
   assert.match(insightCount, /^\d+ clients? et \d+ pages? sauvegardés$/, 'clients et pages d’Insight');
