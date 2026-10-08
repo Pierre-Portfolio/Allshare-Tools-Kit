@@ -3,8 +3,9 @@
 // Déclaré dans le manifest pour les adresses de la page de saisie (CRA_ORIGIN + CRA_PATH, voir lib/cra.js).
 // Réglages du module CRA (chrome.storage.local, craSettings), appliqués dès qu'ils changent :
 //  * autoHighlight : en arrivant sur la page, décoche la case de l'étoile jaune (surlignage des lignes,
-//                    dans les réglages de la grille) si elle est cochée ; repliés, les réglages sont
-//                    dépliés le temps de la décocher, comme à la main, puis repliés ;
+//                    dans les réglages de la grille) si elle est cochée. Comme à la main : repliés, les
+//                    réglages sont d'abord dépliés, la case n'est décochée qu'une fois qu'ils sont affichés
+//                    (cliquée avant, APEX ne la prend pas en compte), puis ils sont repliés ;
 //  * autoSave      : quand le focus quitte une ligne modifiée de la grille (autre ligne, bouton
 //                    « Add Row », reste de la page), clique sur « Save ». Ouvrir une liste de valeurs,
 //                    un calendrier ou un menu ne compte pas comme quitter la ligne.
@@ -25,14 +26,32 @@
 
   // ------------------------------------------------------------ Étoile jaune
 
-  let unhighlighted = false; // une seule fois par page
-  let expanded = null; // réglages repliés que l'extension a dépliés : repliés de nouveau ensuite
-  let triedExpand = false; // dépliés une seule fois par page
+  const POLL_MS = 100;
+  const OPEN_MS = 3000; // réglages dépliés et affichés, case affichée
+  const OPENED_MS = 300; // le temps qu'APEX finisse de déplier les réglages
+  const CLICK_MS = 500; // le temps qu'APEX prenne la case en compte
+  const MAX_CLICKS = 3; // case de nouveau cochée (réglages reconstruits) : cliquée encore, pas sans fin
+  const UNCHECKED = 'unchecked';
 
-  // Zone repliable d'APEX : contenu masqué (aria-hidden) et bouton qui le déplie (aria-controls)
+  let highlightState = 'idle'; // 'running', puis 'done' : une seule fois par page
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  /** Sonde `test` jusqu'à ce qu'il renvoie une valeur vraie, rendue ; null passé `ms` ou réglage désactivé. */
+  async function waitFor(test, ms) {
+    for (const end = Date.now() + ms; settings.autoHighlight; await sleep(POLL_MS)) {
+      const value = test();
+      if (value) return value;
+      if (Date.now() >= end) break;
+    }
+    return null;
+  }
+
+  // Zone repliable d'APEX : contenu masqué (aria-hidden, display: none) et bouton qui le déplie (aria-controls)
   const contentOf = (area) => area.querySelector('.a-Collapsible-content');
   const isCollapsed = (area) =>
     area.classList.contains('is-collapsed') || contentOf(area)?.getAttribute('aria-hidden') === 'true';
+  const isOpen = (area) => !isCollapsed(area) && (contentOf(area) || area).getClientRects().length > 0;
   function toggleOf(area) {
     const id = contentOf(area)?.id;
     return (
@@ -40,57 +59,49 @@
       area.querySelector('.a-Collapsible-toggle, .a-MediaBlock-graphic button')
     );
   }
+  // APEX a pu reconstruire la zone : on reprend celle de la page
+  const current = (area) => (area.isConnected ? area : document.querySelector(SETTINGS) || area);
 
-  function expand(area) {
-    const toggle = toggleOf(area);
-    if (!toggle || triedExpand) return;
-    triedExpand = true;
-    expanded = area;
-    toggle.click();
+  /** Case cochée à décocher, réglages affichés ; UNCHECKED si toutes décochées ; sinon null. */
+  function boxToClick() {
+    const boxes = [...document.querySelectorAll(HIGHLIGHT)];
+    if (boxes.length && !boxes.some((box) => box.checked)) return UNCHECKED;
+    return boxes.find((box) => box.checked && (!box.closest(SETTINGS) || isOpen(box.closest(SETTINGS)))) || null;
   }
 
-  /** Replie les réglages dépliés par l'extension (APEX a pu les reconstruire : on reprend la zone de la page). */
-  function collapseBack() {
-    if (!expanded) return;
-    const area = expanded.isConnected ? expanded : document.querySelector(SETTINGS);
-    expanded = null;
-    if (area && !isCollapsed(area)) toggleOf(area)?.click();
-  }
-
-  /** true : rien de plus à faire sur cette page. */
-  function unhighlight() {
-    const boxes = [...document.querySelectorAll(HIGHLIGHT)].filter((box) => box.checked);
-    if (!boxes.length) {
-      if (document.querySelector(HIGHLIGHT)) return done(); // déjà décochée
-      // Pas encore de case : grille en construction, ou réglages repliés qui ne l'affichent qu'une fois dépliés
+  async function unhighlight() {
+    if (highlightState !== 'idle') return;
+    highlightState = 'running';
+    let opened = null; // réglages repliés que l'extension a dépliés : repliés de nouveau ensuite
+    let unchecked = false;
+    // Grille construite après le chargement : la case, ou des réglages repliés vides (case affichée une fois dépliés)
+    const emptyCollapsed = () => {
       const area = document.querySelector(SETTINGS);
-      if (area && isCollapsed(area) && !triedExpand) {
-        expand(area);
-        setTimeout(() => document.querySelector(HIGHLIGHT) || collapseBack(), 2000); // pas d'étoile jaune
+      return area && isCollapsed(area) && !contentOf(area)?.childElementCount;
+    };
+    if (await waitFor(() => document.querySelector(HIGHLIGHT) || emptyCollapsed(), WAIT_GRID_MS)) {
+      // 1. Réglages repliés : d'abord les déplier, comme à la main, et attendre qu'ils soient affichés
+      const box = [...document.querySelectorAll(HIGHLIGHT)].find((b) => b.checked);
+      const area = box ? box.closest(SETTINGS) : !document.querySelector(HIGHLIGHT) && document.querySelector(SETTINGS);
+      const toggle = area && isCollapsed(area) && toggleOf(area);
+      if (toggle) {
+        opened = area;
+        toggle.click();
+        if (await waitFor(() => isOpen(current(area)), OPEN_MS)) await sleep(OPENED_MS);
       }
-      return false;
+      // 2. Puis décocher la case, de nouveau si APEX l'affiche encore cochée
+      for (let clicks = 0; ; clicks++) {
+        const target = await waitFor(boxToClick, OPEN_MS);
+        if (target === UNCHECKED) unchecked = true;
+        if (!target || target === UNCHECKED || clicks === MAX_CLICKS) break;
+        target.click(); // le clic passe par les gestionnaires d'APEX
+        await sleep(CLICK_MS);
+      }
     }
-    for (const box of boxes) {
-      const area = box.closest(SETTINGS);
-      if (area && isCollapsed(area)) expand(area);
-      box.click(); // le clic passe par les gestionnaires d'APEX
-    }
-    return done();
-  }
-
-  function done() {
-    unhighlighted = true;
-    setTimeout(collapseBack, 500); // le temps qu'APEX prenne la case en compte
-    return true;
-  }
-
-  function unhighlightWhenReady() {
-    if (unhighlighted || !settings.autoHighlight || unhighlight()) return;
-    const observer = new MutationObserver(() => {
-      if (!settings.autoHighlight || unhighlight()) observer.disconnect();
-    });
-    observer.observe(document.documentElement, { childList: true, subtree: true });
-    setTimeout(() => observer.disconnect(), WAIT_GRID_MS);
+    // 3. Réglages repliés de nouveau
+    const back = opened && current(opened);
+    if (back && !isCollapsed(back)) toggleOf(back)?.click();
+    highlightState = unchecked ? 'done' : 'idle'; // pas décochée (réglage désactivé…) : réessayée s'il est réactivé
   }
 
   // ------------------------------------------------------------ Save automatique
@@ -158,7 +169,7 @@
   function apply(next) {
     const turnedOn = next.autoHighlight && !settings.autoHighlight;
     settings = { ...settings, ...next };
-    if (turnedOn) unhighlightWhenReady();
+    if (turnedOn) unhighlight();
   }
 
   chrome.storage.local.get('craSettings').then(({ craSettings }) => apply(craSettings || {}));

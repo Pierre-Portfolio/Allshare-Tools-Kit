@@ -76,7 +76,9 @@ render();
 
 // Page de saisie du C.R.A simulée (grille interactive APEX) : deux lignes réparties sur deux tableaux
 // (colonnes figées), « Save » qui enregistre en 1 s, case du surlignage (étoile jaune) cochée, dans les
-// réglages de la grille construits repliés après le chargement, liste de valeurs ouverte dans une boîte de dialogue
+// réglages de la grille construits repliés après le chargement, liste de valeurs ouverte dans une boîte de dialogue.
+// Comme APEX, les réglages sont reconstruits d'après le modèle en les dépliant : une case cliquée tant qu'ils
+// sont repliés est perdue
 function craPage() {
   return `<!doctype html><html><head><meta charset="utf-8"><title>Saisie CRA</title></head><body>
 <div class="a-IG">
@@ -93,13 +95,16 @@ function craPage() {
 <div role="dialog"><input id="lov" placeholder="Liste de valeurs"></div>
 <script>
 window.saves = 0;
+window.highlight = true; // modèle de la grille : surlignage actif
 window.highlightChanges = [];
 window.toggles = 0;
+const highlightBox = () => '<input id="CRA_GRID_ig_control_1" type="checkbox" class="a-IG-controlsCheckbox" data-setting="highlight"'
+  + (window.highlight ? ' checked' : '') + '>';
 setTimeout(() => {
   controls.innerHTML = '<div id="CRA_GRID_ig_report_settings" class="a-MediaBlock a-IG-controlsContainer a-Collapsible is-collapsed">'
     + '<div class="a-MediaBlock-graphic" role="heading"><button type="button" id="toggle" aria-expanded="false" aria-controls="a_Collapsible1_content"></button></div>'
-    + '<div class="a-MediaBlock-content a-Collapsible-content" id="a_Collapsible1_content" aria-hidden="true">'
-    + '<input id="CRA_GRID_ig_control_1" type="checkbox" class="a-IG-controlsCheckbox" data-setting="highlight" checked></div></div>';
+    + '<div class="a-MediaBlock-content a-Collapsible-content" id="a_Collapsible1_content" aria-hidden="true" style="display: none">'
+    + highlightBox() + '</div></div>';
   const area = CRA_GRID_ig_report_settings;
   toggle.addEventListener('click', () => {
     window.toggles++;
@@ -107,9 +112,14 @@ setTimeout(() => {
     area.classList.toggle('is-collapsed', !open);
     toggle.setAttribute('aria-expanded', open);
     a_Collapsible1_content.setAttribute('aria-hidden', !open);
+    a_Collapsible1_content.style.display = open ? '' : 'none';
+    if (open) a_Collapsible1_content.innerHTML = highlightBox();
   });
-  // état des réglages (dépliés ?) au moment où la case change
-  CRA_GRID_ig_control_1.addEventListener('change', () => window.highlightChanges.push(area.classList.contains('is-expanded')));
+  // gestionnaire délégué : état des réglages (dépliés ?) au moment où la case change
+  area.addEventListener('change', (e) => {
+    window.highlight = e.target.checked;
+    window.highlightChanges.push(area.classList.contains('is-expanded'));
+  });
 }, 300);
 document.addEventListener('input', (e) => {
   const td = e.target.closest('td');
@@ -1101,12 +1111,13 @@ try {
   );
   const cra = await context.newPage();
   await cra.goto('https://dsb-cra.allshare-scenario.fr/apex/r/allshare_wks/xaas/saisie-cra?session=4242');
-  await cra.waitForFunction(() => document.querySelector('[data-setting="highlight"]')?.checked === false);
+  await cra.waitForFunction(() => window.highlight === false, null, { timeout: 10000 });
   assert.deepEqual(
     await cra.evaluate(() => window.highlightChanges),
     [true],
     'étoile jaune décochée, réglages dépliés',
   );
+  assert.equal(await cra.evaluate(() => document.querySelector('[data-setting="highlight"]').checked), false);
   await cra.waitForFunction(() => window.toggles === 2);
   assert.equal(
     await cra.evaluate(() => document.getElementById('CRA_GRID_ig_report_settings').className.includes('is-collapsed')),
