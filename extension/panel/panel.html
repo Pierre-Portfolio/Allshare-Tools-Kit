@@ -38,7 +38,7 @@
           <button id="appSuggestUse" type="button">Utiliser</button>
         </div>
         <label class="field">
-          <span>Version application <abbr class="req" title="Obligatoire : la liste des pages en dépend">*</abbr></span>
+          <span>Version application <abbr class="req" title="Obligatoire">*</abbr></span>
           <input
             id="version"
             type="text"
@@ -54,7 +54,7 @@
         </label>
         <div class="field">
           <span id="pageTitle">Page</span>
-          <select id="pagePick" aria-labelledby="pageTitle" aria-describedby="pageHint"></select>
+          <select id="pagePick" aria-labelledby="pageTitle"></select>
           <input
             id="page"
             type="text"
@@ -64,7 +64,6 @@
             spellcheck="false"
             hidden
           />
-          <p id="pageHint" class="hint"></p>
         </div>
         <label class="check-line">
           <input id="specific" type="checkbox" />

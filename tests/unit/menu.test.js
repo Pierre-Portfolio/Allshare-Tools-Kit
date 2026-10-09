@@ -1,155 +1,107 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  PAGES,
-  PAGE_NAMES,
-  HOME,
-  VERSIONS,
-  APPS_TOTAL,
-  LABEL_MAX,
-  fitLabel,
-  compareVersions,
-  sameVersion,
-  analysedVersion,
-  pageChoices,
-} from '../../extension/lib/menu.js';
+import { MENU, PAGE_NAMES, HOME, LABEL_MAX, fitLabel, pageChoices } from '../../extension/lib/menu.js';
 import { nameKey } from '../../extension/lib/names.js';
 
-const page = (name) => PAGES.find((p) => p.name === name);
-const names = (choices) => choices.groups.flatMap((g) => g.pages.map((p) => p.name));
+const menuOf = (name) => MENU.filter((m) => m.pages.includes(name)).map((m) => m.title);
+const pagesOf = (title) => MENU.find((m) => m.title === title).pages;
 
-test('analyse des menus : 3 versions, 2 applications chacune, occurrences sur 6', () => {
-  assert.deepEqual(VERSIONS, ['3.19.10', '3.24.01', '3.28.00']);
-  assert.equal(APPS_TOTAL, 6);
-  assert.equal(PAGES.length, 119);
-  assert.equal(PAGES.filter((p) => p.total >= 2).length, 50, 'pages vues dans au moins 2 applications sur 6');
-  assert.deepEqual(page('Masse Salariale Croisée'), {
-    name: 'Masse Salariale Croisée',
-    kinds: ['sous-menu'],
-    counts: [2, 2, 2],
-    total: 6,
-  });
-  assert.equal(page('KPI RH').total, 3);
-  assert.equal(new Set(PAGE_NAMES.map(nameKey)).size, PAGE_NAMES.length, 'noms uniques');
+test('menus : réunis sans doublon, dans l’ordre d’affichage', () => {
+  assert.deepEqual(
+    MENU.map((m) => m.title),
+    [
+      'NAO',
+      'Fiche Salarié',
+      'Listes Collaborateurs',
+      'Listes des employés',
+      'RH Suivi Effectifs',
+      'Index F/H',
+      'Publier',
+      'KPI RH',
+      'Index Égalité FH',
+      'Masse Salariale',
+      'Administration',
+      'Hyp. Budgétaires',
+      'Reporting Social',
+    ],
+  );
+  assert.equal(PAGE_NAMES.length, 1 + 104);
   assert.equal(PAGE_NAMES[0], HOME);
-});
-
-test('analyse des menus : menu et sous-menu du même nom réunis, libellés coupés complétés', () => {
-  assert.deepEqual(page('Fiche Salarié').kinds, ['menu', 'sous-menu']);
-  assert.deepEqual(page('Fiche Salarié').counts, [2, 2, 2], 'sous-menu dans les 6 applications');
-  assert.deepEqual(page('Publier').counts, [0, 1, 1]);
-  assert.deepEqual(page('Saisie des enveloppes par rubrique').counts, [1, 2, 1], 'avec « … par rub... »');
-  assert.ok(!PAGES.some((p) => p.name.endsWith('...')), 'aucun libellé coupé');
-});
-
-test('versions : comparaison et version analysée retenue', () => {
-  assert.equal(compareVersions('3.28', '3.28.00'), 0);
-  assert.equal(compareVersions('3.24.01', '3.28.00'), -1);
-  assert.equal(compareVersions('3.30', '3.28.00'), 1);
-  assert.equal(compareVersions('3.9', '3.19.10'), -1, 'numéro par numéro, pas en texte');
-  assert.ok(sameVersion('v3.28', '3.28.00'));
-  assert.ok(!sameVersion('3.28.01', '3.28.00'));
-  assert.ok(!sameVersion('', ''));
-  assert.ok(sameVersion('Prod', 'PROD'), 'version sans numéro : même texte');
-  assert.equal(analysedVersion(''), null);
-  assert.deepEqual(analysedVersion('3.24.1'), { ref: '3.24.01', why: 'exact' });
-  assert.deepEqual(analysedVersion('3.26'), { ref: '3.24.01', why: 'before' }, 'dernière analysée avant elle');
-  assert.deepEqual(analysedVersion('5.3'), { ref: '3.28.00', why: 'before' });
-  assert.deepEqual(analysedVersion('3.10'), { ref: '3.19.10', why: 'oldest' });
-  assert.deepEqual(analysedVersion('PROD'), { ref: '3.28.00', why: 'latest' });
-});
-
-test('pages proposées : celles de la version, par nombre d’applications sur 6, rares comprises', () => {
-  const c = pageChoices({ version: '3.28.00' });
-  assert.deepEqual(
-    c.groups.map((g) => [g.label, g.pages.length]),
-    [
-      ['6/6 applications · communes', 9],
-      ['5/6 applications', 6],
-      ['4/6 applications', 7],
-      ['3/6 applications', 7],
-      ['2/6 applications', 4],
-      ['1/6 application · rares', 6],
-    ],
+  assert.equal(new Set(PAGE_NAMES.map(nameKey)).size, PAGE_NAMES.length, 'aucune page en double');
+  assert.ok(
+    MENU.every((m) => m.pages.length),
+    'aucun menu vide',
   );
-  assert.equal(c.order[0], HOME, 'page d’accueil tout en haut');
-  assert.equal(c.order.length, 1 + 39);
-  const totals = c.groups.flatMap((g) => g.pages.map((p) => page(p.name).total));
-  assert.deepEqual(
-    totals,
-    [...totals].sort((a, b) => b - a),
-    'triées par occurrences',
-  );
-  const all = names(c);
-  assert.ok(all.includes('Collaborateurs') && all.includes('Pyramide') && all.includes('BDESE'));
-  assert.ok(!all.includes('Pyramide des Ages') && !all.includes('NAO'), 'absentes de la 3.28.00');
-  // Dans un groupe : présentes dans les 2 applications de la version d'abord
-  const four = c.groups[2].pages.map((p) => p.name);
-  assert.deepEqual(four.slice(-3), [
-    'MS par Organisation',
-    'Saisie des enveloppes par rubrique',
-    'Saisie des enveloppes par service',
+  assert.ok(!PAGE_NAMES.some((p) => p.endsWith('...')), 'libellés coupés complétés');
+  assert.deepEqual(pagesOf('Fiche Salarié'), ['Fiche Salarié', 'Détail Paye par Salarié']);
+});
+
+test('menus : une page vue sous plusieurs menus est rangée dans le plus fréquent', () => {
+  assert.deepEqual(menuOf('Absentéisme'), ['KPI RH'], 'KPI RH 3 fois, RH Suivi Effectifs 1 fois');
+  assert.deepEqual(menuOf('Analyse des Salaires'), ['RH Suivi Effectifs']);
+  assert.deepEqual(menuOf('Livre de Paye'), ['Masse Salariale']);
+  assert.deepEqual(menuOf('Tree-View'), ['Listes des employés']);
+  assert.deepEqual(menuOf('Fiche Salarié'), ['Fiche Salarié']);
+  assert.ok(!MENU.some((m) => m.title === 'Collaborateurs'), 'toutes ses pages sont plus fréquentes ailleurs');
+  // Variantes d'orthographe réunies
+  assert.equal(MENU.filter((m) => /^hyp\. budg/i.test(m.title)).length, 1);
+  assert.ok(PAGE_NAMES.includes('Liste par Rubrique') && !PAGE_NAMES.includes('Liste par Rubriques'));
+});
+
+test('menus : une page vue dans une seule application, juste en dessous de celle qui la précède', () => {
+  const listes = pagesOf('Listes des employés');
+  assert.deepEqual(listes.slice(0, 8), [
+    'Tree-View',
+    'Liste Mensuelle des Salariés',
+    'Liste Annuelle des Salariés',
+    'Liste des entrées',
+    'Liste des sorties',
+    'Liste par Rubrique',
+    'Pointage des Salariés',
+    'Pivot - Liste Mensuelle',
   ]);
-  const masse = c.groups[0].pages.find((p) => p.name === 'Masse Salariale');
-  assert.equal(masse.label, 'Masse Salariale (menu)');
-  assert.equal(masse.title, 'Menu · 6 applications sur 6 · 2/2 en 3.28.00');
-
-  const old = names(pageChoices({ version: '3.19.10' }));
-  assert.ok(old.includes('Pyramide des Ages') && old.includes('NAO') && !old.includes('Collaborateurs'));
-  assert.equal(old.length, 51);
-  assert.equal(names(pageChoices({ version: '3.24.01' })).length, 97);
+  assert.deepEqual(pagesOf('KPI RH'), [
+    'Turnover',
+    'Absentéisme',
+    'Effectifs Mensuels',
+    'Suivi des effectifs',
+    'Pyramide',
+    'Publier',
+  ]);
+  const hyp = pagesOf('Hyp. Budgétaires');
+  assert.equal(hyp[hyp.indexOf('Contrôles Effectifs') + 1], 'Contrôles des Changements');
+  assert.equal(pagesOf('Masse Salariale').at(-1), 'Livre de Paye');
 });
 
-test('pages proposées : sans version, rien que l’accueil', () => {
-  const c = pageChoices({ version: '  ' });
-  assert.equal(c.analysed, null);
-  assert.deepEqual(c.groups, []);
-  assert.deepEqual(c.order, [HOME]);
-  assert.ok(c.available('Pyramide des Ages'), 'sans version, aucune page écartée');
-});
-
-test('pages proposées : nouvelle version, menus de la précédente et pages mesurées dessus', () => {
+test('pages proposées : un groupe par menu, puis les pages spécifiques du client', () => {
   const measures = [
-    { app: 'Client A', version: '3.30', page: 'Nouvelle page' },
-    { app: 'Client B', version: '3.30.0', page: 'Nouvelle page' },
-    { app: 'Client B', version: '3.30', page: 'Pyramide des Ages' }, // de l'analyse, absente de la 3.28.00
-    { app: 'Client B', version: '3.30', page: 'Masse Salariale Croisée' }, // déjà proposée
-    { app: 'Client C', version: '3.30', page: 'Autre page' },
-    { app: 'Client C', version: '3.30', page: 'Écran maison', specific: true },
-    { app: 'Client A', version: '3.28.00', page: 'Page de la 3.28' },
-    { app: 'Client A', version: '3.24.01', page: 'Planning', specific: true },
-    { app: 'Client A', version: '3.30', page: HOME },
+    { app: 'Client A', page: 'Planning', specific: true },
+    { app: 'client a', page: 'Écran maison', specific: true },
+    { app: 'Client A', page: 'planning', specific: true }, // même page
+    { app: 'Client A', page: 'Turnover', specific: true }, // déjà dans les menus
+    { app: 'Client A', page: 'Autre page' }, // non spécifique
+    { app: 'Client B', page: 'Page de B', specific: true },
   ];
-  const c = pageChoices({ version: '3.30', client: 'client a', measures });
-  assert.deepEqual(c.analysed, { ref: '3.28.00', why: 'before' });
-  assert.equal(c.measured, 3);
-  const [measured, specific] = c.groups.slice(-2);
-  assert.equal(measured.label, 'Mesurées en 3.30 · hors analyse');
+  const c = pageChoices({ client: 'Client A', measures });
   assert.deepEqual(
-    measured.pages.map((p) => [p.name, p.title]),
-    [
-      ['Nouvelle page', 'Mesurée chez 2 clients en 3.30'],
-      ['Autre page', 'Mesurée chez 1 client en 3.30'],
-      ['Pyramide des Ages', 'Mesurée chez 1 client en 3.30'],
-    ],
-    'les plus mesurées d’abord ; pages spécifiques et autres versions écartées',
+    c.groups.map((g) => g.label),
+    [...MENU.map((m) => m.title), 'Spécifiques à ce client'],
   );
-  assert.equal(specific.label, 'Spécifiques à ce client');
   assert.deepEqual(
-    specific.pages.map((p) => p.name),
-    ['Planning'],
+    c.groups.at(-1).pages.map((p) => p.name),
+    ['Écran maison', 'Planning'],
   );
-  assert.equal(new Set(c.order.map(nameKey)).size, c.order.length, 'aucune page en double');
-  // Pages existant dans la version : de l'analyse absentes de la 3.28.00 écartées, sauf mesurées dessus
-  assert.ok(c.available('Masse Salariale Croisée'));
-  assert.ok(c.available('Pyramide des Ages'));
-  assert.ok(!c.available('Pyramide des Anciennetés'));
-  assert.ok(c.available('Page inconnue de l’analyse'));
+  assert.deepEqual(c.order, [...PAGE_NAMES, 'Écran maison', 'Planning'], 'accueil puis menus dans l’ordre');
+  assert.deepEqual(
+    pageChoices({ measures }).groups.map((g) => g.label),
+    MENU.map((m) => m.title),
+    'sans client : les menus seuls',
+  );
 });
 
 test('libellés courts : la liste déroulante ne déborde pas du panneau', () => {
   assert.equal(fitLabel('Liste Mensuelle'), 'Liste Mensuelle');
-  const labels = PAGES.map((p) => fitLabel(p.name));
+  const labels = PAGE_NAMES.map(fitLabel);
   assert.deepEqual(
     labels.filter((l) => l.length > LABEL_MAX),
     [],
