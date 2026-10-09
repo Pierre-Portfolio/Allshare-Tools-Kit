@@ -113,10 +113,6 @@ kbd {
   cursor: help;
 }
 
-.field .hint {
-  margin-top: 0;
-}
-
 .suggest {
   display: flex;
   align-items: center;

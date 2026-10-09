@@ -40,8 +40,8 @@ Extension Chrome qui réunit, dans un **panneau latéral**, cinq outils pour les
 - Seules les pages web sont enregistrées (http, https, fichiers locaux), pas les pages internes de Chrome ni la navigation privée
 
 ### Insight : temps de réponse des pages (`panel/panel.html`, `report/`)
-- **Formulaire** : réseau (**Ethernet** par défaut, ou WiFi), **Client**, **Version application** (obligatoire, au-dessus du SID), **SID**, **Page** (pages de cette version, avec **Dashboard** tout en haut, ou **✎ Saisie libre**) et **Page spécifique ?**
-- **Pages selon la version** : la liste vient de l'analyse des menus et sous-menus de 6 applications (2 par version : 3.19.10, 3.24.01, 3.28.00). Elle ne propose que les pages de la version saisie, **de la plus courante à la plus rare** : un groupe par nombre d'applications sur 6 où la page a été rencontrée (« 6/6 applications · communes » … « 1/6 application · rares »), toutes les pages étant gardées ; dans un groupe, celles présentes dans les 2 applications de la version d'abord. Une version **absente de l'analyse** (nouvelle version) reprend les menus de la dernière version analysée avant elle et **s'enrichit des pages mesurées dessus** (groupe « Mesurées en … ») ; les pages déclarées spécifiques au client sont proposées en dernier. L'avancement de la ligne et **Page suivante →** suivent la même liste : une page d'une autre version n'y reste pas « à mesurer »
+- **Formulaire** : réseau (**Ethernet** par défaut, ou WiFi), **Client**, **Version application** (obligatoire, au-dessus du SID), **SID**, **Page** (pages des menus, avec **Dashboard** tout en haut, ou **✎ Saisie libre**) et **Page spécifique ?**
+- **Pages des menus** : un groupe par **menu**, ses **sous-menus** dessous, **dans l'ordre d'affichage** de l'application (13 menus, 104 pages, quelle que soit la version). Menus et sous-menus relevés dans plusieurs applications clientes, réunis **sans doublon** : une page vue dans une seule application est rangée juste en dessous de celle qui la précède ; une page rencontrée sous plusieurs menus est rangée dans celui où elle apparaît le plus souvent (à égalité, le premier relevé) ; les variantes d'orthographe sont réunies (« Hyp. Budgétaires », « Liste par Rubrique »). Les pages déclarées spécifiques au client sont proposées en dernier. **Page suivante →** suit l'ordre du référentiel, puis celui des menus
 - **Mesure** : le chrono part **au clic** sur le lien de la page à mesurer et s'arrête quand la page est **complètement affichée** ; pages classiques comme applications sans rechargement (Angular, React…)
 - **Résultat** : **↻ Relancer en WiFi** (même page, l'autre réseau : l'onglet revient seul à la page de départ), **↻ Refaire en Ethernet** (une mesure de plus), **Page suivante →** (la prochaine page non mesurée est choisie **et l'enregistrement relancé aussitôt** : il ne reste qu'à cliquer sur cette page dans l'application ; **Annuler** ramène au formulaire)
 - **Détail du chargement** : redirection, DNS, connexion, **attente serveur (requêtes SQL comprises)**, téléchargement, DOM, load, appels AJAX, requêtes les plus lentes
@@ -143,7 +143,7 @@ Allshare-Tools-Kit/
     prisme/                  → Tableau de bord de Prisme : 4 vues, inspecteur de cellule
     options/                 → Réglages d'Insight : clients, pages, mesure, anomalies, données
     lib/                     → Logique sans interface : training, report, xlsx, storage, prisme, capsule, backup,
-                               menu (pages proposées selon la version)… ;
+                               menu (pages proposées, par menu)… ;
                                dom.js / tabs.js : outils communs des pages ; prisme-worker.js : analyse des gros CSV
     icons/                   → Logo du projet et icônes des outils
   tests/
@@ -174,7 +174,7 @@ La progression est enregistrée dans `chrome.storage.local` (clé `training`) : 
 ## Comment l'utiliser
 
 - **Se former** : **Training** → choisissez un module → **Commencer le module** (ou **Reprendre**). Lisez la notion, faites ses 5 exercices, puis passez l'examen du module.
-- **Mesurer une page** : **Insight** → remplissez Client, Version (la liste des pages en dépend), SID et Page → **Lancer l'enregistrement** → cliquez sur la page dans l'application. Enchaînez avec **↻ Relancer en WiFi** ou **Page suivante →**, qui relance aussitôt l'enregistrement sur la page suivante.
+- **Mesurer une page** : **Insight** → remplissez Client, Version, SID et Page → **Lancer l'enregistrement** → cliquez sur la page dans l'application. Enchaînez avec **↻ Relancer en WiFi** ou **Page suivante →**, qui relance aussitôt l'enregistrement sur la page suivante.
 - **Comparer les clients** : **Exports** → choisissez le type, la page ou le client, le format → **Télécharger**.
 - **Garder ses onglets** : **Capsule** → **＋ Sauvegarder cette session** → **Rouvrir** plus tard.
 - **Contrôler un CSV** : **Prisme** → déposez le fichier → lisez le verdict → **Exporter en ANSI** ou **en UTF-8**.
