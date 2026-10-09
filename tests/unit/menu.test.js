@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MENU, PAGE_NAMES, HOME, LABEL_MAX, fitLabel, pageChoices } from '../../extension/lib/menu.js';
+import { MENU, PAGE_NAMES, HOME, LABEL_MAX, fitLabel, isMenuPage, pageChoices } from '../../extension/lib/menu.js';
 import { nameKey } from '../../extension/lib/names.js';
 
 const menuOf = (name) => MENU.filter((m) => m.pages.includes(name)).map((m) => m.title);
@@ -10,8 +10,8 @@ test('menus : réunis sans doublon, dans l’ordre d’affichage', () => {
   assert.deepEqual(
     MENU.map((m) => m.title),
     [
-      'NAO',
       'Fiche Salarié',
+      'NAO',
       'Listes Collaborateurs',
       'Listes des employés',
       'RH Suivi Effectifs',
@@ -34,6 +34,8 @@ test('menus : réunis sans doublon, dans l’ordre d’affichage', () => {
   );
   assert.ok(!PAGE_NAMES.some((p) => p.endsWith('...')), 'libellés coupés complétés');
   assert.deepEqual(pagesOf('Fiche Salarié'), ['Fiche Salarié', 'Détail Paye par Salarié']);
+  assert.ok(isMenuPage('turnover') && isMenuPage(HOME), 'pages des menus et d’accueil');
+  assert.ok(!isMenuPage('Planning') && !isMenuPage('KPI RH'), 'page libre, titre de menu');
 });
 
 test('menus : une page vue sous plusieurs menus est rangée dans le plus fréquent', () => {

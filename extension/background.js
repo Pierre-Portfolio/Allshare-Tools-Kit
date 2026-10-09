@@ -27,6 +27,7 @@ import {
   ACTIVE_STATES as ACTIVE,
 } from './lib/storage.js';
 import { canonical, normName } from './lib/names.js';
+import { PAGE_NAMES, isMenuPage } from './lib/menu.js';
 import { getCapsules, closeOpenSpans, anyOpen } from './lib/capsule.js';
 import { trackPages, clientHost } from './lib/cra.js';
 import { urlEnd } from './lib/urls.js';
@@ -131,10 +132,7 @@ async function arm({ tabId, app, sid, version, page, specific, network }) {
     app,
     apps.map((a) => a.name),
   );
-  page = canonical(
-    page,
-    pages.map((p) => p.name),
-  );
+  page = canonical(page, [...PAGE_NAMES, ...pages.map((p) => p.name)]);
   const settings = network ? await saveSettings({ network }) : (await getConfig()).settings;
 
   const previous = await getSession();
@@ -166,6 +164,8 @@ async function arm({ tabId, app, sid, version, page, specific, network }) {
     updateBadge();
     return { ok: false, error: `Impossible de mesurer cet onglet : ${e.message}` };
   }
+  // Page libre (hors menus) : créée dès le lancement, proposée ensuite dans la saisie libre
+  if (!isMenuPage(page)) await ensureInCatalog('', page);
   updateBadge();
   return { ok: true, session };
 }

@@ -21,7 +21,7 @@ import {
   MIN_APPS_FOR_RATIO,
 } from '../lib/report.js';
 import { nameKey, normName, canonical, suggestApp, nextPage, compareNames } from '../lib/names.js';
-import { HOME, PAGE_NAMES, pageChoices, fitLabel } from '../lib/menu.js';
+import { HOME, PAGE_NAMES, pageChoices, isMenuPage, fitLabel } from '../lib/menu.js';
 import { phases } from '../lib/timing.js';
 import { urlEnd } from '../lib/urls.js';
 import { NETWORKS, NETWORK_LABELS, STATS, unitOf, fmtNum, fmtDuration, fmtDate } from '../lib/format.js';
@@ -64,13 +64,11 @@ function setSpecific(value) {
   saveDraft({ specific: !!value });
 }
 
-/** Pages des menus, puis pages connues hors menus (référentiel et mesures). */
-function pageNames() {
-  const names = [...PAGE_NAMES];
-  const keys = new Set(names.map(nameKey));
-  for (const p of state.model.allPages) if (!keys.has(nameKey(p.name))) names.push(p.name);
-  return names;
-}
+/** Pages libres : connues hors menus (référentiel et mesures), créées depuis la saisie libre. */
+const freePageNames = () => state.model.allPages.map((p) => p.name).filter((name) => !isMenuPage(name));
+
+/** Pages des menus, puis pages libres. */
+const pageNames = () => [...PAGE_NAMES, ...freePageNames()];
 
 /** Pages proposées pour un client (lib/menu.js) : les menus, puis ses pages spécifiques. */
 const choicesFor = (client) => pageChoices({ client, measures: state.measures });
@@ -166,7 +164,7 @@ function renderNetHint(settings) {
 function renderForm() {
   const { model, config } = state;
   $('appList').replaceChildren(...model.clients.map((name) => el('option', { value: name })));
-  $('pageList').replaceChildren(...pageNames().map((name) => el('option', { value: name })));
+  $('pageList').replaceChildren(...freePageNames().map((name) => el('option', { value: name })));
   const refill = !state.formFilled;
   if (refill) {
     state.formFilled = true;
@@ -223,6 +221,22 @@ function focusPage() {
   if ($('page').hidden) return $('pagePick').focus();
   $('page').focus();
   $('page').select();
+}
+
+/**
+ * « Saisie libre » choisie : les pages libres sont proposées sous le champ (champ vidé s'il contenait
+ * une page des menus, sans quoi les propositions seraient filtrées sur elle) ; un nom qui n'y est pas
+ * crée la page au lancement de l'enregistrement.
+ */
+function openFreeEntry() {
+  const input = $('page');
+  if (isMenuPage(input.value)) input.value = '';
+  focusPage();
+  try {
+    input.showPicker();
+  } catch {
+    // sans geste de l'utilisateur, les propositions s'ouvrent au clic ou à la frappe dans le champ
+  }
 }
 
 /** SID et versions proposés : ceux déjà vus pour ce client d'abord. */
@@ -654,7 +668,7 @@ $('page').addEventListener('change', () => setSpecific(knownSpecific($('app').va
 $('pagePick').addEventListener('change', () => {
   const pick = $('pagePick').value;
   $('page').hidden = pick !== FREE;
-  if (pick === FREE) return focusPage(); // champ pré-rempli avec la page en cours, prêt à être remplacé
+  if (pick === FREE) return openFreeEntry();
   $('page').value = pick;
   saveDraft({ page: pick });
   setSpecific(knownSpecific($('app').value, pick));

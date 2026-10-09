@@ -276,11 +276,11 @@ try {
   const pageOptions = () => panel.locator('#pagePick option').allTextContents();
   const menus = await panel.locator('#pagePick optgroup').evaluateAll((gs) => gs.map((g) => g.label));
   assert.equal(menus.length, 13, 'un groupe par menu');
-  assert.deepEqual(menus.slice(0, 4), ['NAO', 'Fiche Salarié', 'Listes Collaborateurs', 'Listes des employés']);
+  assert.deepEqual(menus.slice(0, 4), ['Fiche Salarié', 'NAO', 'Listes Collaborateurs', 'Listes des employés']);
   assert.equal(await panel.locator('#pagePick option').count(), 107, '104 pages + accueil + choix vide + saisie libre');
   assert.deepEqual(
     (await pageOptions()).slice(0, 4),
-    ['— Choisir une page —', 'Dashboard', '✎ Saisie libre (autre page)…', 'Effectifs CDI'],
+    ['— Choisir une page —', 'Dashboard', '✎ Saisie libre (autre page)…', 'Fiche Salarié'],
     '« Dashboard » tout en haut, puis les sous-menus du premier menu',
   );
   assert.deepEqual(await panel.locator('#pagePick optgroup[label="Fiche Salarié"] option').allTextContents(), [
@@ -290,9 +290,21 @@ try {
   await panel.selectOption('#pagePick', 'Liste Mensuelle des Salariés');
   assert.ok(await panel.isHidden('#page'), 'champ texte masqué');
   assert.equal(await panel.inputValue('#page'), 'Liste Mensuelle des Salariés', 'page reprise de la liste');
-  await freePage(panel, 'Clients');
+  // « Saisie libre » : champ vidé (il contenait une page des menus), seules les pages libres proposées
+  await panel.selectOption('#pagePick', '__free__');
+  assert.equal(await panel.inputValue('#page'), '', 'champ vidé pour proposer les pages libres');
+  assert.equal(await panel.locator('#pageList option').count(), 0, 'aucune page libre pour le moment');
+  await panel.fill('#page', 'Clients');
   await panel.click('#arm');
   await waitSession((s) => s && s.state === 'armed', 'armé');
+  // Nouvelle page libre créée dès le lancement (avant toute mesure), proposée ensuite dans la saisie libre
+  for (let i = 0; ; i++) {
+    const pages = await storage(async () => (await chrome.storage.local.get('pages')).pages || []);
+    if (pages.some((p) => p.name === 'Clients')) break;
+    assert.ok(i < 50, 'page libre créée au lancement');
+    await sleep(100);
+  }
+  assert.equal((await measures()).length, 0, 'aucune mesure encore');
   await panel.waitForSelector('#viewLive:not([hidden])');
   await page.waitForSelector('insight-indicator', { state: 'attached' });
   await panel.screenshot({ path: join(out, 'panel-pret.png') });
@@ -418,6 +430,11 @@ try {
   assert.deepEqual(
     await panel.locator('#pagePick optgroup[label="Spécifiques à ce client"] option').allTextContents(),
     ['Fiche client'],
+  );
+  assert.deepEqual(
+    await panel.locator('#pageList option').evaluateAll((os) => os.map((o) => o.value)),
+    ['Clients', 'Fiche client', 'Factures'],
+    'saisie libre : pages libres déjà créées, sans les pages des menus',
   );
   await panel.selectOption('#pagePick', 'Turnover');
   await panel.click('#arm');

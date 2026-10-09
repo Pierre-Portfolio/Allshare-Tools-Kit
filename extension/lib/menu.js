@@ -33,6 +33,7 @@ export const HOME = 'Dashboard';
 
 /** Menus, dans l'ordre d'affichage, et leurs sous-menus (pages), dans l'ordre d'affichage. */
 export const MENU = [
+  { title: 'Fiche Salarié', pages: ['Fiche Salarié', 'Détail Paye par Salarié'] },
   {
     title: 'NAO',
     pages: [
@@ -46,7 +47,6 @@ export const MENU = [
       'Réintégration salariés NAO',
     ],
   },
-  { title: 'Fiche Salarié', pages: ['Fiche Salarié', 'Détail Paye par Salarié'] },
   { title: 'Listes Collaborateurs', pages: ['Liste par Rubrique avec rub. paie'] },
   {
     title: 'Listes des employés',
@@ -162,6 +162,9 @@ export const MENU = [
 /** Noms des pages, page d'accueil comprise, dans l'ordre de la liste (orthographe de référence). */
 export const PAGE_NAMES = [HOME, ...MENU.flatMap((m) => m.pages)];
 const PAGE_KEYS = new Set(PAGE_NAMES.map(nameKey));
+
+/** Page des menus (ou d'accueil) ? Sinon, c'est une page libre (saisie libre). */
+export const isMenuPage = (name) => PAGE_KEYS.has(nameKey(name));
 
 /**
  * Pages proposées, par groupes : un groupe par menu (sous-menus dans l'ordre d'affichage), puis
