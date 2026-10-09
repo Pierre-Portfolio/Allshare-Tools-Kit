@@ -1,6 +1,6 @@
 // Allshare Tools Kit — service worker : mesures Insight, badge de l'icône, raccourci clavier,
 // temps d'ouverture des capsules (fin notée à la fermeture de leurs fenêtres, voir lib/capsule.js)
-// et des pages allshare-scenario.fr du jour (craPages, voir lib/cra.js).
+// et des clients allshare-scenario.fr du jour (craPages, voir lib/cra.js).
 //
 // Une mesure se déroule ainsi (état « session » dans chrome.storage.session) :
 //   armed      le formulaire a été validé : les scripts de mesure sont injectés
@@ -28,7 +28,7 @@ import {
 } from './lib/storage.js';
 import { canonical, normName } from './lib/names.js';
 import { getCapsules, closeOpenSpans, anyOpen } from './lib/capsule.js';
-import { trackPages, isSitePage } from './lib/cra.js';
+import { trackPages, clientHost } from './lib/cra.js';
 import { urlEnd } from './lib/urls.js';
 import { NETWORK_LABELS } from './lib/format.js';
 
@@ -443,7 +443,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 // ---------------------------------------------------------------- Capsule : temps d'ouverture
 
-const TICK_ALARM = 'tick'; // relevé chaque minute (capsules et pages allshare-scenario.fr ouvertes)
+const TICK_ALARM = 'tick'; // relevé chaque minute (capsules et clients allshare-scenario.fr ouverts)
 
 // Mises à jour des capsules sérialisées : deux fenêtres fermées ensemble ne s'écrasent pas
 let capsuleChain = Promise.resolve();
@@ -459,12 +459,12 @@ const lastAlive = async () => (await chrome.storage.local.get('capsuleAlive')).c
 
 chrome.windows.onRemoved.addListener((windowId) => closeCapsuleSpans((w) => w !== windowId, Date.now()));
 
-// ---------------------------------------------------------------- CRA : pages allshare-scenario.fr du jour
+// ---------------------------------------------------------------- CRA : clients allshare-scenario.fr du jour
 
 // Relevés sérialisés (lecture puis écriture de craPages) ; `restart` : les onglets d'avant n'existent plus
 let pagesChain = Promise.resolve();
-// Onglets affichant une page du domaine au dernier relevé : seuls leurs changements (et l'arrivée d'un
-// onglet sur le domaine) déclenchent un relevé. Vide au réveil du service worker : le relevé de chaque
+// Onglets affichant un client du domaine au dernier relevé : seuls leurs changements (et l'arrivée d'un
+// onglet sur un client) déclenchent un relevé. Vide au réveil du service worker : le relevé de chaque
 // minute le reconstitue.
 let siteTabs = new Set();
 function updatePages(restart = false) {
@@ -473,7 +473,7 @@ function updatePages(restart = false) {
       const { craPages } = await chrome.storage.local.get('craPages');
       const before = restart && craPages ? { ...craPages, open: [] } : craPages;
       const tabs = await chrome.tabs.query({});
-      siteTabs = new Set(tabs.filter((t) => isSitePage(t.url)).map((t) => t.id));
+      siteTabs = new Set(tabs.filter((t) => clientHost(t.url)).map((t) => t.id));
       const next = trackPages(before, tabs, Date.now());
       if (!(craPages && craPages.open.length) && !next.open.length) return; // aucune page suivie
       await chrome.storage.local.set({ craPages: next });
@@ -485,14 +485,14 @@ function updatePages(restart = false) {
 // Les autres onglets (titres qui changent sans cesse : messagerie, visio…) ne provoquent aucune écriture.
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
   if (!info.url && !info.title) return;
-  if (siteTabs.has(tabId) || isSitePage(info.url || (tab && tab.url))) updatePages();
+  if (siteTabs.has(tabId) || clientHost(info.url || (tab && tab.url))) updatePages();
 });
 chrome.tabs.onRemoved.addListener((tabId) => siteTabs.has(tabId) && updatePages());
 chrome.tabs.onReplaced.addListener(() => updatePages()); // rare (page préchargée) : relevé complet
 
 // ---------------------------------------------------------------- Relevé chaque minute
 
-// Tant qu'une capsule ou une page allshare-scenario.fr est ouverte : temps des pages mis à jour, et
+// Tant qu'une capsule ou un client allshare-scenario.fr est ouvert : temps des clients mis à jour, et
 // dernier instant où Chrome tournait (si Chrome est quitté, les capsules ouvertes se terminent là)
 async function syncTickAlarm() {
   const [capsules, { craPages }] = await Promise.all([getCapsules(), chrome.storage.local.get('craPages')]);

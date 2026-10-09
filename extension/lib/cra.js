@@ -5,10 +5,11 @@
 //                { autoSave, autoHighlight }
 //                (autoSave : clic sur « Save » quand on quitte une ligne modifiée de la grille)
 //                (autoHighlight : case de l'étoile jaune, le surlignage de la grille, décochée en arrivant sur la page)
-//   craPages     pages allshare-scenario.fr ouvertes aujourd'hui (remis à zéro chaque jour), tenu par background.js :
-//                { day: 'AAAA-MM-JJ', at, pages: { [clé]: { url, title, ms } }, open: [clé…] }
-//                (at : dernière mise à jour ; open : pages ouvertes dans un onglet à cet instant, qui gagnent
-//                 le temps écoulé depuis at ; clé : voir pageKey)
+//   craPages     clients allshare-scenario.fr ouverts aujourd'hui (remis à zéro chaque jour), tenu par background.js :
+//                { day: 'AAAA-MM-JJ', at, pages: { [sous-domaine]: { url, title, ms } }, open: [sous-domaine…] }
+//                (une entrée par sous-domaine client, voir clientHost ; url, title : dernière page vue ;
+//                 at : dernière mise à jour ; open : clients ouverts dans un onglet à cet instant, qui gagnent
+//                 le temps écoulé depuis at)
 // Capsules ouvertes dans la journée : capsules[].opens (réouvertures, voir lib/capsule.js) et date de sauvegarde ;
 // temps d'ouverture : capsules[].spans (de la sauvegarde ou d'une réouverture à la fermeture de ses fenêtres).
 
@@ -106,38 +107,54 @@ export function openedOn(capsules, date, now = Date.now()) {
     .map(({ start, ...x }) => x);
 }
 
-// ---------------------------------------------------------------- Pages allshare-scenario.fr
+// ---------------------------------------------------------------- Clients allshare-scenario.fr
 
-/** Page du domaine allshare-scenario.fr (ou d'un sous-domaine) ? */
-export function isSitePage(url) {
+/** Sous-domaines du domaine qui ne sont pas des clients : la saisie du C.R.A, le site lui-même. */
+const NOT_CLIENTS = [new URL(CRA_ORIGIN).hostname, `www.${SITE}`];
+
+/**
+ * Sous-domaine client d'une adresse (« dsb-generali.allshare-scenario.fr »), chaîne vide sinon : hors
+ * du domaine, domaine seul, ou sous-domaine qui n'est pas un client (dsb-cra : saisie du C.R.A).
+ */
+export function clientHost(url) {
   try {
-    const host = new URL(url).hostname;
-    return host === SITE || host.endsWith(`.${SITE}`);
+    const host = new URL(url).hostname.toLowerCase();
+    return host.endsWith(`.${SITE}`) && !NOT_CLIENTS.includes(host) ? host : '';
   } catch {
-    return false;
+    return '';
   }
 }
 
+/** « dsb-generali » : nom du client affiché, son sous-domaine sans le domaine. */
+export const clientName = (host) => host.slice(0, -SITE.length - 1);
+
 /**
- * Clé d'une page : son adresse sans ancre ni numéro de session APEX (paramètres session, cs, clear ;
- * 3e valeur de f?p=), pour qu'une même page ne soit pas comptée à part à chaque connexion.
+ * Relevé d'avant la version 3.15 (une entrée par page, clé = adresse) : regroupé par client, temps des
+ * pages additionnés (sans dépasser le temps écoulé depuis minuit), pages non clientes écartées.
  */
-export function pageKey(url) {
-  const u = new URL(url);
-  u.hash = '';
-  for (const name of ['session', 'cs', 'clear']) u.searchParams.delete(name);
-  const p = u.searchParams.get('p');
-  if (p && p.split(':').length > 2) u.searchParams.set('p', p.replace(/^([^:]*:[^:]*:)[^:]*/, '$1'));
-  return u.href;
+function byClient(state) {
+  if (Object.keys(state.pages).every((key) => !key.includes('/'))) return state;
+  const pages = {};
+  const longest = {};
+  for (const page of Object.values(state.pages)) {
+    const host = clientHost(page.url);
+    if (!host) continue;
+    const ms = Math.min((pages[host] ? pages[host].ms : 0) + page.ms, state.at - dayBounds(state.at)[0]);
+    if (!longest[host] || page.ms > longest[host].ms) longest[host] = page;
+    pages[host] = { url: longest[host].url, title: longest[host].title, ms };
+  }
+  const open = [...new Set(state.open.map(clientHost).filter(Boolean))];
+  return { ...state, pages, open };
 }
 
 /**
- * Relevé à `now` : les pages ouvertes depuis le dernier relevé gagnent le temps écoulé (MAX_GAP au plus) ;
+ * Relevé à `now` : les clients ouverts depuis le dernier relevé gagnent le temps écoulé (MAX_GAP au plus) ;
  * un nouveau jour repart de zéro (seul le temps depuis minuit compte). Fonction pure.
  */
-export function advancePages(state, now) {
+export function advancePages(saved, now) {
   const day = isoDay(now);
-  if (!state) return { day, at: now, pages: {}, open: [] };
+  if (!saved) return { day, at: now, pages: {}, open: [] };
+  const state = byClient(saved);
   const sameDay = state.day === day;
   const since = sameDay ? state.at : Math.max(state.at, dayBounds(now)[0]);
   const gained = Math.max(0, Math.min(now - since, MAX_GAP));
@@ -150,32 +167,34 @@ export function advancePages(state, now) {
 }
 
 /**
- * Relevé à `now` d'après les onglets ouverts : les pages allshare-scenario.fr affichées (titre et adresse
- * à jour) comptent à partir de maintenant, les autres s'arrêtent. Fonction pure.
- * @param {{url: string, title: string}[]} tabs  tous les onglets de Chrome
+ * Relevé à `now` d'après les onglets ouverts : les clients allshare-scenario.fr affichés comptent à partir
+ * de maintenant (une fois, même ouverts dans plusieurs onglets), les autres s'arrêtent ; un client garde
+ * l'adresse et le titre de la dernière page vue (onglet actif d'abord). Fonction pure.
+ * @param {{url: string, title: string, active?: boolean}[]} tabs  tous les onglets de Chrome
  */
 export function trackPages(state, tabs, now) {
   const next = advancePages(state, now);
   const pages = { ...next.pages };
   const open = [];
-  for (const t of tabs) {
-    if (!isSitePage(t.url)) continue;
-    const key = pageKey(t.url);
-    if (!open.includes(key)) open.push(key);
-    const page = pages[key];
-    pages[key] = { url: t.url, title: normName(t.title) || (page && page.title) || '', ms: page ? page.ms : 0 };
+  for (const t of [...tabs].sort((a, b) => !!b.active - !!a.active)) {
+    const host = clientHost(t.url);
+    if (!host || open.includes(host)) continue;
+    open.push(host);
+    const page = pages[host];
+    pages[host] = { url: t.url, title: normName(t.title) || (page && page.title) || '', ms: page ? page.ms : 0 };
   }
   return { ...next, pages, open };
 }
 
 /**
- * Pages du jour pour le panneau, la plus longtemps ouverte en tête. Fonction pure.
- * @returns {{key, url, title, ms, live: boolean}[]} live : ouverte dans un onglet en ce moment
+ * Clients du jour pour le panneau, le plus longtemps ouvert en tête. Fonction pure.
+ * @returns {{key, name, url, title, ms, live: boolean}[]} key : sous-domaine, name : clientName,
+ *   live : ouvert dans un onglet en ce moment
  */
 export function pagesToday(state, now = Date.now()) {
   const { pages, open } = advancePages(state, now);
   return Object.entries(pages)
-    .map(([key, page]) => ({ key, ...page, live: open.includes(key) }))
+    .map(([key, page]) => ({ key, name: clientName(key), ...page, live: open.includes(key) }))
     .sort((a, b) => b.ms - a.ms);
 }
 

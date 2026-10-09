@@ -1200,24 +1200,36 @@ try {
   );
   await cra.close();
   await context.unroute('https://dsb-cra.allshare-scenario.fr/**');
-  // Pages allshare-scenario.fr du jour : les deux pages ouvertes, sans numéro de session, plus en cours
+  // Clients allshare-scenario.fr du jour : un client (sous-domaine) ouvert dans deux onglets, compté une fois ;
+  // la saisie du C.R.A (dsb-cra) n'est pas un client
+  const generali = 'https://dsb-generali.allshare-scenario.fr';
+  await context.route(`${generali}/**`, (route) => {
+    const p = new URL(route.request().url()).searchParams.get('p') || '';
+    const body = `<!doctype html><meta charset="utf-8"><title>Generali · page ${p.split(':')[1]}</title><p>Client</p>`;
+    return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body });
+  });
+  const clientTabs = [await context.newPage(), await context.newPage()];
+  await clientTabs[0].goto(`${generali}/apex/f?p=100:1:4242`);
+  await clientTabs[1].goto(`${generali}/apex/f?p=100:2:4242`);
+  await sleep(1500);
+  for (const t of clientTabs) await t.close();
+  await context.unroute(`${generali}/**`);
   const craPages = () => storage(async () => (await chrome.storage.local.get('craPages')).craPages);
   for (let i = 0; i < 50 && (await craPages())?.open.length !== 0; i++) await sleep(100);
   const sitePages = await craPages();
-  const xaas = 'https://dsb-cra.allshare-scenario.fr/apex/r/allshare_wks/xaas';
-  assert.deepEqual(Object.keys(sitePages.pages).sort(), [`${xaas}/autre-page`, `${xaas}/saisie-cra`]);
-  assert.ok(sitePages.pages[`${xaas}/saisie-cra`].ms > 3000, 'temps d’ouverture de la page de saisie');
-  assert.equal(sitePages.pages[`${xaas}/saisie-cra`].title, 'Saisie CRA');
+  assert.deepEqual(Object.keys(sitePages.pages), ['dsb-generali.allshare-scenario.fr'], 'un seul client, sans dsb-cra');
+  const { ms } = sitePages.pages['dsb-generali.allshare-scenario.fr'];
+  assert.ok(ms > 1000, `temps d'ouverture du client (${ms} ms)`);
   assert.equal(await tools.getAttribute('#sitePages', 'open'), null, 'repliée au départ');
   await tools.click('#sitePages > summary');
-  assert.equal(await tools.textContent('#pagesTotal'), '(2)');
-  assert.deepEqual(await tools.locator('#pagesList .cra-url').allTextContents(), [
-    'dsb-cra.allshare-scenario.fr/apex/r/allshare_wks/xaas/saisie-cra',
-    'dsb-cra.allshare-scenario.fr/apex/r/allshare_wks/xaas/autre-page',
-  ]);
-  assert.deepEqual(await tools.locator('#pagesList .cra-open').allTextContents(), ['< 1 min', '< 1 min']);
+  assert.equal(await tools.textContent('#pagesTotal'), '(1)');
+  assert.deepEqual(await tools.locator('#pagesList strong').allTextContents(), ['dsb-generali']);
+  assert.match(await tools.textContent('#pagesList .cra-url'), /^Dernière page : Generali · page [12]$/);
+  assert.deepEqual(await tools.locator('#pagesList .cra-open').allTextContents(), ['< 1 min']);
   await tools.screenshot({ path: join(out, 'cra-pages.png'), fullPage: true });
-  console.log('  CRA : capsules du jour et temps d’ouverture, étoile jaune décochée, ligne enregistrée, pages du jour');
+  console.log(
+    '  CRA : capsules du jour et temps d’ouverture, étoile jaune décochée, ligne enregistrée, clients du jour',
+  );
   await tools.goto(`chrome-extension://${extId}/panel/home.html?choose`);
 
   // 15. Mes données : export de toutes les données depuis l'accueil, extension vidée, réimport

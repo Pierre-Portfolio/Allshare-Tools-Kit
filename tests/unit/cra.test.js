@@ -7,8 +7,8 @@ import {
   openTime,
   fmtOpenTime,
   craCountText,
-  isSitePage,
-  pageKey,
+  clientHost,
+  clientName,
   advancePages,
   trackPages,
   pagesToday,
@@ -100,72 +100,97 @@ test('compteur de l’accueil', () => {
   assert.equal(craCountText(caps, at(18, 0, 8)), '');
 });
 
-test('pages allshare-scenario.fr : domaine et sous-domaines, clé sans numéro de session APEX', () => {
-  assert.ok(isSitePage('https://dsb-cra.allshare-scenario.fr/apex/r/x?session=1'));
-  assert.ok(isSitePage('https://allshare-scenario.fr/'));
-  assert.ok(!isSitePage('https://www.google.fr/search?q=allshare-scenario.fr'), 'cité dans l’adresse seulement');
-  assert.ok(!isSitePage('https://allshare-scenario.fr.example.com/') && !isSitePage('chrome://newtab/'));
+test('clients allshare-scenario.fr : un par sous-domaine, saisie du C.R.A écartée', () => {
   assert.equal(
-    pageKey('https://dsb-cra.allshare-scenario.fr/apex/r/allshare_wks/xaas/saisie-cra?session=4242#x'),
-    'https://dsb-cra.allshare-scenario.fr/apex/r/allshare_wks/xaas/saisie-cra',
+    clientHost('https://dsb-generali.allshare-scenario.fr/apex/f?p=100:1:42'),
+    'dsb-generali.allshare-scenario.fr',
   );
-  assert.equal(
-    pageKey('https://a.allshare-scenario.fr/apex/r/w/app/ticket?p10_id=7&session=1&cs=abc&clear=10'),
-    'https://a.allshare-scenario.fr/apex/r/w/app/ticket?p10_id=7',
-    'valeurs de la page gardées',
-  );
-  assert.equal(
-    pageKey('https://a.allshare-scenario.fr/apex/f?p=100:10:123456::NO::P10_ID:7'),
-    pageKey('https://a.allshare-scenario.fr/apex/f?p=100:10:999::NO::P10_ID:7'),
-    'ancienne adresse f?p= : session ignorée',
-  );
-  assert.notEqual(
-    pageKey('https://a.allshare-scenario.fr/apex/f?p=100:10:1::NO::P10_ID:7'),
-    pageKey('https://a.allshare-scenario.fr/apex/f?p=100:10:1::NO::P10_ID:8'),
-  );
+  assert.equal(clientHost('https://DSB-Natixis.allshare-scenario.fr/'), 'dsb-natixis.allshare-scenario.fr');
+  assert.equal(clientHost(`${CRA_ORIGIN}${CRA_PATH}?session=1`), '', 'dsb-cra : pas un client');
+  assert.equal(clientHost('https://allshare-scenario.fr/') + clientHost('https://www.allshare-scenario.fr/'), '');
+  assert.equal(clientHost('https://www.google.fr/search?q=allshare-scenario.fr'), '', 'cité dans l’adresse seulement');
+  assert.equal(clientHost('https://allshare-scenario.fr.example.com/') + clientHost('chrome://newtab/'), '');
+  assert.equal(clientHost('pas une adresse'), '');
+  assert.equal(clientName('dsb-generali.allshare-scenario.fr'), 'dsb-generali');
 });
 
-test('pages du jour : temps gagné par les pages ouvertes, remis à zéro chaque jour', () => {
+test('clients du jour : temps gagné par les clients ouverts, remis à zéro chaque jour', () => {
   const min = (n) => n * 60000;
-  const cra = 'https://dsb-cra.allshare-scenario.fr/apex/r/w/x/saisie-cra';
-  const tickets = 'https://t.allshare-scenario.fr/tickets';
+  const generali = 'dsb-generali.allshare-scenario.fr';
+  const natixis = 'dsb-natixis.allshare-scenario.fr';
+  const g = (page) => `https://${generali}/apex/f?p=100:${page}:4242`;
+  const tickets = `https://${natixis}/tickets`;
   const tabs = [
-    { url: `${cra}?session=1`, title: 'Saisie' },
-    { url: `${cra}?session=2`, title: '' }, // même page, deux onglets : comptée une fois
+    { url: g(1), title: 'Accueil' },
+    { url: g(2), title: 'Fiche Salarié', active: true }, // même client, deux onglets : compté une fois
+    { url: `${CRA_ORIGIN}${CRA_PATH}?session=1`, title: 'Saisie du C.R.A.' },
     { url: 'https://www.google.fr/', title: 'Google' },
   ];
   let s = trackPages(undefined, tabs, at(9, 0));
   assert.deepEqual(s, {
     day: '2026-10-07',
     at: at(9, 0),
-    pages: { [cra]: { url: `${cra}?session=2`, title: 'Saisie', ms: 0 } },
-    open: [cra],
+    pages: { [generali]: { url: g(2), title: 'Fiche Salarié', ms: 0 } },
+    open: [generali],
   });
   s = trackPages(s, [...tabs, { url: tickets, title: 'Tickets' }], at(9, 1));
-  s = trackPages(s, [{ url: tickets, title: 'Tickets' }], at(9, 2)); // saisie fermée
-  s = advancePages(s, at(9, 3));
-  assert.deepEqual(
-    Object.values(s.pages).map((p) => [p.title, p.ms]),
+  s = trackPages(
+    s,
     [
-      ['Saisie', min(2)],
-      ['Tickets', min(2)],
+      { url: g(3), title: 'Livre de Paye' },
+      { url: tickets, title: 'Tickets' },
     ],
+    at(9, 2),
   );
-  assert.equal(advancePages(s, at(10, 3)).pages[tickets].ms, min(2) + MAX_GAP, 'veille : 3 min au plus');
+  s = trackPages(s, [{ url: tickets, title: 'Tickets' }], at(9, 3)); // generali fermé
+  s = advancePages(s, at(9, 4));
   assert.deepEqual(
-    pagesToday(s, at(9, 4)).map((p) => [p.title, p.ms / 60000, p.live]),
+    Object.entries(s.pages).map(([host, p]) => [host, p.title, p.ms]),
     [
-      ['Tickets', 3, true],
-      ['Saisie', 2, false],
+      [generali, 'Livre de Paye', min(3)],
+      [natixis, 'Tickets', min(3)],
     ],
-    'la plus longtemps ouverte en tête, en cours jusqu’à maintenant',
+    'dernière page vue, temps sans double compte',
   );
-  // Après minuit : seul le temps depuis minuit compte, les pages fermées disparaissent
+  assert.equal(advancePages(s, at(10, 4)).pages[natixis].ms, min(3) + MAX_GAP, 'veille : 3 min au plus');
+  assert.deepEqual(
+    pagesToday(s, at(9, 5)).map((p) => [p.name, p.ms / 60000, p.live]),
+    [
+      ['dsb-natixis', 4, true],
+      ['dsb-generali', 3, false],
+    ],
+    'le plus longtemps ouvert en tête, en cours jusqu’à maintenant',
+  );
+  // Après minuit : seul le temps depuis minuit compte, les clients fermés disparaissent
   const late = advancePages(trackPages(s, [{ url: tickets, title: 'Tickets' }], at(23, 59)), at(0, 1, 8));
   assert.equal(late.day, isoDay(at(0, 1, 8)));
-  assert.deepEqual(late.pages, { [tickets]: { url: tickets, title: 'Tickets', ms: min(1) } });
+  assert.deepEqual(late.pages, { [natixis]: { url: tickets, title: 'Tickets', ms: min(1) } });
   assert.deepEqual(pagesToday({ ...s, open: [] }, at(9, 0, 8)), [], 'le lendemain : rien');
   assert.deepEqual(pagesToday(undefined), []);
+});
+
+test('clients du jour : relevé d’avant 3.15 (une entrée par page) regroupé par client', () => {
+  const min = (n) => n * 60000;
+  const page = (url, title, ms) => ({ url, title, ms });
+  const generali = 'https://dsb-generali.allshare-scenario.fr/apex/f';
+  const old = {
+    day: '2026-10-07',
+    at: at(0, 30),
+    pages: {
+      [`${generali}?p=1`]: page(`${generali}?p=1:1:9`, 'Saisie des enveloppes', min(20)),
+      [`${generali}?p=2`]: page(`${generali}?p=2:1:9`, 'Fiche Salarié', min(3)),
+      [`${generali}?p=3`]: page(`${generali}?p=3:1:9`, 'Accueil', min(25)), // plafonné à 30 min depuis minuit
+      [`${CRA_ORIGIN}/apex/f`]: page(`${CRA_ORIGIN}/apex/f`, 'Espace Salariés - XAAS', min(30)),
+    },
+    open: [`${generali}?p=2`, `${CRA_ORIGIN}/apex/f`],
+  };
+  assert.deepEqual(advancePages(old, at(0, 30)), {
+    day: '2026-10-07',
+    at: at(0, 30),
+    pages: { 'dsb-generali.allshare-scenario.fr': page(`${generali}?p=3:1:9`, 'Accueil', min(30)) },
+    open: ['dsb-generali.allshare-scenario.fr'],
+  });
+  assert.equal(pagesToday(old, at(0, 31))[0].ms, min(31));
 });
 
 test('page de saisie du C.R.A : avec ou sans paramètres, même adresse dans le manifest et le script', () => {

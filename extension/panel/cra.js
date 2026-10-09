@@ -1,6 +1,6 @@
 // CRA (panneau latéral) : capsules rouvertes ou sauvegardées le jour choisi (aujourd'hui par défaut),
 // avec leur temps d'ouverture, réglages des automatismes de la page de saisie du C.R.A (content/cra.js),
-// et pages allshare-scenario.fr ouvertes aujourd'hui (craPages, tenu par background.js).
+// et clients allshare-scenario.fr ouverts aujourd'hui (craPages, tenu par background.js).
 import { getCapsules, describeTabs, host } from '../lib/capsule.js';
 import { openedOn, fmtOpenTime, isoDay, pagesToday, getCraSettings, saveCraSettings } from '../lib/cra.js';
 import { $, el } from '../lib/dom.js';
@@ -54,9 +54,9 @@ async function renderList() {
   );
 }
 
-// ---------------------------------------------------------------- Pages allshare-scenario.fr du jour
+// ---------------------------------------------------------------- Clients allshare-scenario.fr du jour
 
-/** « dsb-cra.allshare-scenario.fr/apex/r/…/saisie-cra » : domaine et chemin, sans paramètres. */
+/** « dsb-generali.allshare-scenario.fr/apex/f » : domaine et chemin, sans paramètres. */
 function shortUrl(url) {
   try {
     return host(url) + new URL(url).pathname.replace(/\/$/, '');
@@ -65,28 +65,32 @@ function shortUrl(url) {
   }
 }
 
+/** Une ligne par client (sous-domaine), avec la dernière page vue ; la saisie du C.R.A n'en est pas un. */
 async function renderPages() {
-  const pages = pagesToday((await chrome.storage.local.get('craPages')).craPages);
-  $('pagesTotal').textContent = pages.length ? `(${pages.length})` : '';
-  $('pagesEmpty').hidden = pages.length > 0;
+  const clients = pagesToday((await chrome.storage.local.get('craPages')).craPages);
+  $('pagesTotal').textContent = clients.length ? `(${clients.length})` : '';
+  $('pagesEmpty').hidden = clients.length > 0;
   $('pagesList').replaceChildren(
-    ...pages.map((p) =>
+    ...clients.map((c) =>
       el(
         'li',
-        { className: 'cra-item', title: p.url },
+        { className: 'cra-item', title: c.url },
         el(
           'div',
           { className: 'cra-title' },
-          el('strong', { textContent: p.title || shortUrl(p.url) }),
-          el('b', { className: 'cra-open', textContent: `${fmtOpenTime(p.ms)}${p.live ? ' (en cours)' : ''}` }),
+          el('strong', { textContent: c.name }),
+          el('b', { className: 'cra-open', textContent: `${fmtOpenTime(c.ms)}${c.live ? ' (en cours)' : ''}` }),
         ),
-        el('small', { className: 'cra-times cra-url', textContent: shortUrl(p.url) }),
+        el('small', {
+          className: 'cra-times cra-url',
+          textContent: c.title ? `Dernière page : ${c.title}` : shortUrl(c.url),
+        }),
       ),
     ),
   );
 }
 
-// Temps d'ouverture des capsules et des pages encore ouvertes : mis à jour chaque minute.
+// Temps d'ouverture des capsules et des clients encore ouverts : mis à jour chaque minute.
 // Après minuit, le calendrier resté sur « aujourd'hui » passe au nouveau jour.
 let today = isoDay(new Date());
 setInterval(() => {
