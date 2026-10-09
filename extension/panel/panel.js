@@ -21,7 +21,7 @@ import {
   MIN_APPS_FOR_RATIO,
 } from '../lib/report.js';
 import { nameKey, normName, canonical, suggestApp, nextPage, compareNames } from '../lib/names.js';
-import { MENU, MENU_PAGES, MENU_TOP, fitLabel } from '../lib/menu.js';
+import { HOME, PAGE_NAMES, VERSIONS, APPS_TOTAL, pageChoices, sameVersion, fitLabel } from '../lib/menu.js';
 import { phases } from '../lib/timing.js';
 import { urlEnd } from '../lib/urls.js';
 import { NETWORKS, NETWORK_LABELS, STATS, unitOf, fmtNum, fmtDuration, fmtDate } from '../lib/format.js';
@@ -64,12 +64,26 @@ function setSpecific(value) {
   saveDraft({ specific: !!value });
 }
 
-/** Pages du menu, puis pages connues hors menu (référentiel et mesures). */
+/** Pages de l'analyse des menus (toutes versions), puis pages connues hors analyse (référentiel et mesures). */
 function pageNames() {
-  const names = [...MENU_PAGES];
+  const names = [...PAGE_NAMES];
   const keys = new Set(names.map(nameKey));
   for (const p of state.model.allPages) if (!keys.has(nameKey(p.name))) names.push(p.name);
   return names;
+}
+
+/** Pages proposées pour une version et un client (lib/menu.js), recalculées quand les mesures changent. */
+const choicesCache = { measures: null, byKey: new Map() };
+function choicesFor(version, client) {
+  if (choicesCache.measures !== state.measures) {
+    choicesCache.measures = state.measures;
+    choicesCache.byKey.clear();
+  }
+  const key = `${nameKey(version)}\u0001${nameKey(client)}`;
+  if (!choicesCache.byKey.has(key)) {
+    choicesCache.byKey.set(key, pageChoices({ version, client, measures: state.measures }));
+  }
+  return choicesCache.byKey.get(key);
 }
 
 const formLine = () => lineKey($('app').value, $('sid').value, $('version').value);
@@ -179,29 +193,55 @@ function renderForm() {
 }
 
 /**
- * Liste des pages : « Dashboard », « Saisie libre » (qui affiche le champ texte), le menu par
- * rubrique, puis les pages connues hors menu. Le champ texte (#page) garde toujours la page
- * choisie. Libellés courts : la liste déroulante ne doit pas déborder du panneau.
+ * Liste des pages, selon la version (champ obligatoire) : « Dashboard », « Saisie libre » (qui
+ * affiche le champ texte), puis les pages des menus de cette version, de la plus courante à la plus
+ * rare (un groupe par nombre d'applications sur 6), les pages déjà mesurées sur cette version et
+ * celles spécifiques au client. Le champ texte (#page) garde toujours la page choisie : une page
+ * absente de la nouvelle version passe en saisie libre. Libellés courts : la liste déroulante ne
+ * doit pas déborder du panneau.
  */
 function renderPagePick(refill) {
   const pick = $('pagePick');
   const free = !refill && pick.value === FREE; // saisie libre en cours : on la laisse ouverte
+  const version = normName($('version').value);
+  const choices = choicesFor(version, $('app').value);
   const option = (value, text = value, title = '') =>
     el('option', { value, textContent: fitLabel(text), title: title || (fitLabel(text) !== text ? text : '') });
-  const entry = (r) =>
-    r.pages
-      ? el('optgroup', { label: r.title }, ...r.pages.map((p) => option(p.name, p.label, p.title)))
-      : option(r.title);
-  const menuKeys = new Set(MENU_PAGES.map(nameKey));
-  const others = state.model.allPages.filter((p) => !menuKeys.has(nameKey(p.name)));
   pick.replaceChildren(
-    option('', '— Choisir une page —'),
-    ...MENU_TOP.map(entry),
+    option('', version ? '— Choisir une page —' : "— Indiquez d'abord la version —"),
+    option(HOME),
     option(FREE, '✎ Saisie libre (autre page)…'),
-    ...MENU.slice(MENU_TOP.length).map(entry),
-    others.length ? el('optgroup', { label: 'Autres pages' }, ...others.map((p) => option(p.name))) : null,
+    ...choices.groups.map((g) =>
+      el('optgroup', { label: g.label }, ...g.pages.map((p) => option(p.name, p.label, p.title))),
+    ),
   );
   syncPagePick(free);
+  renderPageHint(version, choices);
+}
+
+/** Sous la liste des pages : d'où elle vient (version analysée ou la plus proche). */
+function renderPageHint(version, { analysed, measured }) {
+  const hint = $('pageHint');
+  hint.className = 'hint';
+  if (!analysed) {
+    hint.classList.add('warn');
+    hint.textContent = "La liste des pages dépend de la version de l'application : indiquez-la.";
+    return;
+  }
+  if (analysed.why === 'exact') {
+    hint.textContent = `Menus de la ${analysed.ref}, des pages les plus courantes aux plus rares (sur ${APPS_TOTAL} applications analysées).`;
+    return;
+  }
+  const near = {
+    before: 'la dernière version analysée avant elle',
+    oldest: 'la plus ancienne version analysée',
+    latest: 'la plus récente version analysée',
+  }[analysed.why];
+  hint.textContent =
+    `Version absente de l'analyse : menus de la ${analysed.ref} (${near}), ` +
+    (measured
+      ? `et ${measured} page${measured > 1 ? 's' : ''} déjà mesurée${measured > 1 ? 's' : ''} en ${version}.`
+      : `complétés au fil des pages mesurées en ${version}.`);
 }
 
 /** Positionne la liste sur la page du champ texte (saisie libre si elle n'y est pas). */
@@ -226,7 +266,10 @@ function focusPage() {
   $('page').select();
 }
 
-/** SID et versions proposés : ceux déjà vus pour ce client d'abord. */
+/**
+ * SID et versions proposés : ceux déjà vus pour ce client d'abord ; pour la version, puis celles de
+ * l'analyse des menus (la plus récente d'abord), puis les autres.
+ */
 function renderLineLists() {
   const client = nameKey($('app').value);
   const pick = (field) => {
@@ -236,10 +279,16 @@ function renderLineLists() {
       if (!l[field]) continue;
       (nameKey(l.client) === client ? mine : all).add(l[field]);
     }
-    return [...mine, ...[...all].filter((v) => !mine.has(v)).sort(compareNames)];
+    return { mine: [...mine], others: [...all].filter((v) => !mine.has(v)).sort(compareNames) };
   };
-  $('sidList').replaceChildren(...pick('sid').map((v) => el('option', { value: v })));
-  $('versionList').replaceChildren(...pick('version').map((v) => el('option', { value: v })));
+  const sids = pick('sid');
+  const versions = pick('version');
+  const analysed = [...VERSIONS].reverse().filter((v) => !versions.mine.some((m) => sameVersion(m, v)));
+  const others = versions.others.filter((v) => !analysed.some((a) => sameVersion(a, v)));
+  $('sidList').replaceChildren(...[...sids.mine, ...sids.others].map((v) => el('option', { value: v })));
+  $('versionList').replaceChildren(
+    ...[...versions.mine, ...analysed, ...others].map((v) => el('option', { value: v })),
+  );
 }
 
 /** Client choisi : SID et version repris de sa dernière mesure (si les champs sont vides ou pré-remplis). */
@@ -254,6 +303,7 @@ function prefillLine() {
     state.autoFilled[field] = value;
   }
   renderLineLists();
+  renderPagePick(false); // la liste des pages dépend de la version (et du client)
   saveDraft({ app: $('app').value, sid: $('sid').value, version: $('version').value });
   renderProgress(formLine(), state.config.settings.network);
 }
@@ -463,20 +513,26 @@ function renderDetail(d) {
   );
 }
 
+/**
+ * Avancement de la ligne sur les pages du tableau de bord qui existent dans sa version : une page
+ * des menus d'une autre version (absente de celle-ci, jamais mesurée dessus) ne reste pas « à mesurer ».
+ */
 function renderProgress(line, network) {
   const box = $('progress');
   const { model } = state;
   const found = model.lines.find((l) => l.key === line);
-  if (!found || !model.pages.length) {
+  const { available } = found ? choicesFor(found.version, found.client) : {};
+  const pages = found ? model.pages.filter((p) => available(p.name)) : [];
+  if (!pages.length) {
     box.hidden = true;
     return;
   }
   box.hidden = false;
   const rows = NETWORKS.map((n) => {
-    const c = coverage(model, line, [n.id]);
+    const c = coverage(model, line, [n.id], pages);
     return progressRow(n.label, c.done, c.total, n.id === network);
   });
-  const missing = missingPages(model, line, network);
+  const missing = missingPages(model, line, network, pages);
   const formView = !state.session;
   const shown = missing.slice(0, 15);
   box.replaceChildren(
@@ -557,6 +613,7 @@ async function arm() {
   const page = canonical($('page').value, pageNames());
   $('formError').textContent = '';
   if (!app) return showError('Indiquez le client.', 'app');
+  if (!version) return showError("Indiquez la version de l'application : la liste des pages en dépend.", 'version');
   if (!page) return showError('Choisissez la page.', $('page').hidden ? 'pagePick' : 'page');
   const tab = await targetTab();
   if (!tab) return showError('Aucun onglet actif.');
@@ -585,9 +642,14 @@ function showError(text, focusId) {
 async function goNext() {
   const s = state.session;
   if (!s) return;
-  // Ordre des pages du référentiel, puis pages du menu qui n'y sont pas encore.
+  // Ordre des pages du référentiel qui existent dans cette version, puis pages proposées pour cette
+  // version (les plus courantes d'abord) qui n'y sont pas encore.
+  const choices = choicesFor(s.version, s.app);
   const known = new Set(state.model.allPages.map((p) => nameKey(p.name)));
-  const order = [...state.model.pages.map((p) => p.name), ...MENU_PAGES.filter((name) => !known.has(nameKey(name)))];
+  const order = [
+    ...state.model.pages.map((p) => p.name).filter(choices.available),
+    ...choices.order.filter((name) => !known.has(nameKey(name))),
+  ];
   const done = new Set(
     order
       .filter((name) => cellStat(state.model, sessionLine(s), name, s.network, 'avg').status !== 'missing')
@@ -641,6 +703,7 @@ for (const id of ['app', 'sid', 'version', 'page']) {
     if (id === 'app') {
       $('appSuggest').hidden = !state.suggestion || nameKey(state.suggestion) === nameKey($('app').value);
     }
+    if (id === 'version') renderPagePick(false);
     renderProgress(formLine(), state.config.settings.network);
   });
 }

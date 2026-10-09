@@ -37,19 +37,24 @@
           <span>Cet onglet semble être <strong id="appSuggestName"></strong></span>
           <button id="appSuggestUse" type="button">Utiliser</button>
         </div>
-        <div class="field-row">
-          <label class="field">
-            <span>SID</span>
-            <input id="sid" type="text" list="sidList" placeholder="ex. PRD" spellcheck="false" />
-          </label>
-          <label class="field">
-            <span>Version application</span>
-            <input id="version" type="text" list="versionList" placeholder="ex. 5.3.2" spellcheck="false" />
-          </label>
-        </div>
+        <label class="field">
+          <span>Version application <abbr class="req" title="Obligatoire : la liste des pages en dépend">*</abbr></span>
+          <input
+            id="version"
+            type="text"
+            list="versionList"
+            placeholder="ex. 3.28.00"
+            spellcheck="false"
+            aria-required="true"
+          />
+        </label>
+        <label class="field">
+          <span>SID</span>
+          <input id="sid" type="text" list="sidList" placeholder="ex. PRD" spellcheck="false" />
+        </label>
         <div class="field">
           <span id="pageTitle">Page</span>
-          <select id="pagePick" aria-labelledby="pageTitle"></select>
+          <select id="pagePick" aria-labelledby="pageTitle" aria-describedby="pageHint"></select>
           <input
             id="page"
             type="text"
@@ -59,6 +64,7 @@
             spellcheck="false"
             hidden
           />
+          <p id="pageHint" class="hint"></p>
         </div>
         <label class="check-line">
           <input id="specific" type="checkbox" />

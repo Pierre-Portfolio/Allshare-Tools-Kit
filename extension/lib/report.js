@@ -193,11 +193,11 @@ export function rate(model, line, page, network, stat, settings) {
   return { ...cs, ref, level, ratio };
 }
 
-/** Cases mesurées (au moins une mesure, même en timeout) sur le total attendu. */
-export function coverage(model, line, networks = NETWORKS.map((n) => n.id)) {
+/** Cases mesurées (au moins une mesure, même en timeout) sur le total attendu (pages visibles, par défaut). */
+export function coverage(model, line, networks = NETWORKS.map((n) => n.id), pages = model.pages) {
   let done = 0;
-  for (const p of model.pages) for (const n of networks) if (model.cells.has(cellKey(line, p.name, n))) done++;
-  return { done, total: model.pages.length * networks.length };
+  for (const p of pages) for (const n of networks) if (model.cells.has(cellKey(line, p.name, n))) done++;
+  return { done, total: pages.length * networks.length };
 }
 
 /**
@@ -236,9 +236,9 @@ export function cellRows(model, line, page, network) {
   return model.rows.filter((m) => m.line === line && nameKey(m.page) === nameKey(page) && m.network === network);
 }
 
-/** Pages visibles pas encore mesurées pour une ligne et un réseau. */
-export function missingPages(model, line, network) {
-  return model.pages.filter((p) => !model.cells.has(cellKey(line, p.name, network)));
+/** Pages (visibles, par défaut) pas encore mesurées pour une ligne et un réseau. */
+export function missingPages(model, line, network, pages = model.pages) {
+  return pages.filter((p) => !model.cells.has(cellKey(line, p.name, network)));
 }
 
 // ---------------------------------------------------------------- Excel : briques

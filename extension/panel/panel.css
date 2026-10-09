@@ -107,6 +107,16 @@ kbd {
   font-weight: 400;
 }
 
+.field .req {
+  color: #dc2626;
+  text-decoration: none;
+  cursor: help;
+}
+
+.field .hint {
+  margin-top: 0;
+}
+
 .suggest {
   display: flex;
   align-items: center;
@@ -398,12 +408,6 @@ button.chip:hover {
 
 .last .del:hover {
   color: #dc2626;
-}
-
-.field-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
 }
 
 /* ---------- Détail du chargement (type « Load timings ») */
