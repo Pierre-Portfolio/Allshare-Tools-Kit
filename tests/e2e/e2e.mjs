@@ -256,19 +256,48 @@ try {
   assert.equal(await panel.getAttribute('[data-network="ethernet"]', 'aria-checked'), 'true', 'Ethernet par défaut');
   await panel.click('[data-network="wifi"]');
   await panel.fill('#app', 'Appli 1');
+  // Version application au-dessus du SID, obligatoire : la liste des pages en dépend
+  assert.ok(
+    await panel.evaluate(() => {
+      const [version, sid] = ['version', 'sid'].map((id) => document.getElementById(id));
+      return !!(version.compareDocumentPosition(sid) & Node.DOCUMENT_POSITION_FOLLOWING);
+    }),
+    'version au-dessus du SID',
+  );
+  assert.equal(await panel.locator('#pagePick option').count(), 3, 'sans version : accueil et saisie libre');
+  assert.match(await panel.textContent('#pageHint'), /dépend de la version/);
+  await freePage(panel, 'Clients');
+  await panel.click('#arm');
+  assert.match(await panel.textContent('#formError'), /Indiquez la version/, 'version obligatoire');
+  assert.equal(await panel.evaluate(() => document.activeElement.id), 'version');
+  assert.equal(await session(), null, 'rien de lancé sans version');
+  await panel.fill('#version', '3.19.10');
+  const pageOptions = () => panel.locator('#pagePick option').allTextContents();
+  assert.ok((await pageOptions()).includes('Pyramide des Ages'), 'pages de la 3.19.10');
+  assert.ok(!(await pageOptions()).includes('Collaborateurs (menu)'), 'pas de la 3.19.10');
   await panel.fill('#sid', 'PRD');
   await panel.fill('#version', '5.3');
-  // Liste des pages : menu par rubrique, champ texte masqué tant qu'on n'a pas choisi « Saisie libre »
-  assert.equal(await panel.locator('#pagePick optgroup').count(), 7, 'rubriques du menu');
-  assert.equal(await panel.locator('#pagePick option').count(), 48, '46 pages + choix vide + saisie libre');
+  // Liste des pages : menus de la version analysée la plus proche (3.28.00), un groupe par nombre
+  // d'applications sur 6 ; champ texte masqué tant qu'on n'a pas choisi « Saisie libre »
+  assert.match(await panel.textContent('#pageHint'), /absente de l'analyse : menus de la 3\.28\.00/);
+  assert.deepEqual(await panel.locator('#pagePick optgroup').evaluateAll((gs) => gs.map((g) => g.label)), [
+    '6/6 applications · communes',
+    '5/6 applications',
+    '4/6 applications',
+    '3/6 applications',
+    '2/6 applications',
+    '1/6 application · rares',
+  ]);
+  assert.equal(await panel.locator('#pagePick option').count(), 42, '39 pages + accueil + choix vide + saisie libre');
   assert.deepEqual(
-    (await panel.locator('#pagePick option').allTextContents()).slice(0, 3),
-    ['— Choisir une page —', 'Dashboard', '✎ Saisie libre (autre page)…'],
-    '« Dashboard » tout en haut',
+    (await pageOptions()).slice(0, 5),
+    ['— Choisir une page —', 'Dashboard', '✎ Saisie libre (autre page)…', 'Analyse des Salaires', 'Ecart Réel'],
+    '« Dashboard » tout en haut, puis les pages communes aux 6 applications',
   );
+  assert.ok(!(await pageOptions()).includes('Pyramide des Ages'), 'liste de la version');
+  await panel.selectOption('#pagePick', 'Liste Mensuelle des Salariés');
   assert.ok(await panel.isHidden('#page'), 'champ texte masqué');
-  await panel.selectOption('#pagePick', 'Liste Mensuelle');
-  assert.equal(await panel.inputValue('#page'), 'Liste Mensuelle', 'page reprise de la liste');
+  assert.equal(await panel.inputValue('#page'), 'Liste Mensuelle des Salariés', 'page reprise de la liste');
   await freePage(panel, 'Clients');
   await panel.click('#arm');
   await waitSession((s) => s && s.state === 'armed', 'armé');
@@ -394,9 +423,13 @@ try {
   await waitSession((s) => s && s.state === 'armed', 'page suivante armée');
   await panel.click('#cancel');
   await panel.waitForSelector('#viewForm:not([hidden])');
-  await panel.selectOption('#pagePick', 'Turn-Over');
+  assert.deepEqual(
+    await panel.locator('#pagePick optgroup[label="Spécifiques à ce client"] option').allTextContents(),
+    ['Fiche client'],
+  );
+  await panel.selectOption('#pagePick', 'Turnover');
   await panel.click('#arm');
-  await waitSession((s) => s && s.state === 'armed' && s.page === 'Turn-Over', 'armé (page du menu)');
+  await waitSession((s) => s && s.state === 'armed' && s.page === 'Turnover', 'armé (page du menu)');
   await panel.click('#cancel');
   await waitSession((s) => s === null, 'annulé');
   await page.click('#spa-clients');
@@ -418,7 +451,15 @@ try {
   assert.match(await panel2.textContent('#appSuggestName'), /Appli 2/);
   await panel2.click('#appSuggestUse');
   assert.equal(await panel2.inputValue('#app'), 'Appli 2');
-  await panel2.selectOption('#pagePick', 'Clients'); // page déjà mesurée : groupe « Autres pages »
+  assert.equal(await panel2.inputValue('#version'), '5.3', 'version du formulaire gardée (nouveau client)');
+  // Pages déjà mesurées sur cette version (hors analyse), sans les pages spécifiques d'Appli 1
+  assert.deepEqual(
+    await panel2.locator('#pagePick optgroup[label="Mesurées en 5.3 · hors analyse"] option').allTextContents(),
+    ['Clients', 'Factures'],
+  );
+  assert.match(await panel2.textContent('#pageHint'), /et 2 pages déjà mesurées en 5\.3/);
+  assert.equal(await panel2.locator('#pagePick option[value="Fiche client"]').count(), 0);
+  await panel2.selectOption('#pagePick', 'Clients');
   await panel2.click('#arm');
   await waitSession((s) => s && s.state === 'armed' && s.app === 'Appli 2', 'armé Appli 2');
   await page2.click('#nav-clients');

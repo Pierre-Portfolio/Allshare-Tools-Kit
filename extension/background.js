@@ -120,6 +120,7 @@ async function arm({ tabId, app, sid, version, page, specific, network }) {
   app = normName(app);
   page = normName(page);
   if (!app) return { ok: false, error: 'Indiquez le client.' };
+  if (!normName(version)) return { ok: false, error: "Indiquez la version de l'application." };
   if (!page) return { ok: false, error: 'Indiquez le nom de la page.' };
   const tab = await chrome.tabs.get(tabId).catch(() => null);
   if (!tab || !/^https?:/i.test(tab.url || '')) {
