@@ -28,13 +28,12 @@ test('suggestApp : URL du référentiel, puis mesures du même site', () => {
   assert.equal(suggestApp('chrome://newtab', apps, measures), null);
 });
 
-test('nextPage : page suivante non mesurée, dans l’ordre du référentiel', () => {
+test('nextPage : toujours la page juste après la page courante, dans l’ordre de la liste', () => {
   const pages = ['Accueil', 'Clients', 'Fiche client', 'Factures'];
-  const done = new Set(['accueil', 'clients', 'factures']);
-  assert.equal(nextPage(pages, 'Clients', done), 'Fiche client');
-  assert.equal(nextPage(pages, 'Fiche client', new Set(['fiche client'])), 'Factures');
-  assert.equal(nextPage(pages, 'Factures', new Set(['factures'])), 'Accueil', 'repart du début');
-  assert.equal(nextPage(pages, 'Inconnue', new Set()), 'Accueil');
-  assert.equal(nextPage(pages, 'Accueil', new Set(pages.map((p) => p.toLowerCase()))), '');
-  assert.equal(nextPage([], 'x', new Set()), '');
+  assert.equal(nextPage(pages, 'Accueil'), 'Clients', 'même déjà mesurée');
+  assert.equal(nextPage(pages, 'fiche CLIENT'), 'Factures', 'après une page passée à la main');
+  assert.equal(nextPage(pages, 'Factures'), 'Accueil', 'repart du début');
+  assert.equal(nextPage(pages, 'Inconnue'), 'Accueil');
+  assert.equal(nextPage(['Accueil'], 'Accueil'), '');
+  assert.equal(nextPage([], 'x'), '');
 });

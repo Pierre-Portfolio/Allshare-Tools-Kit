@@ -360,19 +360,13 @@ try {
     'Ethernet · Clients (relance)',
   );
 
-  // 5. « Page suivante » : la page suivante est proposée et l'enregistrement relancé aussitôt ;
-  //    « Annuler » ramène au formulaire (client, SID, version et page suivante conservés)
+  // 5. « Page suivante » : retour au formulaire, page suivante choisie (client, SID, version conservés) ;
+  //    rien n'est lancé avant « Lancer l'enregistrement »
   await panel.waitForSelector('#viewResult:not([hidden])');
   await panel.click('#next');
-  await waitSession(
-    (s) => s && s.state === 'armed' && s.page === 'Dashboard' && s.app === 'Appli 1' && s.network === 'ethernet',
-    'réarmé sur la page suivante',
-  );
-  await panel.waitForSelector('#viewLive:not([hidden])');
-  assert.match(await panel.textContent('#liveLabel'), /Appli 1 · PRD · 5\.3 › Dashboard · Ethernet/);
-  await panel.click('#cancel');
-  await waitSession((s) => s === null, 'annulé pour changer de page');
+  await waitSession((s) => s === null, 'page suivante : retour au formulaire');
   await panel.waitForSelector('#viewForm:not([hidden])');
+  await panel.waitForFunction(() => document.activeElement.id === 'arm');
   assert.equal(await panel.inputValue('#app'), 'Appli 1');
   assert.equal(await panel.inputValue('#sid'), 'PRD', 'SID conservé');
   assert.equal(await panel.inputValue('#version'), '5.3', 'version conservée');
@@ -386,6 +380,7 @@ try {
     (s) => s && s.state === 'armed' && s.page === 'Fiche client' && s.specific === true,
     'armé Fiche client (spécifique)',
   );
+  await panel.waitForSelector('#viewLive:not([hidden])');
   assert.match(await panel.textContent('#liveLabel'), /Fiche client \(spécifique\)/);
   await page.click('#nav-clients-42');
   list = await waitMeasures(3);
@@ -400,9 +395,9 @@ try {
   // 6. SPA : un clic sans changement d'URL est ignoré, le clic de navigation est mesuré
   await page.goto(`${base}/appli1/spa/`);
   await panel.click('#next');
-  await waitSession((s) => s && s.state === 'armed' && s.specific === false, 'page suivante armée, non spécifique');
-  await panel.click('#cancel');
+  await waitSession((s) => s === null, 'page suivante : retour au formulaire');
   await panel.waitForSelector('#viewForm:not([hidden])');
+  assert.equal(await panel.inputValue('#page'), 'Clients', 'page suivante : juste après « Fiche client »');
   assert.equal(await panel.isChecked('#specific'), false, 'page suivante : case décochée');
   await panel.click('[data-network="wifi"]');
   await freePage(panel, 'Factures');
@@ -424,9 +419,9 @@ try {
 
   // 7. Annuler
   await panel.click('#next');
-  await waitSession((s) => s && s.state === 'armed', 'page suivante armée');
-  await panel.click('#cancel');
+  await waitSession((s) => s === null, 'page suivante : retour au formulaire');
   await panel.waitForSelector('#viewForm:not([hidden])');
+  assert.equal(await panel.inputValue('#pagePick'), 'Dashboard', 'après la dernière page : retour au début');
   assert.deepEqual(
     await panel.locator('#pagePick optgroup[label="Spécifiques à ce client"] option').allTextContents(),
     ['Fiche client'],

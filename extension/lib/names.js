@@ -68,17 +68,14 @@ export function suggestApp(url, apps, measures) {
 }
 
 /**
- * Page suivante à mesurer : la première page de la liste, après la page
- * courante, qui n'a pas encore de mesure pour cette application et ce réseau.
- * @param {string[]} pages   pages dans l'ordre du référentiel
- * @param {Set<string>} done clés (nameKey) des pages déjà mesurées
+ * Page suivante : celle qui suit la page courante dans la liste, qu'elle soit déjà mesurée ou non
+ * (les pages passées à la main ne comptent pas) ; la première si la page courante n'y est pas,
+ * et retour au début après la dernière.
+ * @param {string[]} pages pages dans l'ordre de la liste
  */
-export function nextPage(pages, current, done) {
+export function nextPage(pages, current) {
   if (!pages.length) return '';
   const start = pages.findIndex((p) => nameKey(p) === nameKey(current));
-  for (let i = 1; i <= pages.length; i++) {
-    const p = pages[(start + i + pages.length) % pages.length];
-    if (!done.has(nameKey(p)) && nameKey(p) !== nameKey(current)) return p;
-  }
-  return '';
+  const next = pages[(start + 1) % pages.length];
+  return nameKey(next) === nameKey(current) ? '' : next;
 }

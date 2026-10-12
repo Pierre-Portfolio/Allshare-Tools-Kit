@@ -601,18 +601,11 @@ function showError(text, focusId) {
 async function goNext() {
   const s = state.session;
   if (!s) return;
-  // Ordre des pages du référentiel, puis pages proposées (menus dans l'ordre d'affichage) qui n'y sont pas encore.
-  const known = new Set(state.model.allPages.map((p) => nameKey(p.name)));
-  const order = [
-    ...state.model.pages.map((p) => p.name),
-    ...choicesFor(s.app).order.filter((name) => !known.has(nameKey(name))),
-  ];
-  const done = new Set(
-    order
-      .filter((name) => cellStat(state.model, sessionLine(s), name, s.network, 'avg').status !== 'missing')
-      .map(nameKey),
-  );
-  const next = nextPage(order, s.page, done);
+  // Ordre de la liste « Page » (accueil, menus, pages spécifiques au client), puis les autres pages libres :
+  // la suivante est celle juste après la page de cette mesure, déjà mesurée ou non.
+  const order = choicesFor(s.app).order;
+  const listed = new Set(order.map(nameKey));
+  const next = nextPage([...order, ...freePageNames().filter((name) => !listed.has(nameKey(name)))], s.page);
   await saveDraft({
     app: s.app,
     sid: s.sid || '',
@@ -623,9 +616,8 @@ async function goNext() {
   state.formFilled = false; // reprendre les valeurs du brouillon
   await send({ type: 'finish' });
   await load();
-  // Page suivante trouvée : l'enregistrement est relancé aussitôt, il ne reste qu'à cliquer
-  // sur cette page dans l'application (« Annuler » ramène au formulaire pour la changer).
-  if (next) await arm();
+  // Retour au formulaire, page suivante choisie : rien n'est lancé avant « Lancer l'enregistrement ».
+  if (next) $('arm').focus();
   else focusPage();
 }
 
