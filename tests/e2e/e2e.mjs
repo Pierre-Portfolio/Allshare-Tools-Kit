@@ -276,7 +276,7 @@ try {
   const pageOptions = () => panel.locator('#pagePick option').allTextContents();
   const menus = await panel.locator('#pagePick optgroup').evaluateAll((gs) => gs.map((g) => g.label));
   assert.equal(menus.length, 13, 'un groupe par menu');
-  assert.deepEqual(menus.slice(0, 4), ['Fiche Salarié', 'NAO', 'Listes Collaborateurs', 'Listes des employés']);
+  assert.deepEqual(menus.slice(0, 4), ['Fiche Salarié', 'Listes des employés', 'NAO', 'Listes Collaborateurs']);
   assert.equal(await panel.locator('#pagePick option').count(), 107, '104 pages + accueil + choix vide + saisie libre');
   assert.deepEqual(
     (await pageOptions()).slice(0, 4),

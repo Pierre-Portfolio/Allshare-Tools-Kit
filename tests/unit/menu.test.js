@@ -11,9 +11,9 @@ test('menus : réunis sans doublon, dans l’ordre d’affichage', () => {
     MENU.map((m) => m.title),
     [
       'Fiche Salarié',
+      'Listes des employés',
       'NAO',
       'Listes Collaborateurs',
-      'Listes des employés',
       'RH Suivi Effectifs',
       'Index F/H',
       'Publier',

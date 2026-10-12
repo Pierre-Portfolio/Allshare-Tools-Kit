@@ -35,20 +35,6 @@ export const HOME = 'Dashboard';
 export const MENU = [
   { title: 'Fiche Salarié', pages: ['Fiche Salarié', 'Détail Paye par Salarié'] },
   {
-    title: 'NAO',
-    pages: [
-      'Effectifs CDI',
-      'Salaire Conv./Inscrits',
-      'Salaire Conv./Permanents',
-      'Effectif Permanent (Déc.)',
-      'Salaire Brut',
-      'Borne Effectif NAO',
-      'Exclusions NAO',
-      'Réintégration salariés NAO',
-    ],
-  },
-  { title: 'Listes Collaborateurs', pages: ['Liste par Rubrique avec rub. paie'] },
-  {
     title: 'Listes des employés',
     pages: [
       'Tree-View',
@@ -66,6 +52,20 @@ export const MENU = [
       'Hypothèse maquette 2/2',
     ],
   },
+  {
+    title: 'NAO',
+    pages: [
+      'Effectifs CDI',
+      'Salaire Conv./Inscrits',
+      'Salaire Conv./Permanents',
+      'Effectif Permanent (Déc.)',
+      'Salaire Brut',
+      'Borne Effectif NAO',
+      'Exclusions NAO',
+      'Réintégration salariés NAO',
+    ],
+  },
+  { title: 'Listes Collaborateurs', pages: ['Liste par Rubrique avec rub. paie'] },
   {
     title: 'RH Suivi Effectifs',
     pages: [
