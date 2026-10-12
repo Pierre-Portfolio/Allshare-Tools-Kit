@@ -1,4 +1,5 @@
-// Accueil du panneau latéral d'Allshare Tools Kit : « Quels outils ? » (Capsule, Insight, Training, Prisme, CRA).
+// Accueil du panneau latéral d'Allshare Tools Kit : « Quels outils ? » (Capsule, Insight, Training, Prisme, CRA,
+// Last connection Users).
 // Affiché à chaque ouverture du panneau, sauf pendant une mesure Insight en cours.
 // En bas : « Mes données », export et import de toutes les données de l'extension (lib/backup.js).
 import { getCapsules } from '../lib/capsule.js';
@@ -8,6 +9,7 @@ import { buildModel } from '../lib/report.js';
 import { savedText, fileStamp } from '../lib/format.js';
 import { getProgress, trainingCountText } from '../lib/training.js';
 import { craCountText } from '../lib/cra.js';
+import { getLastConnection, lastConnectionCountText } from '../lib/last-connection.js';
 import { exportAll, importAll, describeCounts } from '../lib/backup.js';
 import { downloadBlob } from '../lib/dom.js';
 
@@ -24,11 +26,12 @@ async function init() {
 }
 
 async function renderCounts() {
-  const [capsules, { apps, pages }, files, progress] = await Promise.all([
+  const [capsules, { apps, pages }, files, progress, lastConnection] = await Promise.all([
     getCapsules(),
     getConfig(),
     getFiles(),
     getProgress(),
+    getLastConnection(),
   ]);
   document.getElementById('trainingCount').textContent = trainingCountText(progress);
   const n = capsules.length;
@@ -44,6 +47,7 @@ async function renderCounts() {
     ? `${f} fichier${f > 1 ? 's' : ''} récent${f > 1 ? 's' : ''}`
     : '';
   document.getElementById('craCount').textContent = craCountText(capsules);
+  document.getElementById('lastConnectionCount').textContent = lastConnectionCountText(lastConnection);
 }
 
 // ---------------------------------------------------------------- Mes données

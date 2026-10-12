@@ -8,13 +8,14 @@
 # Allshare Tools Kit — Boîte à outils Chrome
 
 ## Aperçu
-Extension Chrome qui réunit, dans un **panneau latéral**, cinq outils pour les consultants qui déploient et font vivre une application de pilotage RH auprès d'un parc de 100 à 200 clients :
+Extension Chrome qui réunit, dans un **panneau latéral**, six outils pour les consultants qui déploient et font vivre une application de pilotage RH auprès d'un parc de 100 à 200 clients :
 
 1. **Capsule** : la sauvegarde des onglets d'une fenêtre, pour les rouvrir d'un clic ;
 2. **Insight** : la mesure du temps entre **le clic** et **l'affichage complet** d'une page, par client, SID, version, page et réseau (**Ethernet** ou **WiFi**), avec exports Excel et CSV ;
 3. **Training** : des formations complètes, avec exercices corrigés et progression enregistrée, en trois modules : **Métier RH**, **OLAP** et **Oracle APEX** ;
 4. **Prisme** : l'inspection d'un fichier CSV (encodage, séparateurs, colonnes décalées, accents cassés…) et sa conversion en ANSI ou en UTF-8 ;
-5. **CRA** : pour remplir le compte rendu d'activité, la liste des **capsules ouvertes dans la journée** avec leur **temps d'ouverture**, le temps d'ouverture de chaque **client allshare-scenario.fr** du jour, et deux automatismes de la page de saisie du C.R.A (**Save** cliqué en quittant une ligne remplie, case de l'**étoile jaune** décochée à l'arrivée).
+5. **CRA** : pour remplir le compte rendu d'activité, la liste des **capsules ouvertes dans la journée** avec leur **temps d'ouverture**, le temps d'ouverture de chaque **client allshare-scenario.fr** du jour, et deux automatismes de la page de saisie du C.R.A (**Save** cliqué en quittant une ligne remplie, case de l'**étoile jaune** décochée à l'arrivée) ;
+6. **Last connection Users** : à partir d'un journal de connexions (fichier texte ou texte collé), le tableau de la **dernière connexion de chaque utilisateur**, avec exports Excel et CSV.
 
 À chaque ouverture, le panneau demande **Quels outils ?**. Tout reste **dans le navigateur** : aucune donnée n'est envoyée sur Internet. En bas de l'accueil, **Exporter mes données Tools Kit** les enregistre toutes dans un fichier, à réimporter après une réinstallation ou sur un autre poste.
 
@@ -69,6 +70,14 @@ Extension Chrome qui réunit, dans un **panneau latéral**, cinq outils pour les
 - Réglages pris en compte aussitôt, sans recharger la page ; ils font partie de « Mes données »
 - **Clients allshare-scenario.fr** (zone repliée tout en bas) : **une ligne par client**, c'est-à-dire par sous-domaine (`dsb-generali`, `dsb-natixis`…), ouvert aujourd'hui dans un onglet, avec la dernière page vue et son **temps d'ouverture** (« (en cours) » s'il est encore ouvert), le plus long en tête. Le temps court tant qu'au moins un onglet affiche le client : un onglet en arrière-plan compte, deux onglets du même client ne comptent qu'une fois. La saisie du C.R.A (`dsb-cra`) n'est pas un client et n'est pas comptée, pas plus que le domaine seul ou `www`. **Remis à zéro chaque jour** ; si l'ordinateur se met en veille, l'attente ne compte pas (3 min au plus)
 
+### Last connection Users : dernière connexion de chaque utilisateur (`panel/last-connection.html`, `lib/last-connection.js`)
+- **Journal de connexions** : une ligne par connexion, `date;heure;utilisateur;groupe;accès;…` (par exemple `13/04/2026;12:13:59;JEAN.DUPONT;GRP_CG_028;RW;244`) ; les champs suivants (identifiant, propriétaire d'une suppression…) sont ignorés. Séparateur point-virgule, tabulation (lignes copiées depuis Excel) ou virgule ; heure avec ou sans les secondes ; une première ligne d'en-tête est sautée
+- **Deux façons de le donner** : **déposer un fichier** (.txt, .csv, .log ; UTF-8, ANSI ou UTF-16, lu dans le navigateur, refus clair des classeurs Excel, PDF et images) ou **coller le texte** puis **Générer le tableau** (ou <kbd>Ctrl</kbd>+<kbd>Entrée</kbd>)
+- **Dates mélangées** : JJ/MM/AAAA, MM/JJ/AAAA (certains postes écrivent `04/19/2026`) et AAAA-MM-JJ dans le même journal. Une date lisible dans les deux sens (`05/04/2026`) suit le format des autres dates du même utilisateur, sinon celui qui la place au plus près de la ligne précédente du journal, sinon JJ/MM/AAAA ; le nombre de dates lues en MM/JJ/AAAA est indiqué
+- **Tableau** : une ligne par utilisateur (sans tenir compte des majuscules : `jean.dupont` et `JEAN.DUPONT` ne font qu'un), avec sa **dernière connexion**, **il y a** combien de jours (en jaune à 30 jours ou plus, en orange à 90 jours ou plus), le **nombre de connexions** et le **groupe** de sa dernière ligne ; la plus récente en tête, **tri** par un clic sur un titre de colonne, **recherche** par utilisateur ou groupe. Résumé : utilisateurs, connexions, période du journal, lignes non reconnues (avec leurs numéros)
+- **Exports Excel et CSV** des lignes affichées, dans l'ordre affiché : utilisateur, groupe, dernière connexion, inactif depuis (jours), dernier accès (RO, RW…), connexions, première connexion
+- Le dernier tableau reste affiché quand on change d'outil, **jusqu'à la fermeture de Chrome** : rien n'est conservé ensuite, et il ne fait pas partie de « Mes données » ; **Effacer le tableau** le retire tout de suite
+
 ### Mes données : sauvegarde complète (accueil, `lib/backup.js`)
 - **Exporter mes données Tools Kit** : un seul fichier JSON avec **toutes les données de l'extension** : mesures, clients, pages et réglages d'Insight, sessions de Capsule, fichiers récents de Prisme (contenu compris) et ses réglages, progression de Training et son thème, réglages de CRA
 - **Importer mes données Tools Kit** : ajoute le contenu du fichier aux données du poste, **sans rien effacer** ; une donnée déjà présente est ignorée (réimporter le même fichier ne crée pas de doublon), les réglages du fichier sont repris
@@ -117,7 +126,7 @@ npm run zip            # crée allshare-tools-kit.zip (dossier extension/)
 
 L'intégration continue (`.github/workflows/ci.yml`) lance `npm run check` puis le test de bout en bout à chaque envoi sur `main` et sur chaque pull request.
 
-Le test de bout en bout sert deux applications de démonstration aux délais connus et déroule tout : mesures Insight (Ethernet par défaut, relance, page suivante proposée dans le formulaire, SPA, annulation, suggestion), exports, unité s / ms, modification d'une ligne, relance par double-clic depuis le tableau de bord, réglages, Capsule, Prisme et Training (réponses, rechargement, reprise, onglet réutilisé, laboratoire du cube, export / import de la progression) et la sauvegarde complète (export depuis l'accueil, extension vidée, réimport sans doublon). Captures et fichiers dans `tests/e2e/out/`.
+Le test de bout en bout sert deux applications de démonstration aux délais connus et déroule tout : mesures Insight (Ethernet par défaut, relance, page suivante proposée dans le formulaire, SPA, annulation, suggestion), exports, unité s / ms, modification d'une ligne, relance par double-clic depuis le tableau de bord, réglages, Capsule, Prisme, Training (réponses, rechargement, reprise, onglet réutilisé, laboratoire du cube, export / import de la progression), CRA, Last connection Users (texte collé aux dates mélangées, tri, recherche, exports, fichier ANSI, classeur refusé) et la sauvegarde complète (export depuis l'accueil, extension vidée, réimport sans doublon). Captures et fichiers dans `tests/e2e/out/`.
 
 ## Structure du projet
 ```
@@ -132,7 +141,8 @@ Allshare-Tools-Kit/
     background.js            → Service worker : déroulé d'une mesure Insight, badge, raccourci clavier
     content/                 → Scripts de mesure injectés dans l'onglet mesuré, pendant une mesure seulement ;
                                cra.js : automatismes de la page de saisie du C.R.A
-    panel/                   → Panneau latéral : accueil « Quels outils ? », Capsule, Insight, Training, Prisme, CRA
+    panel/                   → Panneau latéral : accueil « Quels outils ? », Capsule, Insight, Training, Prisme, CRA,
+                               Last connection Users
     training/
       training.html|js|css   → Page de formation : sommaire, notions, exercices, examen, mémo, glossaire
       content/rh/            → Module Métier RH (8 notions + examen, mémo, glossaire, ressources)
@@ -143,7 +153,7 @@ Allshare-Tools-Kit/
     prisme/                  → Tableau de bord de Prisme : 4 vues, inspecteur de cellule
     options/                 → Réglages d'Insight : clients, pages, mesure, anomalies, données
     lib/                     → Logique sans interface : training, report, xlsx, storage, prisme, capsule, backup,
-                               menu (pages proposées, par menu)… ;
+                               menu (pages proposées, par menu), last-connection (journal de connexions)… ;
                                dom.js / tabs.js : outils communs des pages ; prisme-worker.js : analyse des gros CSV
     icons/                   → Logo du projet et icônes des outils
   tests/
@@ -178,12 +188,13 @@ La progression est enregistrée dans `chrome.storage.local` (clé `training`) : 
 - **Comparer les clients** : **Exports** → choisissez le type, la page ou le client, le format → **Télécharger**.
 - **Garder ses onglets** : **Capsule** → **＋ Sauvegarder cette session** → **Rouvrir** plus tard.
 - **Contrôler un CSV** : **Prisme** → déposez le fichier → lisez le verdict → **Exporter en ANSI** ou **en UTF-8**.
+- **Repérer les utilisateurs inactifs** : **Last connection Users** → déposez le journal de connexions (ou collez ses lignes → **Générer le tableau**) → triez sur **Il y a** → **Exporter en Excel**.
 - **Réinstaller ou changer de poste** : accueil → **Exporter mes données Tools Kit** → sur la nouvelle installation, **Importer mes données Tools Kit**.
 
 > Astuce : faites 2 ou 3 mesures par page (« Refaire en … ») et gardez la **médiane**. Pour une page lente, regardez l'**attente serveur** dans le détail du chargement : si elle domine, le temps est passé côté serveur (requêtes SQL).
 
 ## Confidentialité et permissions
-- `storage`, `unlimitedStorage` : mesures, réglages, sessions, fichiers récents et progression stockés localement dans Chrome.
+- `storage`, `unlimitedStorage` : mesures, réglages, sessions, fichiers récents et progression stockés localement dans Chrome ; le dernier tableau de Last connection Users, seulement jusqu'à la fermeture de Chrome.
 - `sidePanel` : le panneau latéral des outils.
 - `scripting` + accès aux sites : injection des scripts de mesure d'Insight dans l'onglet mesuré, **uniquement pendant une mesure**.
 - Aucune donnée n'est envoyée sur Internet, à part les fichiers que vous téléchargez vous-même.

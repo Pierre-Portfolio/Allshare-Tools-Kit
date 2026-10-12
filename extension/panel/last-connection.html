@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Last connection Users</title>
+    <link rel="stylesheet" href="../common.css" />
+    <link rel="stylesheet" href="panel.css" />
+    <link rel="stylesheet" href="tools.css" />
+  </head>
+  <body>
+    <header class="top">
+      <a class="back" href="home.html?choose" title="Changer d'outil" aria-label="Changer d'outil">‹</a>
+      <img src="../icons/last-connection.svg" alt="" width="22" height="22" />
+      <h1>Last connection Users</h1>
+    </header>
+    <p class="hint tagline">
+      La dernière connexion de chaque utilisateur d'un journal de connexions : fichier texte ou texte collé.
+    </p>
+
+    <!-- Tableau : une ligne par utilisateur -->
+    <section id="result" class="card lc-result" hidden>
+      <div class="v-head">
+        <strong id="lcName" class="v-name"></strong>
+        <span id="lcMeta" class="v-meta"></span>
+      </div>
+      <ul id="lcNotes" class="lc-notes"></ul>
+      <input
+        id="lcSearch"
+        type="search"
+        class="lc-search"
+        placeholder="Rechercher un utilisateur ou un groupe"
+        aria-label="Rechercher un utilisateur ou un groupe"
+      />
+      <div class="table-wrap">
+        <table id="lcTable" class="grid lc-table">
+          <thead>
+            <tr>
+              <th class="left" data-sort="user"><button type="button">Utilisateur</button></th>
+              <th data-sort="last"><button type="button">Dernière connexion</button></th>
+              <th data-sort="last"><button type="button" title="Jours depuis la dernière connexion">Il y a</button></th>
+              <th data-sort="count"><button type="button" title="Lignes du journal">Connexions</button></th>
+              <th class="left" data-sort="group"><button type="button">Groupe</button></th>
+            </tr>
+          </thead>
+          <tbody id="lcRows"></tbody>
+        </table>
+      </div>
+      <p class="hint">
+        « Il y a » en jaune : <span id="lcWarn"></span> jours ou plus sans connexion, en orange :
+        <span id="lcCrit"></span> jours ou plus. Un clic sur un titre de colonne trie le tableau.
+      </p>
+      <div class="row">
+        <button id="expXlsx" type="button">Exporter en Excel</button>
+        <button id="expCsv" type="button">Exporter en CSV</button>
+      </div>
+      <button id="lcClear" type="button" class="link">Effacer le tableau</button>
+    </section>
+
+    <!-- Fichier texte -->
+    <div id="drop" class="drop">
+      <strong id="dropTitle">Déposez un fichier texte ici</strong>
+      <span class="hint">.txt, .csv, .log · lu dans le navigateur, rien n'est envoyé</span>
+      <button id="pick" type="button" class="primary lc-pick">Choisir un fichier…</button>
+      <input id="fileInput" type="file" accept=".txt,.csv,.log,text/plain,text/csv" hidden />
+    </div>
+    <div id="lcError" class="drop-error" role="alert" hidden></div>
+
+    <!-- Texte collé -->
+    <section>
+      <h2>Ou collez le texte</h2>
+      <textarea
+        id="lcText"
+        class="lc-text"
+        rows="6"
+        spellcheck="false"
+        aria-label="Texte du journal de connexions"
+        placeholder="13/04/2026;12:13:59;JEAN.DUPONT;GRP_CG_001;RO;244
+13/04/2026;17:03:41;MARIE.MARTIN;GRP_CG_002;RW;3272"
+      ></textarea>
+      <button id="lcGo" type="button" class="big primary">Générer le tableau</button>
+      <p class="hint">
+        Une ligne par connexion : date ; heure ; utilisateur ; groupe ; accès… Dates JJ/MM/AAAA, MM/JJ/AAAA ou
+        AAAA-MM-JJ, mélangées ou non. <kbd>Ctrl</kbd>+<kbd>Entrée</kbd> génère aussi le tableau.
+      </p>
+    </section>
+
+    <div id="toast" class="toast" role="status"></div>
+    <script type="module" src="last-connection.js"></script>
+  </body>
+</html>

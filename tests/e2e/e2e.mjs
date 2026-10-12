@@ -1,7 +1,7 @@
 // Test de bout en bout d'Allshare Tools Kit : charge l'extension dans Chromium (Playwright), sert deux
 // applications de démonstration avec des délais connus, navigue, puis vérifie
-// les mesures d'Insight, le rapport (cases rouges) et les exports, puis Capsule, Prisme, Training
-// et la sauvegarde de toutes les données (export et import depuis l'accueil).
+// les mesures d'Insight, le rapport (cases rouges) et les exports, puis Capsule, Prisme, Training, CRA,
+// Last connection Users et la sauvegarde de toutes les données (export et import depuis l'accueil).
 //
 //   npm install && npm run test:e2e
 //
@@ -664,6 +664,7 @@ try {
     'Training',
     'Prisme',
     'CRA',
+    'Last connection Users',
   ]);
   assert.equal(
     await tools.evaluate(() => document.body.firstElementChild.textContent.trim()),
@@ -1231,7 +1232,127 @@ try {
   );
   await tools.goto(`chrome-extension://${extId}/panel/home.html?choose`);
 
-  // 15. Mes données : export de toutes les données depuis l'accueil, extension vidée, réimport
+  // 15. Last connection Users : texte collé (dates JJ/MM, MM/JJ et AAAA-MM-JJ), tableau trié et filtré,
+  // exports Excel et CSV, fichier ANSI déposé, classeur refusé, tableau gardé en changeant d'outil
+  const isoAgo = (days) => {
+    const d = new Date();
+    d.setDate(d.getDate() - days);
+    return d.toLocaleDateString('sv-SE'); // AAAA-MM-JJ
+  };
+  const lcLog = [
+    'Date;Heure;Utilisateur;Groupe;Accès;Id',
+    '13/04/2026;12:13:59;SRV_BATCH;DBA;RW;244',
+    '04/19/2026;16:54:55;ANNE.DURAND;GRP_CG_002;RO;',
+    `${isoAgo(40)};10:15:00;ZOE.PETIT;GRP_CG_012;RO;`,
+    `${isoAgo(1)};11:00:00;LEO.MARTIN;GRP_CG_028;MULTI;1456`,
+    `${isoAgo(0)};00:00:01;leo.martin;GRP_CG_028;RO;`,
+    'ligne illisible',
+  ].join('\n');
+  assert.equal(await tools.textContent('#lastConnectionCount'), '', 'aucun tableau');
+  await tools.click('#toolLastConnection');
+  await tools.waitForSelector('#lcGo');
+  assert.equal(await tools.isHidden('#result'), true);
+  await tools.click('#lcGo');
+  assert.equal(await tools.textContent('#lcError'), 'Collez d’abord les lignes du journal dans la zone de texte.');
+  await tools.fill('#lcText', 'rien à lire');
+  await tools.click('#lcGo');
+  assert.match(await tools.textContent('#lcError'), /^Aucune connexion reconnue dans le texte collé\./);
+  await tools.fill('#lcText', lcLog);
+  await tools.press('#lcText', 'Control+Enter');
+  await tools.waitForSelector('#result:not([hidden])');
+  assert.equal(await tools.isHidden('#lcError'), true);
+  const lcCol = (n) => tools.locator(`#lcRows td:nth-child(${n})`).allTextContents();
+  const today = new Date().toLocaleDateString('fr-FR');
+  assert.equal(await tools.textContent('#lcName'), 'Texte collé');
+  assert.equal(await tools.textContent('#lcMeta'), `4 utilisateurs · 5 connexions · du 13/04/2026 au ${today}`);
+  assert.deepEqual(await tools.locator('#lcNotes li').allTextContents(), [
+    '1 ligne ignorée (format non reconnu) : 7',
+    '1 date lue au format MM/JJ/AAAA',
+  ]);
+  assert.deepEqual(await lcCol(1), ['leo.martin', 'ZOE.PETIT', 'ANNE.DURAND', 'SRV_BATCH'], 'la plus récente en tête');
+  assert.deepEqual(await lcCol(2), [
+    `${today} 00:00`,
+    `${isoAgo(40).split('-').reverse().join('/')} 10:15`,
+    '19/04/2026 16:54',
+    '13/04/2026 12:13',
+  ]);
+  assert.deepEqual((await lcCol(3)).slice(0, 2), ["aujourd'hui", '40 j']);
+  assert.deepEqual(
+    await tools.locator('#lcRows td:nth-child(3)').evaluateAll((tds) => tds.map((td) => td.className)),
+    ['num', 'num warn', 'num crit', 'num crit'],
+    'inactifs depuis 30 et 90 jours ou plus',
+  );
+  assert.deepEqual(await lcCol(4), ['2', '1', '1', '1']);
+  assert.deepEqual(await lcCol(5), ['GRP_CG_028', 'GRP_CG_012', 'GRP_CG_002', 'DBA'], 'groupe de la dernière ligne');
+  await tools.click('th[data-sort="user"] button');
+  assert.deepEqual(await lcCol(1), ['ANNE.DURAND', 'leo.martin', 'SRV_BATCH', 'ZOE.PETIT'], 'tri par utilisateur');
+  assert.equal(await tools.getAttribute('th[data-sort="user"]', 'aria-sort'), 'ascending');
+  await tools.click('th[data-sort="user"] button');
+  assert.deepEqual(await lcCol(1), ['ZOE.PETIT', 'SRV_BATCH', 'leo.martin', 'ANNE.DURAND'], 'tri inversé');
+  await tools.fill('#lcSearch', 'grp_cg_0');
+  assert.deepEqual(await lcCol(1), ['ZOE.PETIT', 'leo.martin', 'ANNE.DURAND'], 'recherche');
+  await tools.screenshot({ path: join(out, 'last-connection.png'), fullPage: true });
+  const lcExport = async (button, file) => {
+    const [dl] = await Promise.all([tools.waitForEvent('download'), tools.click(button)]);
+    assert.match(dl.suggestedFilename(), /^last-connection-users-\d{8}-\d{4}\.(csv|xlsx)$/);
+    await dl.saveAs(join(out, file));
+    console.log(`  Export : ${dl.suggestedFilename()}`);
+    return readFileSync(join(out, file));
+  };
+  const lcCsv = (await lcExport('#expCsv', 'last-connection.csv')).toString('utf8');
+  assert.deepEqual(
+    lcCsv
+      .replace(/^\uFEFF/, '')
+      .trimEnd()
+      .split('\r\n')
+      .map((l) => l.split(';')[0]),
+    ['Utilisateur', 'ZOE.PETIT', 'leo.martin', 'ANNE.DURAND'],
+    'CSV : lignes affichées, dans l’ordre affiché',
+  );
+  assert.equal((await lcExport('#expXlsx', 'last-connection.xlsx')).subarray(0, 2).toString(), 'PK');
+  await tools.fill('#lcSearch', 'zzz');
+  assert.deepEqual(await lcCol(1), ['Aucun utilisateur ne correspond à « zzz ».']);
+  // Fichier ANSI (Windows-1252) déposé : nouveau tableau ; un classeur Excel est refusé, le tableau reste
+  await tools.setInputFiles('#fileInput', {
+    name: 'connexions.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from(
+      '15/04/2026;08:00:00;HÉLÈNE.MÜLLER;GRP_CG_004;RO;\r\n16/04/2026;09:00:00;BOB;GRP;RW;\r\n',
+      'latin1',
+    ),
+  });
+  await tools.waitForFunction(() => document.querySelector('#lcName').textContent === 'connexions.txt');
+  assert.equal(await tools.inputValue('#lcSearch'), '', 'recherche remise à zéro');
+  assert.deepEqual(await lcCol(1), ['BOB', 'HÉLÈNE.MÜLLER']);
+  await tools.setInputFiles('#fileInput', {
+    name: 'journal.xlsx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer: Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 0]),
+  });
+  await tools.waitForSelector('#lcError:not([hidden])');
+  assert.match(
+    await tools.textContent('#lcError'),
+    /^« journal\.xlsx » n'est pas un fichier texte : c'est un classeur Excel/,
+  );
+  assert.equal(await tools.textContent('#lcName'), 'connexions.txt', 'tableau précédent gardé');
+  // Accueil puis retour : le dernier tableau est toujours là, jusqu'à « Effacer le tableau »
+  await tools.click('.back');
+  await tools.waitForFunction(
+    () => document.querySelector('#lastConnectionCount').textContent === '2 utilisateurs dans le dernier tableau',
+  );
+  await tools.click('#toolLastConnection');
+  await tools.waitForSelector('#result:not([hidden])');
+  assert.deepEqual(await lcCol(1), ['BOB', 'HÉLÈNE.MÜLLER'], 'tableau gardé');
+  await tools.click('#lcClear');
+  assert.equal(await tools.isHidden('#result'), true);
+  assert.equal(
+    await storage(async () => (await chrome.storage.session.get('lastConnection')).lastConnection),
+    undefined,
+  );
+  console.log('  Last connection Users : dates JJ/MM, MM/JJ et AAAA-MM-JJ, tri, recherche, exports, fichier ANSI');
+  await tools.goto(`chrome-extension://${extId}/panel/home.html?choose`);
+
+  // 16. Mes données : export de toutes les données depuis l'accueil, extension vidée, réimport
   await tools.setViewportSize({ width: 380, height: 900 });
   await tools.evaluate(() => localStorage.setItem('training.theme', 'dark'));
   const kitBefore = await storage(() => chrome.storage.local.get(null));
@@ -1295,7 +1416,7 @@ try {
   console.log(`  Mes données : ${Object.keys(kit.storage).length} clés exportées, restaurées après effacement`);
   await tools.close();
 
-  // 15. Démo à l'échelle : 150 clients × 20 pages (captures pour le README)
+  // 17. Démo à l'échelle : 150 clients × 20 pages (captures pour le README)
   const demo = await storage(async () => {
     const PAGES = [
       'Accueil',

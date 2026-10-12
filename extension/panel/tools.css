@@ -1,4 +1,4 @@
-/* Accueil « Quels outils ? » et outils Training, Capsule et Prisme (panneau latéral). */
+/* Accueil « Quels outils ? » et outils Training, Capsule, Prisme, CRA et Last connection Users (panneau latéral). */
 
 .back {
   display: inline-grid;
@@ -83,6 +83,10 @@
 
 .tool-text .tool-count.cra {
   color: #d97706;
+}
+
+.tool-text .tool-count.users {
+  color: #16a34a;
 }
 
 .tool-text .tool-count:empty {
@@ -986,4 +990,121 @@ button.t-resume.primary {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ---------- Last connection Users */
+.lc-result {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+  border-top: 3px solid #16a34a;
+}
+
+.lc-notes {
+  list-style: none;
+  margin: -4px 0 0;
+  padding: 0;
+  font-size: 12px;
+  color: var(--pill-warn-text);
+}
+
+.lc-notes:empty {
+  display: none;
+}
+
+.lc-search {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.lc-result .table-wrap {
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.lc-table {
+  font-size: 12.5px;
+}
+
+/* En-têtes : boutons de tri, restés visibles quand la liste défile */
+.table-wrap table.lc-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 0;
+}
+
+.table-wrap table.lc-table thead th:first-child {
+  z-index: 3;
+}
+
+.lc-table th button {
+  width: 100%;
+  min-width: 52px;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  font-weight: 600;
+  text-align: inherit;
+}
+
+/* « Dernière connexion » sur deux lignes : les colonnes utiles tiennent dans le panneau */
+.table-wrap table.lc-table th {
+  white-space: normal;
+}
+
+.lc-table th button:hover {
+  color: var(--accent);
+}
+
+.lc-table th[aria-sort='ascending'] button::after {
+  content: ' ▴';
+}
+
+.lc-table th[aria-sort='descending'] button::after {
+  content: ' ▾';
+}
+
+.lc-table td.warn {
+  background: var(--pill-warn-bg);
+  color: var(--pill-warn-text);
+  font-weight: 600;
+}
+
+.lc-table td.crit {
+  background: var(--pill-crit-bg);
+  color: var(--pill-crit-text);
+  font-weight: 600;
+}
+
+.lc-table td.lc-none {
+  color: var(--muted);
+  white-space: normal;
+}
+
+.lc-result > .link {
+  justify-self: start;
+}
+
+.lc-pick {
+  width: 100%;
+  margin-top: 6px;
+  padding: 9px 8px;
+}
+
+.lc-text {
+  display: block;
+  width: 100%;
+  margin-bottom: 8px;
+  font:
+    12px/1.45 ui-monospace,
+    SFMono-Regular,
+    Consolas,
+    monospace;
+  resize: vertical;
 }
