@@ -1,4 +1,5 @@
-/* Accueil « Quels outils ? » et outils Training, Capsule, Prisme, CRA et Last connection Users (panneau latéral). */
+/* Accueil « Quels outils ? », sous-menu Analyse de la donnée et outils Training, Capsule, Prisme, CRA et
+   Last connection Users (panneau latéral). */
 
 .back {
   display: inline-grid;
@@ -87,6 +88,10 @@
 
 .tool-text .tool-count.users {
   color: #16a34a;
+}
+
+.tool-text .tool-count.analyse {
+  color: #4f46e5;
 }
 
 .tool-text .tool-count:empty {

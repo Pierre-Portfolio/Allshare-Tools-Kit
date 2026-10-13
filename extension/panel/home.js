@@ -1,9 +1,9 @@
-// Accueil du panneau latéral d'Allshare Tools Kit : « Quels outils ? » (Capsule, Insight, Training, Prisme, CRA,
-// Last connection Users).
+// Accueil du panneau latéral d'Allshare Tools Kit : « Quels outils ? » (Capsule, Insight, Training,
+// Analyse de la donnée, CRA). Analyse de la donnée (analyse.html) réunit Prisme et Last connection Users.
 // Affiché à chaque ouverture du panneau, sauf pendant une mesure Insight en cours.
 // En bas : « Mes données », export et import de toutes les données de l'extension (lib/backup.js).
 import { getCapsules } from '../lib/capsule.js';
-import { getFiles } from '../lib/prisme-files.js';
+import { getFiles, prismeCountText } from '../lib/prisme-files.js';
 import { getConfig, ACTIVE_STATES } from '../lib/storage.js';
 import { buildModel } from '../lib/report.js';
 import { savedText, fileStamp } from '../lib/format.js';
@@ -42,12 +42,14 @@ async function renderCounts() {
   // sans relire les mesures
   const model = buildModel([], apps, pages);
   document.getElementById('insightCount').textContent = savedText(model.clients.length, model.allPages.length);
-  const f = files.length;
-  document.getElementById('prismeCount').textContent = f
-    ? `${f} fichier${f > 1 ? 's' : ''} récent${f > 1 ? 's' : ''}`
-    : '';
+  // Analyse de la donnée : fichiers récents de Prisme et dernier tableau de Last connection Users
+  document.getElementById('analyseCount').textContent = [
+    prismeCountText(files),
+    lastConnectionCountText(lastConnection),
+  ]
+    .filter(Boolean)
+    .join(' · ');
   document.getElementById('craCount').textContent = craCountText(capsules);
-  document.getElementById('lastConnectionCount').textContent = lastConnectionCountText(lastConnection);
 }
 
 // ---------------------------------------------------------------- Mes données

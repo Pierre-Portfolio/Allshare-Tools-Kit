@@ -113,6 +113,12 @@ export async function getFiles() {
   return (await chrome.storage.local.get('prismeFiles')).prismeFiles || [];
 }
 
+/** Compteur de l'accueil : « 2 fichiers récents », vide sans fichier. */
+export function prismeCountText(files) {
+  const n = files.length;
+  return n ? `${n} fichier${n > 1 ? 's' : ''} récent${n > 1 ? 's' : ''}` : '';
+}
+
 /**
  * Ajoute un fichier analysé en tête des fichiers récents (un fichier identique déjà ouvert
  * remonte simplement en tête). Au-delà de MAX_FILES, les plus anciens sont oubliés.

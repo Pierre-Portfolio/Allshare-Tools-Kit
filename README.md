@@ -8,14 +8,15 @@
 # Allshare Tools Kit — Boîte à outils Chrome
 
 ## Aperçu
-Extension Chrome qui réunit, dans un **panneau latéral**, six outils pour les consultants qui déploient et font vivre une application de pilotage RH auprès d'un parc de 100 à 200 clients :
+Extension Chrome qui réunit, dans un **panneau latéral**, des outils pour les consultants qui déploient et font vivre une application de pilotage RH auprès d'un parc de 100 à 200 clients :
 
 1. **Capsule** : la sauvegarde des onglets d'une fenêtre, pour les rouvrir d'un clic ;
 2. **Insight** : la mesure du temps entre **le clic** et **l'affichage complet** d'une page, par client, SID, version, page et réseau (**Ethernet** ou **WiFi**), avec exports Excel et CSV ;
 3. **Training** : des formations complètes, avec exercices corrigés et progression enregistrée, en trois modules : **Métier RH**, **OLAP** et **Oracle APEX** ;
-4. **Prisme** : l'inspection d'un fichier CSV (encodage, séparateurs, colonnes décalées, accents cassés…) et sa conversion en ANSI ou en UTF-8 ;
-5. **CRA** : pour remplir le compte rendu d'activité, la liste des **capsules ouvertes dans la journée** avec leur **temps d'ouverture**, le temps d'ouverture de chaque **client allshare-scenario.fr** du jour, et deux automatismes de la page de saisie du C.R.A (**Save** cliqué en quittant une ligne remplie, case de l'**étoile jaune** décochée à l'arrivée) ;
-6. **Last connection Users** : à partir d'un journal de connexions (fichier texte ou texte collé), le tableau de la **dernière connexion de chaque utilisateur**, avec exports Excel et CSV.
+4. **Analyse de la donnée**, qui réunit deux outils :
+   - **Prisme** : l'inspection d'un fichier CSV (encodage, séparateurs, colonnes décalées, accents cassés…) et sa conversion en ANSI ou en UTF-8 ;
+   - **Last connection Users** : à partir d'un journal de connexions (fichier texte ou texte collé), le tableau de la **dernière connexion de chaque utilisateur**, avec exports Excel et CSV ;
+5. **CRA** : pour remplir le compte rendu d'activité, la liste des **capsules ouvertes dans la journée** avec leur **temps d'ouverture**, le temps d'ouverture de chaque **client allshare-scenario.fr** du jour, et deux automatismes de la page de saisie du C.R.A (**Save** cliqué en quittant une ligne remplie, case de l'**étoile jaune** décochée à l'arrivée).
 
 À chaque ouverture, le panneau demande **Quels outils ?**. Tout reste **dans le navigateur** : aucune donnée n'est envoyée sur Internet. En bas de l'accueil, **Exporter mes données Tools Kit** les enregistre toutes dans un fichier, à réimporter après une réinstallation ou sur un autre poste.
 
@@ -53,6 +54,9 @@ Extension Chrome qui réunit, dans un **panneau latéral**, six outils pour les 
 - **Secondes ou millisecondes** : durées en **secondes** par défaut (« 1,23 s »), en millisecondes au choix (bouton **s / ms** du tableau de bord ou Réglages) ; s'applique au panneau, à l'indicateur sur la page et aux exports Excel / CSV
 - **Réglages** : référentiel des clients (import en masse depuis Excel) et des pages (ordre des colonnes), délai de calme, durée maximale, zones à ignorer, unité des durées, seuils des anomalies, sauvegarde / fusion JSON des mesures
 
+### Analyse de la donnée : sous-menu (`panel/analyse.html`)
+- Sur l'accueil, **Analyse de la donnée** réunit **Prisme** et **Last connection Users** : un clic ouvre le sous-menu, avec le compteur de chacun (fichiers récents de Prisme, utilisateurs du dernier tableau) ; **‹** dans l'un ou l'autre ramène au sous-menu, puis à l'accueil
+
 ### Prisme : inspection et conversion de CSV (`panel/prisme.html`, `prisme/`)
 - **Dépôt d'un fichier** (ou exemple avec erreurs), **encodage attendu** ANSI ou UTF-8, refus clair des classeurs, archives, PDF et images
 - **Gros fichiers** : analysés en arrière-plan (la page reste utilisable), ouverture confirmée au-delà de 20 Mo
@@ -60,6 +64,14 @@ Extension Chrome qui réunit, dans un **panneau latéral**, six outils pour les 
 - **53 contrôles** classés en erreur, alerte ou info : encodage, structure, guillemets, contenu (accents cassés, espaces insécables, formules…), cohérence des colonnes, fins de ligne
 - **Tableau de bord** : résumé, 4 vues (Détails, Données brutes, Visuel d'Excel, CSV brut) et **inspecteur de cellule** (caractères un par un, octets ANSI et UTF-8)
 - **Exporter en ANSI** ou **en UTF-8** (avec BOM), option CRLF ; un fichier à **encodage mixte** (lignes UTF-8 dans un fichier ANSI) est lu ligne par ligne, et la conversion répare ses accents ; les 10 derniers fichiers restent disponibles
+
+### Last connection Users : dernière connexion de chaque utilisateur (`panel/last-connection.html`, `lib/last-connection.js`)
+- **Journal de connexions** : une ligne par connexion, `date;heure;utilisateur;groupe;accès;…` (par exemple `13/04/2026;12:13:59;JEAN.DUPONT;GRP_CG_028;RW;244`) ; les champs suivants (identifiant, propriétaire d'une suppression…) sont ignorés. Séparateur point-virgule, tabulation (lignes copiées depuis Excel) ou virgule ; heure avec ou sans les secondes ; une première ligne d'en-tête est sautée
+- **Deux façons de le donner** : **déposer un fichier** (.txt, .csv, .log ; UTF-8, ANSI ou UTF-16, lu dans le navigateur, refus clair des classeurs Excel, PDF et images) ou **coller le texte** puis **Générer le tableau** (ou <kbd>Ctrl</kbd>+<kbd>Entrée</kbd>)
+- **Dates mélangées** : JJ/MM/AAAA, MM/JJ/AAAA (certains postes écrivent `04/19/2026`) et AAAA-MM-JJ dans le même journal. Une date lisible dans les deux sens (`05/04/2026`) suit le format des autres dates du même utilisateur, sinon celui qui la place au plus près de la ligne précédente du journal, sinon JJ/MM/AAAA ; le nombre de dates lues en MM/JJ/AAAA est indiqué
+- **Tableau** : une ligne par utilisateur (sans tenir compte des majuscules : `jean.dupont` et `JEAN.DUPONT` ne font qu'un), avec sa **dernière connexion**, **il y a** combien de jours (en jaune à 30 jours ou plus, en orange à 90 jours ou plus), le **nombre de connexions** et le **groupe** de sa dernière ligne ; la plus récente en tête, **tri** par un clic sur un titre de colonne, **recherche** par utilisateur ou groupe. Résumé : utilisateurs, connexions, période du journal, lignes non reconnues (avec leurs numéros)
+- **Exports Excel et CSV** des lignes affichées, dans l'ordre affiché : utilisateur, groupe, dernière connexion, inactif depuis (jours), dernier accès (RO, RW…), connexions, première connexion
+- Le dernier tableau reste affiché quand on change d'outil, **jusqu'à la fermeture de Chrome** : rien n'est conservé ensuite, et il ne fait pas partie de « Mes données » ; **Effacer le tableau** le retire tout de suite
 
 ### CRA : aide à la saisie du C.R.A (`panel/cra.html`, `content/cra.js`)
 - **Capsules ouvertes** : les sessions de Capsule **rouvertes** (Rouvrir, Tout rouvrir) ou **sauvegardées** dans la journée (ou restées ouvertes depuis la veille), avec les heures et le nombre d'onglets, dans l'ordre de la première ouverture ; un autre jour se choisit dans le calendrier
@@ -69,14 +81,6 @@ Extension Chrome qui réunit, dans un **panneau latéral**, six outils pour les 
   - **Décocher l'étoile jaune en arrivant** : la case du surlignage (étoile jaune) de la grille est décochée à l'ouverture de la page, si elle est cochée ; quand les réglages de la grille sont repliés, ils sont d'abord dépliés, comme à la main, la case n'est décochée qu'une fois qu'ils sont affichés, puis ils sont repliés
 - Réglages pris en compte aussitôt, sans recharger la page ; ils font partie de « Mes données »
 - **Clients allshare-scenario.fr** (zone repliée tout en bas) : **une ligne par client**, c'est-à-dire par sous-domaine (`dsb-generali`, `dsb-natixis`…), ouvert aujourd'hui dans un onglet, avec la dernière page vue et son **temps d'ouverture** (« (en cours) » s'il est encore ouvert), le plus long en tête. Le temps court tant qu'au moins un onglet affiche le client : un onglet en arrière-plan compte, deux onglets du même client ne comptent qu'une fois. La saisie du C.R.A (`dsb-cra`) n'est pas un client et n'est pas comptée, pas plus que le domaine seul ou `www`. **Remis à zéro chaque jour** ; si l'ordinateur se met en veille, l'attente ne compte pas (3 min au plus)
-
-### Last connection Users : dernière connexion de chaque utilisateur (`panel/last-connection.html`, `lib/last-connection.js`)
-- **Journal de connexions** : une ligne par connexion, `date;heure;utilisateur;groupe;accès;…` (par exemple `13/04/2026;12:13:59;JEAN.DUPONT;GRP_CG_028;RW;244`) ; les champs suivants (identifiant, propriétaire d'une suppression…) sont ignorés. Séparateur point-virgule, tabulation (lignes copiées depuis Excel) ou virgule ; heure avec ou sans les secondes ; une première ligne d'en-tête est sautée
-- **Deux façons de le donner** : **déposer un fichier** (.txt, .csv, .log ; UTF-8, ANSI ou UTF-16, lu dans le navigateur, refus clair des classeurs Excel, PDF et images) ou **coller le texte** puis **Générer le tableau** (ou <kbd>Ctrl</kbd>+<kbd>Entrée</kbd>)
-- **Dates mélangées** : JJ/MM/AAAA, MM/JJ/AAAA (certains postes écrivent `04/19/2026`) et AAAA-MM-JJ dans le même journal. Une date lisible dans les deux sens (`05/04/2026`) suit le format des autres dates du même utilisateur, sinon celui qui la place au plus près de la ligne précédente du journal, sinon JJ/MM/AAAA ; le nombre de dates lues en MM/JJ/AAAA est indiqué
-- **Tableau** : une ligne par utilisateur (sans tenir compte des majuscules : `jean.dupont` et `JEAN.DUPONT` ne font qu'un), avec sa **dernière connexion**, **il y a** combien de jours (en jaune à 30 jours ou plus, en orange à 90 jours ou plus), le **nombre de connexions** et le **groupe** de sa dernière ligne ; la plus récente en tête, **tri** par un clic sur un titre de colonne, **recherche** par utilisateur ou groupe. Résumé : utilisateurs, connexions, période du journal, lignes non reconnues (avec leurs numéros)
-- **Exports Excel et CSV** des lignes affichées, dans l'ordre affiché : utilisateur, groupe, dernière connexion, inactif depuis (jours), dernier accès (RO, RW…), connexions, première connexion
-- Le dernier tableau reste affiché quand on change d'outil, **jusqu'à la fermeture de Chrome** : rien n'est conservé ensuite, et il ne fait pas partie de « Mes données » ; **Effacer le tableau** le retire tout de suite
 
 ### Mes données : sauvegarde complète (accueil, `lib/backup.js`)
 - **Exporter mes données Tools Kit** : un seul fichier JSON avec **toutes les données de l'extension** : mesures, clients, pages et réglages d'Insight, sessions de Capsule, fichiers récents de Prisme (contenu compris) et ses réglages, progression de Training et son thème, réglages de CRA
@@ -141,8 +145,8 @@ Allshare-Tools-Kit/
     background.js            → Service worker : déroulé d'une mesure Insight, badge, raccourci clavier
     content/                 → Scripts de mesure injectés dans l'onglet mesuré, pendant une mesure seulement ;
                                cra.js : automatismes de la page de saisie du C.R.A
-    panel/                   → Panneau latéral : accueil « Quels outils ? », Capsule, Insight, Training, Prisme, CRA,
-                               Last connection Users
+    panel/                   → Panneau latéral : accueil « Quels outils ? », Capsule, Insight, Training,
+                               Analyse de la donnée (sous-menu : Prisme, Last connection Users), CRA
     training/
       training.html|js|css   → Page de formation : sommaire, notions, exercices, examen, mémo, glossaire
       content/rh/            → Module Métier RH (8 notions + examen, mémo, glossaire, ressources)
@@ -187,8 +191,8 @@ La progression est enregistrée dans `chrome.storage.local` (clé `training`) : 
 - **Mesurer une page** : **Insight** → remplissez Client, Version, SID et Page → **Lancer l'enregistrement** → cliquez sur la page dans l'application. Enchaînez avec **↻ Relancer en WiFi** ou **Page suivante →**, qui revient au formulaire avec la page suivante choisie : relancez l'enregistrement quand vous êtes prêt.
 - **Comparer les clients** : **Exports** → choisissez le type, la page ou le client, le format → **Télécharger**.
 - **Garder ses onglets** : **Capsule** → **＋ Sauvegarder cette session** → **Rouvrir** plus tard.
-- **Contrôler un CSV** : **Prisme** → déposez le fichier → lisez le verdict → **Exporter en ANSI** ou **en UTF-8**.
-- **Repérer les utilisateurs inactifs** : **Last connection Users** → déposez le journal de connexions (ou collez ses lignes → **Générer le tableau**) → triez sur **Il y a** → **Exporter en Excel**.
+- **Contrôler un CSV** : **Analyse de la donnée** → **Prisme** → déposez le fichier → lisez le verdict → **Exporter en ANSI** ou **en UTF-8**.
+- **Repérer les utilisateurs inactifs** : **Analyse de la donnée** → **Last connection Users** → déposez le journal de connexions (ou collez ses lignes → **Générer le tableau**) → triez sur **Il y a** → **Exporter en Excel**.
 - **Réinstaller ou changer de poste** : accueil → **Exporter mes données Tools Kit** → sur la nouvelle installation, **Importer mes données Tools Kit**.
 
 > Astuce : faites 2 ou 3 mesures par page (« Refaire en … ») et gardez la **médiane**. Pour une page lente, regardez l'**attente serveur** dans le détail du chargement : si elle domine, le temps est passé côté serveur (requêtes SQL).

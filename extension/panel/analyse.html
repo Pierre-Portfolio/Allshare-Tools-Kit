@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Analyse de la donnée</title>
+    <link rel="stylesheet" href="../common.css" />
+    <link rel="stylesheet" href="panel.css" />
+    <link rel="stylesheet" href="tools.css" />
+  </head>
+  <body>
+    <header class="top">
+      <a class="back" href="home.html?choose" title="Changer d'outil" aria-label="Changer d'outil">‹</a>
+      <img src="../icons/analyse.svg" alt="" width="22" height="22" />
+      <h1>Analyse de la donnée</h1>
+    </header>
+    <p class="hint tagline">Contrôler un fichier, en tirer un tableau : tout est lu dans le navigateur.</p>
+
+    <nav class="tools" aria-label="Outils d'analyse de la donnée">
+      <a id="toolPrisme" class="tool" href="prisme.html">
+        <img src="../icons/prisme.svg" alt="" width="44" height="44" />
+        <span class="tool-text">
+          <strong>Prisme</strong>
+          <small>Inspecter un CSV et le convertir en ANSI ou UTF-8</small>
+          <small id="prismeCount" class="tool-count prisme"></small>
+        </span>
+        <span class="chev" aria-hidden="true">›</span>
+      </a>
+      <a id="toolLastConnection" class="tool" href="last-connection.html">
+        <img src="../icons/last-connection.svg" alt="" width="44" height="44" />
+        <span class="tool-text">
+          <strong>Last connection Users</strong>
+          <small>Dernière connexion de chaque utilisateur d'un journal de connexions</small>
+          <small id="lastConnectionCount" class="tool-count users"></small>
+        </span>
+        <span class="chev" aria-hidden="true">›</span>
+      </a>
+    </nav>
+
+    <script type="module" src="analyse.js"></script>
+  </body>
+</html>

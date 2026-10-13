@@ -662,9 +662,8 @@ try {
     'Capsule',
     'Insight',
     'Training',
-    'Prisme',
+    'Analyse de la donnée',
     'CRA',
-    'Last connection Users',
   ]);
   assert.equal(
     await tools.evaluate(() => document.body.firstElementChild.textContent.trim()),
@@ -880,6 +879,16 @@ try {
   // 12. Prisme : CSV refusé, fichier propre, exemple avec erreurs, export, tableau de bord
   await tools.setViewportSize({ width: 380, height: 1000 });
   await tools.goto(`chrome-extension://${extId}/panel/home.html?choose`);
+  await tools.click('#toolAnalyse');
+  await tools.waitForSelector('#toolPrisme');
+  assert.deepEqual(
+    await tools.locator('.tool strong').allTextContents(),
+    ['Prisme', 'Last connection Users'],
+    'sous-menu Analyse de la donnée',
+  );
+  await tools.click('.back');
+  await tools.waitForURL(/\/panel\/home\.html\?choose$/);
+  await tools.click('#toolAnalyse');
   await tools.click('#toolPrisme');
   await tools.waitForSelector('#drop');
   assert.ok(await tools.isHidden('#result'), 'aucun fichier au départ');
@@ -976,16 +985,21 @@ try {
   // Accueil : compteurs sous chaque outil
   await tools.setViewportSize({ width: 380, height: 640 });
   await tools.goto(`chrome-extension://${extId}/panel/home.html?choose`);
-  await tools.waitForFunction(() => document.querySelector('#prismeCount').textContent === '2 fichiers récents');
+  await tools.waitForFunction(() => document.querySelector('#analyseCount').textContent === '2 fichiers récents');
   await tools.mouse.move(370, 630);
   await tools.screenshot({ path: join(out, 'panel-outils.png') });
-  // Retrait d'un fichier récent
+  await tools.click('#toolAnalyse');
+  await tools.waitForFunction(() => document.querySelector('#prismeCount').textContent === '2 fichiers récents');
+  await tools.screenshot({ path: join(out, 'panel-analyse.png') });
+  // Retrait d'un fichier récent ; « ‹ » ramène au sous-menu
   await tools.click('#toolPrisme');
   await tools.waitForSelector('#result:not([hidden])');
   await tools.click('#recent > summary');
   tools.once('dialog', (d) => d.accept());
   await tools.click('.pfile >> nth=1 >> .pf-del');
   await tools.waitForFunction(() => document.querySelector('#recentCount').textContent === '(1)');
+  await tools.click('.back');
+  await tools.waitForURL(/\/panel\/analyse\.html$/);
 
   // 13. Training : modules, page de formation, progression enregistrée dans l'extension
   const rhModule = moduleById('rh');
@@ -1248,6 +1262,9 @@ try {
     `${isoAgo(0)};00:00:01;leo.martin;GRP_CG_028;RO;`,
     'ligne illisible',
   ].join('\n');
+  await tools.waitForFunction(() => document.querySelector('#analyseCount').textContent === '1 fichier récent');
+  await tools.click('#toolAnalyse');
+  await tools.waitForSelector('#toolLastConnection');
   assert.equal(await tools.textContent('#lastConnectionCount'), '', 'aucun tableau');
   await tools.click('#toolLastConnection');
   await tools.waitForSelector('#lcGo');
@@ -1335,11 +1352,18 @@ try {
     /^« journal\.xlsx » n'est pas un fichier texte : c'est un classeur Excel/,
   );
   assert.equal(await tools.textContent('#lcName'), 'connexions.txt', 'tableau précédent gardé');
-  // Accueil puis retour : le dernier tableau est toujours là, jusqu'à « Effacer le tableau »
+  // Sous-menu, accueil, puis retour : le dernier tableau est toujours là, jusqu'à « Effacer le tableau »
   await tools.click('.back');
   await tools.waitForFunction(
     () => document.querySelector('#lastConnectionCount').textContent === '2 utilisateurs dans le dernier tableau',
   );
+  await tools.click('.back');
+  await tools.waitForFunction(
+    () =>
+      document.querySelector('#analyseCount').textContent ===
+      '1 fichier récent · 2 utilisateurs dans le dernier tableau',
+  );
+  await tools.click('#toolAnalyse');
   await tools.click('#toolLastConnection');
   await tools.waitForSelector('#result:not([hidden])');
   assert.deepEqual(await lcCol(1), ['BOB', 'HÉLÈNE.MÜLLER'], 'tableau gardé');
@@ -1408,7 +1432,7 @@ try {
   );
   assert.equal(await tools.evaluate(() => localStorage.getItem('training.theme')), 'dark');
   await tools.waitForFunction(() => document.querySelector('#trainingCount').textContent === '3 exercices faits · 3 %');
-  assert.equal(await tools.textContent('#prismeCount'), '1 fichier récent');
+  assert.equal(await tools.textContent('#analyseCount'), '1 fichier récent');
   // Le même fichier une seconde fois : rien n'est doublé
   await tools.setInputFiles('#importAllFile', kitPath);
   await tools.waitForFunction(() => /^Rien de nouveau/.test(document.querySelector('#dataStatus').textContent));
