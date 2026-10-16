@@ -50,18 +50,19 @@
       </p>
     </section>
 
-    <!-- Clients allshare-scenario.fr ouverts aujourd'hui (repliés au départ, remis à zéro chaque jour) -->
+    <!-- Clients allshare-scenario.fr ouverts le jour choisi dans le calendrier (repliés au départ, gardés une semaine) -->
     <details id="sitePages" class="saved card">
       <summary>
         <span>Clients allshare-scenario.fr</span>
         <span id="pagesTotal" class="muted"></span>
+        <span id="pagesDay" class="muted cra-pages-day"></span>
       </summary>
       <ul id="pagesList" class="cra-list cra-pages"></ul>
-      <p id="pagesEmpty" class="hint" hidden>Aucun client allshare-scenario.fr ouvert aujourd'hui.</p>
+      <p id="pagesEmpty" class="hint" hidden></p>
       <p class="hint">
-        Temps d'ouverture aujourd'hui de chaque client : une ligne par sous-domaine (dsb-generali, dsb-natixis…), ouvert
-        dans au moins un onglet (en arrière-plan compris) ; la saisie du C.R.A (dsb-cra) n'est pas comptée. Remis à zéro
-        chaque jour.
+        Temps d'ouverture de chaque client le jour choisi dans le calendrier : une ligne par sous-domaine (dsb-generali,
+        dsb-natixis…), ouvert dans au moins un onglet (en arrière-plan compris) ; la saisie du C.R.A (dsb-cra) n'est pas
+        comptée. Gardé une semaine : aujourd'hui et les 7 jours précédents.
       </p>
     </details>
 

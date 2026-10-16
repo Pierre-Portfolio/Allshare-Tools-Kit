@@ -5,11 +5,12 @@
 //                { autoSave, autoHighlight }
 //                (autoSave : clic sur « Save » quand on quitte une ligne modifiée de la grille)
 //                (autoHighlight : case de l'étoile jaune, le surlignage de la grille, décochée en arrivant sur la page)
-//   craPages     clients allshare-scenario.fr ouverts aujourd'hui (remis à zéro chaque jour), tenu par background.js :
-//                { day: 'AAAA-MM-JJ', at, pages: { [sous-domaine]: { url, title, ms } }, open: [sous-domaine…] }
-//                (une entrée par sous-domaine client, voir clientHost ; url, title : dernière page vue ;
-//                 at : dernière mise à jour ; open : clients ouverts dans un onglet à cet instant, qui gagnent
-//                 le temps écoulé depuis at)
+//   craPages     clients allshare-scenario.fr ouverts, jour par jour sur une semaine, tenu par background.js :
+//                { day: 'AAAA-MM-JJ', at, pages: { [sous-domaine]: { url, title, ms } }, open: [sous-domaine…],
+//                  history: { 'AAAA-MM-JJ': pages… } }
+//                (pages : ceux du jour `day`, une entrée par sous-domaine client, voir clientHost ; url, title :
+//                 dernière page vue ; at : dernière mise à jour ; open : clients ouverts dans un onglet à cet
+//                 instant, qui gagnent le temps écoulé depuis at ; history : les KEEP_DAYS jours précédents)
 // Capsules ouvertes dans la journée : capsules[].opens (réouvertures, voir lib/capsule.js) et date de sauvegarde ;
 // temps d'ouverture : capsules[].spans (de la sauvegarde ou d'une réouverture à la fermeture de ses fenêtres).
 
@@ -39,6 +40,8 @@ export const DEFAULT_CRA = { autoSave: false, autoHighlight: false };
 export const SITE = 'allshare-scenario.fr';
 /** Au-delà, l'ordinateur était en veille : le relevé de background.js passe chaque minute. */
 export const MAX_GAP = 3 * 60000;
+/** Jours précédents gardés dans craPages.history : la dernière semaine. */
+export const KEEP_DAYS = 7;
 
 /** « 2026-10-07 » : jour de `date`, heure locale. */
 export function isoDay(date) {
@@ -147,23 +150,43 @@ function byClient(state) {
   return { ...state, pages, open };
 }
 
+/** « 2026-09-30 » : premier jour encore gardé dans craPages.history à `now` (KEEP_DAYS jours avant). */
+export function oldestKeptDay(now = Date.now()) {
+  const d = new Date(now);
+  d.setDate(d.getDate() - KEEP_DAYS);
+  return isoDay(d);
+}
+
 /**
- * Relevé à `now` : les clients ouverts depuis le dernier relevé gagnent le temps écoulé (MAX_GAP au plus) ;
- * un nouveau jour repart de zéro (seul le temps depuis minuit compte). Fonction pure.
+ * Relevé à `now` : les clients ouverts depuis le dernier relevé gagnent le temps écoulé (MAX_GAP au plus).
+ * Un nouveau jour repart de zéro : le jour précédent passe dans l'historique avec son temps jusqu'à minuit,
+ * le nouveau ne compte que le temps depuis minuit ; l'historique garde KEEP_DAYS jours. Fonction pure.
  */
 export function advancePages(saved, now) {
   const day = isoDay(now);
-  if (!saved) return { day, at: now, pages: {}, open: [] };
+  if (!saved) return { day, at: now, pages: {}, open: [], history: {} };
   const state = byClient(saved);
-  const sameDay = state.day === day;
-  const since = sameDay ? state.at : Math.max(state.at, dayBounds(now)[0]);
-  const gained = Math.max(0, Math.min(now - since, MAX_GAP));
-  const pages = sameDay ? { ...state.pages } : {};
-  for (const key of state.open) {
-    const page = pages[key] || state.pages[key];
-    if (page) pages[key] = { ...page, ms: (sameDay ? page.ms : 0) + gained };
+  const history = { ...(state.history && typeof state.history === 'object' ? state.history : {}) };
+  // Temps écoulé depuis le dernier relevé : de at à `end`, partagé entre son jour et aujourd'hui
+  const end = Math.max(state.at, Math.min(now, state.at + MAX_GAP));
+  const grow = (pages, from, to) => {
+    const out = { ...pages };
+    for (const key of state.open) if (out[key]) out[key] = { ...out[key], ms: out[key].ms + Math.max(0, to - from) };
+    return out;
+  };
+  let pages;
+  if (state.day === day) pages = grow(state.pages, state.at, end);
+  else {
+    const before = grow(state.pages, state.at, Math.min(end, dayBounds(state.at)[1]));
+    if (Object.keys(before).length) history[state.day] = before;
+    const blank = Object.fromEntries(
+      state.open.filter((key) => state.pages[key]).map((key) => [key, { ...state.pages[key], ms: 0 }]),
+    );
+    pages = grow(blank, Math.max(state.at, dayBounds(now)[0]), end);
   }
-  return { day, at: now, pages, open: state.open };
+  const oldest = oldestKeptDay(now);
+  for (const key of Object.keys(history)) if (key < oldest || key >= day) delete history[key];
+  return { day, at: now, pages, open: state.open, history };
 }
 
 /**
@@ -187,14 +210,16 @@ export function trackPages(state, tabs, now) {
 }
 
 /**
- * Clients du jour pour le panneau, le plus longtemps ouvert en tête. Fonction pure.
+ * Clients du jour de `date` pour le panneau (aujourd'hui, ou l'un des KEEP_DAYS jours précédents),
+ * le plus longtemps ouvert en tête. Fonction pure.
  * @returns {{key, name, url, title, ms, live: boolean}[]} key : sous-domaine, name : clientName,
- *   live : ouvert dans un onglet en ce moment
+ *   live : ouvert dans un onglet en ce moment (aujourd'hui seulement)
  */
-export function pagesToday(state, now = Date.now()) {
-  const { pages, open } = advancePages(state, now);
-  return Object.entries(pages)
-    .map(([key, page]) => ({ key, name: clientName(key), ...page, live: open.includes(key) }))
+export function pagesOn(state, date, now = Date.now()) {
+  const { day, pages, open, history } = advancePages(state, now);
+  const today = isoDay(date) === day;
+  return Object.entries((today ? pages : history[isoDay(date)]) || {})
+    .map(([key, page]) => ({ key, name: clientName(key), ...page, live: today && open.includes(key) }))
     .sort((a, b) => b.ms - a.ms);
 }
 

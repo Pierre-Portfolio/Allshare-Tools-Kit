@@ -1234,6 +1234,13 @@ try {
   assert.deepEqual(Object.keys(sitePages.pages), ['dsb-generali.allshare-scenario.fr'], 'un seul client, sans dsb-cra');
   const { ms } = sitePages.pages['dsb-generali.allshare-scenario.fr'];
   assert.ok(ms > 1000, `temps d'ouverture du client (${ms} ms)`);
+  const dayAgo = (days) => {
+    const d = new Date();
+    d.setDate(d.getDate() - days);
+    return d.toLocaleDateString('sv-SE'); // AAAA-MM-JJ
+  };
+  await tools.fill('#craDay', dayAgo(0)); // le calendrier était resté sur la veille (capsules)
+  await tools.waitForFunction(() => document.querySelector('#pagesTotal').textContent === '(1)');
   assert.equal(await tools.getAttribute('#sitePages', 'open'), null, 'repliée au départ');
   await tools.click('#sitePages > summary');
   assert.equal(await tools.textContent('#pagesTotal'), '(1)');
@@ -1241,8 +1248,29 @@ try {
   assert.match(await tools.textContent('#pagesList .cra-url'), /^Dernière page : Generali · page [12]$/);
   assert.deepEqual(await tools.locator('#pagesList .cra-open').allTextContents(), ['< 1 min']);
   await tools.screenshot({ path: join(out, 'cra-pages.png'), fullPage: true });
+  // La semaine précédente reste en mémoire : le calendrier affiche les clients du jour choisi
+  await storage(async (day) => {
+    const { craPages } = await chrome.storage.local.get('craPages');
+    const natixis = { url: 'https://dsb-natixis.allshare-scenario.fr/tickets', title: 'Tickets', ms: 25 * 60000 };
+    await chrome.storage.local.set({
+      craPages: { ...craPages, history: { [day]: { 'dsb-natixis.allshare-scenario.fr': natixis } } },
+    });
+  }, dayAgo(1));
+  await tools.fill('#craDay', dayAgo(1));
+  await tools.waitForFunction(() => document.querySelector('#pagesList strong')?.textContent === 'dsb-natixis');
+  assert.equal(await tools.textContent('#pagesTotal'), '(1)');
+  assert.notEqual(await tools.textContent('#pagesDay'), '', 'jour affiché dans le titre');
+  assert.deepEqual(await tools.locator('#pagesList .cra-open').allTextContents(), ['25 min'], 'la veille');
+  assert.equal(await tools.textContent('#pagesList .cra-url'), 'Dernière page : Tickets');
+  await tools.screenshot({ path: join(out, 'cra-pages-veille.png'), fullPage: true });
+  await tools.fill('#craDay', dayAgo(8));
+  await tools.waitForFunction(() => !document.querySelector('#pagesEmpty').hidden);
+  assert.match(await tools.textContent('#pagesEmpty'), /plus en mémoire/, 'plus d’une semaine');
+  await tools.fill('#craDay', dayAgo(0));
+  await tools.waitForFunction(() => document.querySelector('#pagesList strong')?.textContent === 'dsb-generali');
+  assert.equal(await tools.textContent('#pagesDay'), '', 'aujourd’hui');
   console.log(
-    '  CRA : capsules du jour et temps d’ouverture, étoile jaune décochée, ligne enregistrée, clients du jour',
+    '  CRA : capsules du jour et temps d’ouverture, étoile jaune décochée, ligne enregistrée, clients de la semaine',
   );
   await tools.goto(`chrome-extension://${extId}/panel/home.html?choose`);
 

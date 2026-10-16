@@ -984,6 +984,12 @@ button.t-resume.primary {
   border-left-color: var(--accent);
 }
 
+.cra-pages-day {
+  margin-left: auto;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
 .cra-pages .cra-open {
   margin-left: auto;
   padding-left: 6px;

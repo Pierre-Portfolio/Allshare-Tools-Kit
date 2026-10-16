@@ -11,8 +11,10 @@ import {
   clientName,
   advancePages,
   trackPages,
-  pagesToday,
+  pagesOn,
+  oldestKeptDay,
   MAX_GAP,
+  KEEP_DAYS,
   isCraPage,
   CRA_ORIGIN,
   CRA_PATH,
@@ -114,7 +116,7 @@ test('clients allshare-scenario.fr : un par sous-domaine, saisie du C.R.A écart
   assert.equal(clientName('dsb-generali.allshare-scenario.fr'), 'dsb-generali');
 });
 
-test('clients du jour : temps gagné par les clients ouverts, remis à zéro chaque jour', () => {
+test('clients du jour : temps gagné par les clients ouverts, chaque jour repart de zéro', () => {
   const min = (n) => n * 60000;
   const generali = 'dsb-generali.allshare-scenario.fr';
   const natixis = 'dsb-natixis.allshare-scenario.fr';
@@ -132,6 +134,7 @@ test('clients du jour : temps gagné par les clients ouverts, remis à zéro cha
     at: at(9, 0),
     pages: { [generali]: { url: g(2), title: 'Fiche Salarié', ms: 0 } },
     open: [generali],
+    history: {},
   });
   s = trackPages(s, [...tabs, { url: tickets, title: 'Tickets' }], at(9, 1));
   s = trackPages(
@@ -154,19 +157,68 @@ test('clients du jour : temps gagné par les clients ouverts, remis à zéro cha
   );
   assert.equal(advancePages(s, at(10, 4)).pages[natixis].ms, min(3) + MAX_GAP, 'veille : 3 min au plus');
   assert.deepEqual(
-    pagesToday(s, at(9, 5)).map((p) => [p.name, p.ms / 60000, p.live]),
+    pagesOn(s, at(9, 5), at(9, 5)).map((p) => [p.name, p.ms / 60000, p.live]),
     [
       ['dsb-natixis', 4, true],
       ['dsb-generali', 3, false],
     ],
     'le plus longtemps ouvert en tête, en cours jusqu’à maintenant',
   );
-  // Après minuit : seul le temps depuis minuit compte, les clients fermés disparaissent
+  // Après minuit : seul le temps depuis minuit compte, les clients fermés disparaissent du jour ;
+  // la veille passe dans l'historique avec son temps jusqu'à minuit
   const late = advancePages(trackPages(s, [{ url: tickets, title: 'Tickets' }], at(23, 59)), at(0, 1, 8));
   assert.equal(late.day, isoDay(at(0, 1, 8)));
   assert.deepEqual(late.pages, { [natixis]: { url: tickets, title: 'Tickets', ms: min(1) } });
-  assert.deepEqual(pagesToday({ ...s, open: [] }, at(9, 0, 8)), [], 'le lendemain : rien');
-  assert.deepEqual(pagesToday(undefined), []);
+  assert.deepEqual(
+    Object.entries(late.history['2026-10-07']).map(([host, p]) => [host, p.ms / 60000]),
+    [
+      [generali, 3],
+      [natixis, 3 + 3 + 1],
+    ],
+    'veille : 3 min au plus pendant la veille, puis jusqu’à minuit',
+  );
+  assert.deepEqual(pagesOn({ ...s, open: [] }, at(9, 0, 8), at(9, 0, 8)), [], 'le lendemain : rien ce jour-là');
+  assert.deepEqual(
+    pagesOn({ ...s, open: [] }, at(12, 0, 7), at(9, 0, 8)).map((p) => [p.name, p.ms / 60000, p.live]),
+    [
+      ['dsb-generali', 3, false],
+      ['dsb-natixis', 3, false],
+    ],
+    'la veille : retrouvée, plus en cours',
+  );
+  assert.deepEqual(pagesOn(undefined, Date.now()), []);
+});
+
+test('clients : la dernière semaine gardée, jour par jour', () => {
+  const min = (n) => n * 60000;
+  const natixis = 'dsb-natixis.allshare-scenario.fr';
+  const tab = [{ url: `https://${natixis}/tickets`, title: 'Tickets' }];
+  // Un client ouvert 2 min chaque matin du 1er au 10 octobre
+  let s;
+  for (let day = 1; day <= 10; day++) {
+    s = trackPages(s, tab, at(9, 0, day));
+    s = trackPages(s, tab, at(9, 1, day));
+    s = trackPages(s, [], at(9, 2, day));
+  }
+  assert.equal(KEEP_DAYS, 7);
+  assert.equal(oldestKeptDay(at(9, 2, 10)), '2026-10-03');
+  assert.deepEqual(
+    Object.keys(s.history).sort(),
+    ['03', '04', '05', '06', '07', '08', '09'].map((d) => `2026-10-${d}`),
+  );
+  assert.deepEqual(s.history['2026-10-03'][natixis].ms, min(2));
+  assert.deepEqual(
+    [3, 9, 10].map((day) => pagesOn(s, at(18, 0, day), at(9, 5, 10)).map((p) => [p.name, p.ms / 60000])),
+    [[['dsb-natixis', 2]], [['dsb-natixis', 2]], [['dsb-natixis', 2]]],
+    'une semaine avant, la veille, aujourd’hui',
+  );
+  assert.deepEqual(pagesOn(s, at(18, 0, 2), at(9, 5, 10)), [], 'plus d’une semaine : oublié');
+  // Plusieurs jours sans relevé (Chrome fermé) : la semaine se décale au prochain affichage
+  assert.deepEqual(Object.keys(advancePages(s, at(9, 0, 15)).history), ['2026-10-08', '2026-10-09', '2026-10-10']);
+  // Veille de l'ordinateur pendant la nuit : rien n'est compté après minuit
+  const night = advancePages(trackPages(s, tab, at(23, 0, 10)), at(8, 0, 11));
+  assert.equal(night.history['2026-10-10'][natixis].ms, min(2) + MAX_GAP);
+  assert.deepEqual(night.pages, { [natixis]: { url: tab[0].url, title: 'Tickets', ms: 0 } }, 'encore ouvert');
 });
 
 test('clients du jour : relevé d’avant 3.15 (une entrée par page) regroupé par client', () => {
@@ -189,8 +241,9 @@ test('clients du jour : relevé d’avant 3.15 (une entrée par page) regroupé 
     at: at(0, 30),
     pages: { 'dsb-generali.allshare-scenario.fr': page(`${generali}?p=3:1:9`, 'Accueil', min(30)) },
     open: ['dsb-generali.allshare-scenario.fr'],
+    history: {},
   });
-  assert.equal(pagesToday(old, at(0, 31))[0].ms, min(31));
+  assert.equal(pagesOn(old, at(0, 31), at(0, 31))[0].ms, min(31));
 });
 
 test('page de saisie du C.R.A : avec ou sans paramètres, même adresse dans le manifest et le script', () => {

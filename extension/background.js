@@ -1,6 +1,6 @@
 // Allshare Tools Kit — service worker : mesures Insight, badge de l'icône, raccourci clavier,
 // temps d'ouverture des capsules (fin notée à la fermeture de leurs fenêtres, voir lib/capsule.js)
-// et des clients allshare-scenario.fr du jour (craPages, voir lib/cra.js).
+// et des clients allshare-scenario.fr, gardés une semaine (craPages, voir lib/cra.js).
 //
 // Une mesure se déroule ainsi (état « session » dans chrome.storage.session) :
 //   armed      le formulaire a été validé : les scripts de mesure sont injectés
@@ -459,7 +459,7 @@ const lastAlive = async () => (await chrome.storage.local.get('capsuleAlive')).c
 
 chrome.windows.onRemoved.addListener((windowId) => closeCapsuleSpans((w) => w !== windowId, Date.now()));
 
-// ---------------------------------------------------------------- CRA : clients allshare-scenario.fr du jour
+// ---------------------------------------------------------------- CRA : clients allshare-scenario.fr
 
 // Relevés sérialisés (lecture puis écriture de craPages) ; `restart` : les onglets d'avant n'existent plus
 let pagesChain = Promise.resolve();

@@ -1,8 +1,8 @@
 // CRA (panneau latéral) : capsules rouvertes ou sauvegardées le jour choisi (aujourd'hui par défaut),
 // avec leur temps d'ouverture, réglages des automatismes de la page de saisie du C.R.A (content/cra.js),
-// et clients allshare-scenario.fr ouverts aujourd'hui (craPages, tenu par background.js).
+// et clients allshare-scenario.fr ouverts le même jour, gardés une semaine (craPages, tenu par background.js).
 import { getCapsules, describeTabs, host } from '../lib/capsule.js';
-import { openedOn, fmtOpenTime, isoDay, pagesToday, getCraSettings, saveCraSettings } from '../lib/cra.js';
+import { openedOn, fmtOpenTime, isoDay, pagesOn, oldestKeptDay, getCraSettings, saveCraSettings } from '../lib/cra.js';
 import { $, el } from '../lib/dom.js';
 
 const fmtTime = (ts) => new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
@@ -54,7 +54,7 @@ async function renderList() {
   );
 }
 
-// ---------------------------------------------------------------- Clients allshare-scenario.fr du jour
+// ---------------------------------------------------------------- Clients allshare-scenario.fr du jour choisi
 
 /** « dsb-generali.allshare-scenario.fr/apex/f » : domaine et chemin, sans paramètres. */
 function shortUrl(url) {
@@ -65,11 +65,24 @@ function shortUrl(url) {
   }
 }
 
-/** Une ligne par client (sous-domaine), avec la dernière page vue ; la saisie du C.R.A n'en est pas un. */
+/**
+ * Une ligne par client (sous-domaine), avec la dernière page vue, le jour choisi dans le calendrier
+ * (aujourd'hui ou la semaine précédente) ; la saisie du C.R.A n'en est pas un.
+ */
 async function renderPages() {
-  const clients = pagesToday((await chrome.storage.local.get('craPages')).craPages);
+  const day = chosenDay();
+  const today = isoDay(day) === isoDay(new Date());
+  const clients = pagesOn((await chrome.storage.local.get('craPages')).craPages, day);
   $('pagesTotal').textContent = clients.length ? `(${clients.length})` : '';
+  $('pagesDay').textContent = today
+    ? ''
+    : day.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
   $('pagesEmpty').hidden = clients.length > 0;
+  $('pagesEmpty').textContent = today
+    ? "Aucun client allshare-scenario.fr ouvert aujourd'hui."
+    : isoDay(day) < oldestKeptDay()
+      ? "Ce jour-là n'est plus en mémoire : les clients sont gardés une semaine."
+      : 'Aucun client allshare-scenario.fr ouvert ce jour-là.';
   $('pagesList').replaceChildren(
     ...clients.map((c) =>
       el(
@@ -104,7 +117,10 @@ setInterval(() => {
 }, 60000);
 
 $('craDay').value = today;
-$('craDay').addEventListener('change', renderList);
+$('craDay').addEventListener('change', () => {
+  renderList();
+  renderPages();
+});
 
 // ---------------------------------------------------------------- Réglages
 
